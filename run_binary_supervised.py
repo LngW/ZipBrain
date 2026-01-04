@@ -1,6 +1,5 @@
 import os
 import argparse
-import pickle
 import copy
 import csv
 from datetime import datetime
@@ -20,7 +19,7 @@ from BIOT.model import (
     STTransformer,
     BIOTClassifier,
 )
-from BIOT.utils import TUABLoader, CHBMITLoader, PTBLoader, focal_loss, BCE
+from BIOT.utils import TUABLoader, CHBMITLoader, PTBLoader, BCE
 
 
 def collate_fn_pad(batch):
