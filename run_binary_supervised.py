@@ -19,6 +19,10 @@ from BIOT.model import (
     STTransformer,
     BIOTClassifier,
 )
+
+from model import (
+    TopKBiotClassifier
+)
 from BIOT.utils import TUABLoader, CHBMITLoader, PTBLoader, BCE
 
 
@@ -309,27 +313,50 @@ def supervised(args):
         if args.pretrain_model_path and (args.sampling_rate == 200):
             model.biot.load_state_dict(torch.load(args.pretrain_model_path))
             print(f"load pretrain model from {args.pretrain_model_path}")
-
+    elif args.model == "TKBIOT":
+        model = TopKBiotClassifier(
+            n_classes=args.n_classes,
+            # set the n_channels according to the pretrained model if necessary
+            n_channels=args.in_channels,
+            n_fft=args.token_size,
+            hop_length=args.hop_length,
+        )
     else:
         raise NotImplementedError
-    
+
+    records = {
+        'args': {},
+        'sche': {},
+        'qstp': {},
+    }
+    records['args'].update(vars(args))
+
     model.to(device)
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=args.lr,
         weight_decay=args.weight_decay,
     )
-
+    records["sche"] = {'factor': 0.5, 'patience': 3, 'cooldown': 3}
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="max", factor=0.5, patience=5, cooldown=2
+        optimizer, mode="max", **records['sche']
     )
 
     best_val_auroc = -1
     best_threshold = 0.5
     best_model_state = None
     best_val_result = None
-    patience = None
+    patience = 10
     patience_counter = 0
+
+    records['qstp'] = {'patience': patience}
+
+    log_file_name = f"{args.tag}_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.log"
+    with open(log_file_name, 'a') as f:
+        for key, value in records.items():
+            f.write("{}: {}\n".format(key, value))
+
+        f.write('\n')
 
     for epoch in range(args.epochs):
         model.train()
@@ -357,36 +384,21 @@ def supervised(args):
         run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
         # Record epoch metrics
-        epoch_record = {
-            'timestamp': run_timestamp,
-            'epoch': epoch + 1,
-            'train_loss': train_loss,
-        }
+        epoch_record = [('epoch', epoch + 1), ('timestamp', run_timestamp), ('train_loss', train_loss)]
+        # epoch_record = {
+        #     'timestamp': run_timestamp,
+        #     'epoch': epoch + 1,
+        #     'train_loss': train_loss,
+        # }
         for k, v in val_result.items():
-            epoch_record[f"val_{k}"] = v
+            epoch_record.append((f'val_{k}', v))
 
-        epoch_log_file = "epoch_log.csv"
-        epoch_file_exists = os.path.isfile(epoch_log_file)
-        epoch_fieldnames = sorted(epoch_record.keys())
-
-        if epoch_file_exists:
-            with open(epoch_log_file, 'r', newline='') as f:
-                reader = csv.reader(f)
-                try:
-                    header = next(reader)
-                    if header:
-                        epoch_fieldnames = header
-                except StopIteration:
-                    pass
-
-        with open(epoch_log_file, 'a', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=epoch_fieldnames, extrasaction='ignore')
-            if not epoch_file_exists:
-                writer.writeheader()
-            writer.writerow(epoch_record)
+        with open(log_file_name, 'a') as f:
+            f.write(', '.join([f'{k} = {v}' for k, v in epoch_record]))
+            f.write("\n")
 
         # Save checkpoint for each epoch
-        torch.save(model.state_dict(), f"checkpoints/{args.model}_{args.dataset}_epoch_{epoch+1}_{run_timestamp}.pt")
+        torch.save(model.state_dict(), f"checkpoints/{args.tag}_{args.model}_{args.dataset}_epoch_{epoch+1}_{run_timestamp}.pt")
 
         if val_result['roc_auc'] > best_val_auroc:
             best_val_auroc = val_result['roc_auc']
@@ -409,7 +421,7 @@ def supervised(args):
     print(test_result)
 
     # Record parameters and metrics
-    record = vars(args).copy()
+    record = {}
     record.update(test_result)
     if best_val_result is not None:
         for k, v in best_val_result.items():
@@ -422,27 +434,14 @@ def supervised(args):
         print(f"{k}: {v}")
     print("-" * 30)
 
-    log_file = "run_log.csv"
-    file_exists = os.path.isfile(log_file)
-    fieldnames = sorted(record.keys())
-
     # If file exists, try to use its header order to avoid CSV corruption
-    if file_exists:
-        with open(log_file, 'r', newline='') as f:
-            reader = csv.reader(f)
-            try:
-                header = next(reader)
-                if header:
-                    fieldnames = header
-            except StopIteration:
-                pass
+    with open(log_file_name, 'a') as f:
+        for k, v in records.items():
+            f.write(f"{k}: {v}\n")
+        f.write("-" * 30)
+        f.write("\n")
 
-    with open(log_file, 'a', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
-        if not file_exists:
-            writer.writeheader()
-        writer.writerow(record)
-    print(f"Run details saved to {log_file}")
+    print(f"Run details saved to {log_file_name}")
 
 
 if __name__ == "__main__":
@@ -482,6 +481,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--adaptive", action='store_true', default=False
+    )
+    parser.add_argument(
+        "--tag", type=str, required=True
     )
     args = parser.parse_args()
     print(args)
