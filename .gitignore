@@ -2,4 +2,7 @@ datasets/
 .venv/
 .venv.biot/
 checkpoints/
-__pycache__/
+**/__pycache__/
+
+*.csv
+*.log
