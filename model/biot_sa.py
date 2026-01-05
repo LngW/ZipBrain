@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import numpy as np
 from linear_attention_transformer import LinearAttentionTransformer
 
-from model.blocks import TopKEncoderLayer
+from model.blocks import TopKEncoderLayer, StandardEncoderLayer
 
 class PatchFrequencyEmbedding(nn.Module):
     def __init__(self, emb_size=256, n_freq=101):
@@ -83,14 +83,18 @@ class BIOTEncoder(nn.Module):
             emb_size=emb_size, n_freq=self.n_fft // 2 + 1
         )
 
-        self.transformer = TopKEncoderLayer(
-            emb_size=emb_size,
-            heads=heads,
-            k=kwargs['k'],
-            ffn_hidden_size=emb_size * 2,
-            num_layers=depth,
-            dropout=0.2
+        self.transformer = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(emb_size, heads, dim_feedforward=emb_size*4, dropout=0.2, batch_first=True),
+            num_layers=depth
         )
+
+        # self.transformer = StandardEncoderLayer(
+        #     emb_size=emb_size,
+        #     heads=heads,
+        #     ffn_hidden_size=emb_size * 4, # The default value used in linear attention, we don't change it here.
+        #     num_layers=depth,
+        #     dropout=0.2
+        # )
 
         self.positional_encoding = PositionalEncoding(emb_size)
 
