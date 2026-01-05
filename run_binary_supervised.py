@@ -9,7 +9,6 @@ from tqdm import tqdm
 import numpy as np
 import torch.nn as nn
 
-from pyhealth.metrics import binary_metrics_fn
 
 from BIOT.model import (
     SPaRCNet,
@@ -21,8 +20,9 @@ from BIOT.model import (
 )
 
 from model import (
-    TopKBiotClassifier
+    TopKBiotClassifier, SABiotClassifier
 )
+
 from BIOT.utils import TUABLoader, CHBMITLoader, PTBLoader, BCE
 
 
@@ -55,6 +55,8 @@ def collate_fn_pad(batch):
 
 
 def evaluate(model, dataloader, device, threshold=None):
+    from pyhealth.metrics import binary_metrics_fn
+
     model.eval()
     all_prob = []
     all_gt = []
@@ -320,6 +322,15 @@ def supervised(args):
             n_channels=args.in_channels,
             n_fft=args.token_size,
             hop_length=args.hop_length,
+            k=args.k
+        )
+    elif args.model == "SABIOT":
+        model = SABiotClassifier(
+            n_classes=args.n_classes,
+            # set the n_channels according to the pretrained model if necessary
+            n_channels=args.in_channels,
+            n_fft=args.token_size,
+            hop_length=args.hop_length,
         )
     else:
         raise NotImplementedError
@@ -351,12 +362,13 @@ def supervised(args):
 
     records['qstp'] = {'patience': patience}
 
-    log_file_name = f"{args.tag}_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.log"
+    log_file_name = f"./logs/{args.tag}_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_{args.model}_{args.dataset}.log"
     with open(log_file_name, 'a') as f:
         for key, value in records.items():
             f.write("{}: {}\n".format(key, value))
-
         f.write('\n')
+
+    sorted_metrics = None
 
     for epoch in range(args.epochs):
         model.train()
@@ -381,21 +393,18 @@ def supervised(args):
         # Scheduler
         scheduler.step(val_result['roc_auc'])
 
+        # log & checkpoint
         run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-        # Record epoch metrics
-        epoch_record = [('epoch', epoch + 1), ('timestamp', run_timestamp), ('train_loss', train_loss)]
-        # epoch_record = {
-        #     'timestamp': run_timestamp,
-        #     'epoch': epoch + 1,
-        #     'train_loss': train_loss,
-        # }
-        for k, v in val_result.items():
-            epoch_record.append((f'val_{k}', v))
-
         with open(log_file_name, 'a') as f:
-            f.write(', '.join([f'{k} = {v}' for k, v in epoch_record]))
-            f.write("\n")
+            if sorted_metrics is None:
+                sorted_metrics = list(val_result.keys())
+                sorted_metrics.sort()
+                f.write(",\t".join(['epoch', 'timestamp', 'train_loss'] + sorted_metrics))
+                f.write("\n")
+
+            line = [epoch + 1, run_timestamp, train_loss] + [val_result[it] for it in sorted_metrics]
+            f.write(',\t'.join([str(it) for it in line]))
+            f.write('\n')
 
         # Save checkpoint for each epoch
         torch.save(model.state_dict(), f"checkpoints/{args.tag}_{args.model}_{args.dataset}_epoch_{epoch+1}_{run_timestamp}.pt")
@@ -417,29 +426,21 @@ def supervised(args):
         model.load_state_dict(best_model_state)
     
     test_result, _ = evaluate(model, test_loader, device, threshold=best_threshold)
-    print("Test Result:")
-    print(test_result)
 
-    # Record parameters and metrics
-    record = {}
-    record.update(test_result)
-    if best_val_result is not None:
-        for k, v in best_val_result.items():
-            record[f"val_{k}"] = v
-    record['timestamp'] = run_timestamp
+    # Record best validation and test metrics
+    formatted_result = [
+        ',\t'.join(['run'] + sorted_metrics),
+        ',\t'.join(['val'] + [str(best_val_result[it]) for it in sorted_metrics]),
+        ',\t'.join(['test'] + [str(test_result[it]) for it in sorted_metrics])
+    ]
 
-    print("-" * 30)
-    print("Recording run details:")
-    for k, v in record.items():
-        print(f"{k}: {v}")
-    print("-" * 30)
+    for line in formatted_result:
+        print(line)
 
-    # If file exists, try to use its header order to avoid CSV corruption
     with open(log_file_name, 'a') as f:
-        for k, v in records.items():
-            f.write(f"{k}: {v}\n")
-        f.write("-" * 30)
-        f.write("\n")
+        f.writelines(["\n", "-" * 30, "\n"])
+        for line in formatted_result:
+            f.writelines([line, '\n'])
 
     print(f"Run details saved to {log_file_name}")
 
@@ -484,6 +485,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--tag", type=str, required=True
+    )
+    parser.add_argument(
+        "--k", type=int, default=3
     )
     args = parser.parse_args()
     print(args)
