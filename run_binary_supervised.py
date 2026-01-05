@@ -1,7 +1,6 @@
 import os
 import argparse
 import copy
-import csv
 from datetime import datetime
 
 import torch
@@ -10,7 +9,7 @@ import numpy as np
 import torch.nn as nn
 
 
-from BIOT.model import (
+from thirdparty.BIOT.model import (
     SPaRCNet,
     ContraWR,
     CNNTransformer,
@@ -23,7 +22,7 @@ from model import (
     TopKBiotClassifier, SABiotClassifier
 )
 
-from BIOT.utils import TUABLoader, CHBMITLoader, PTBLoader, BCE
+from thirdparty.BIOT.utils import TUABLoader, CHBMITLoader, PTBLoader, BCE
 
 
 def collate_fn_pad(batch):
