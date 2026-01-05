@@ -32,15 +32,17 @@ class TopKSelfAttention(nn.Module):
 
         # Apply Top-K masking
         # For each query, select the top-k keys
-        topk_scores, topk_indices = torch.topk(scores, self.k, dim=-1)
+        # If k <= 0, behaves as a vanilla multihead self-attention
+        if self.k > 0:
+            topk_scores, topk_indices = torch.topk(scores, self.k, dim=-1)
 
-        # Create a mask for the top-k elements
-        # Initialize with a very small negative number to be ignored by softmax
-        mask = torch.full_like(scores, float('-inf'))
-        mask.scatter_(-1, topk_indices, 0) # Set top-k positions to 0
+            # Create a mask for the top-k elements
+            # Initialize with a very small negative number to be ignored by softmax
+            mask = torch.full_like(scores, float('-inf'))
+            mask.scatter_(-1, topk_indices, 0) # Set top-k positions to 0
 
-        # Apply mask to scores
-        scores = scores + mask
+            # Apply mask to scores
+            scores = scores + mask
         
         attention_weights = self.softmax(scores)
         out = torch.matmul(attention_weights, v)
@@ -48,8 +50,8 @@ class TopKSelfAttention(nn.Module):
         # Concatenate heads and put through final linear layer (if needed)
         out = out.transpose(1, 2).contiguous().view(batch_size, seq_len, self.emb_size)
         return out
-    
-class TopKEncoder(nn.Module):
+
+class TopKEncoderLayer(nn.Module):
     def __init__(self, emb_size, heads, k, ffn_hidden_size, dropout=0.1):
         super().__init__()
         self.attention = TopKSelfAttention(emb_size, heads, k)
@@ -74,11 +76,11 @@ class TopKEncoder(nn.Module):
         x = x + ffn_output
         return x
 
-class TopKEncoderLayer(nn.Module):
+class TopKEncoder(nn.Module):
     def __init__(self, emb_size, heads, k, ffn_hidden_size, num_layers, dropout=0.1):
         super().__init__()
         self.layers = nn.ModuleList([
-            TopKEncoder(emb_size, heads, k, ffn_hidden_size, dropout)
+            TopKEncoderLayer(emb_size, heads, k, ffn_hidden_size, dropout)
             for _ in range(num_layers)
         ])
 
@@ -87,41 +89,11 @@ class TopKEncoderLayer(nn.Module):
             x = layer(x)
         return x
 
-class StandardEncoder(nn.Module):
-    def __init__(self, emb_size, heads, ffn_hidden_size, dropout=0.1):
-        super().__init__()
-        self.attention = nn.MultiheadAttention(
-            embed_dim=emb_size,
-            num_heads=heads,
-            dropout=dropout,
-            batch_first=True
-        )
-        self.norm1 = nn.LayerNorm(emb_size)
-        self.norm2 = nn.LayerNorm(emb_size)
-        self.ffn = nn.Sequential(
-            nn.Linear(emb_size, ffn_hidden_size),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(ffn_hidden_size, emb_size),
-            nn.Dropout(dropout)
-        )
-
-    def forward(self, x):
-        # Self-attention part
-        normed_x = self.norm1(x)
-        attn_output, score = self.attention(normed_x, normed_x, normed_x)
-        x = x + attn_output
-
-        # FFN part
-        ffn_output = self.ffn(self.norm2(x))
-        x = x + ffn_output
-        return x
-
-class StandardEncoderLayer(nn.Module):
-    def __init__(self, emb_size, heads, ffn_hidden_size, num_layers, dropout):
+class VanillaEncoder(nn.Module):
+    def __init__(self, emb_size, heads, ffn_hidden_size, num_layers, dropout=0.1):
         super().__init__()
         self.layers = nn.ModuleList([
-            StandardEncoder(emb_size, heads, ffn_hidden_size, dropout)
+            TopKEncoderLayer(emb_size, heads, 0, ffn_hidden_size, dropout)
             for _ in range(num_layers)
         ])
 

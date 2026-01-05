@@ -97,17 +97,17 @@ def evaluate(model, dataloader, device, threshold=None):
 
 def prepare_TUAB_dataloader(args):
     # set random seed
-    seed = 12345
+    seed = args.seed
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
 
     # root = "/srv/local/data/TUH/tuh3/tuh_eeg_abnormal/v3.0.0/edf/processed"
-    if args.adaptive:
-        root = "./datasets/TUH/tuh_eeg_abnormal/v3.0.1/edf/processed3"
-    else:
-        root = "./datasets/TUH/tuh_eeg_abnormal/v3.0.1/edf/processed"
+    # if args.adaptive:
+    #     root = "./datasets/TUH/tuh_eeg_abnormal/v3.0.1/edf/processed3"
+    # else:
+    root = "./datasets/TUH/tuh_eeg_abnormal/v3.0.1/edf/processed"
 
     train_files = os.listdir(os.path.join(root, "train"))
     np.random.shuffle(train_files)
@@ -117,7 +117,7 @@ def prepare_TUAB_dataloader(args):
 
     print(len(train_files), len(val_files), len(test_files))
 
-    collate_fn = collate_fn_pad if args.adaptive else None
+    # collate_fn = None
 
     # prepare training and test data loader
     train_loader = torch.utils.data.DataLoader(
@@ -128,7 +128,7 @@ def prepare_TUAB_dataloader(args):
         drop_last=True,
         num_workers=args.num_workers,
         persistent_workers=True,
-        collate_fn=collate_fn,
+        # collate_fn=collate_fn,
     )
     test_loader = torch.utils.data.DataLoader(
         TUABLoader(os.path.join(root, "test"), test_files, args.sampling_rate),
@@ -136,7 +136,7 @@ def prepare_TUAB_dataloader(args):
         shuffle=False,
         num_workers=args.num_workers,
         persistent_workers=True,
-        collate_fn=collate_fn,
+        # collate_fn=collate_fn,
     )
     val_loader = torch.utils.data.DataLoader(
         TUABLoader(os.path.join(root, "val"), val_files, args.sampling_rate),
@@ -144,7 +144,7 @@ def prepare_TUAB_dataloader(args):
         shuffle=False,
         num_workers=args.num_workers,
         persistent_workers=True,
-        collate_fn=collate_fn,
+        # collate_fn=collate_fn,
     )
     print(len(train_loader), len(val_loader), len(test_loader))
     return train_loader, test_loader, val_loader
@@ -240,7 +240,22 @@ def prepare_PTB_dataloader(args):
 
 
 def supervised(args):
+
+    records = {}
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    records['global'] = [
+        ('epoch', args.epochs),
+        ('seed', args.seed)
+    ]
+
+    records['data'] = [
+        ('name', args.dataset),
+        ('batch_size', args.batch_size), 
+        ('num_workers', args.num_workers), 
+        ('sampling_rate', args.sampling_rate),
+    ]
 
     # get data loaders
     if args.dataset == "TUAB":
@@ -248,6 +263,12 @@ def supervised(args):
 
     else:
         raise NotImplementedError
+
+    records['model'] = [
+        ('name', args.model),
+        ('in_channels', args.in_channels),
+        ('n_classes', args.n_classes),
+    ]
 
     # define the model
     if args.model == "SPaRCNet":
@@ -311,6 +332,11 @@ def supervised(args):
             n_fft=args.token_size,
             hop_length=args.hop_length,
         )
+        records['model'] += [
+            ('token_size', args.token_size),
+            ('hop_length', args.hop_length),
+        ]
+
         if args.pretrain_model_path and (args.sampling_rate == 200):
             model.biot.load_state_dict(torch.load(args.pretrain_model_path))
             print(f"load pretrain model from {args.pretrain_model_path}")
@@ -323,6 +349,11 @@ def supervised(args):
             hop_length=args.hop_length,
             k=args.k
         )
+        records['model'] += [
+            ('token_size', args.token_size),
+            ('hop_length', args.hop_length),
+            ('k', args.k)
+        ]
     elif args.model == "SABIOT":
         model = SABiotClassifier(
             n_classes=args.n_classes,
@@ -331,15 +362,14 @@ def supervised(args):
             n_fft=args.token_size,
             hop_length=args.hop_length,
         )
+        records['model'] += [
+            ('token_size', args.token_size),
+            ('hop_length', args.hop_length),
+        ]
     else:
         raise NotImplementedError
 
-    records = {
-        'args': {},
-        'sche': {},
-        'qstp': {},
-    }
-    records['args'].update(vars(args))
+    # records['args'].extend([(k, v) for k, v in vars(args).items()])
 
     model.to(device)
     optimizer = torch.optim.Adam(
@@ -347,10 +377,17 @@ def supervised(args):
         lr=args.lr,
         weight_decay=args.weight_decay,
     )
-    records["sche"] = {'factor': 0.5, 'patience': 3, 'cooldown': 3}
+    records['optim'] = [
+        ('name', 'Adam'),
+        ('learning_rate', args.lr),
+        ('weight_decay', args.weight_decay)
+    ]
+
+    tmp = {'mode': 'max', 'factor': 0.5, 'patience': 3, 'cooldown': 3}
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="max", **records['sche']
+        optimizer, **tmp
     )
+    records["sche"] = [('name', 'ReduceLROnPlateau')] + [(k, v) for k, v in tmp.items()]
 
     best_val_auroc = -1
     best_threshold = 0.5
@@ -359,12 +396,16 @@ def supervised(args):
     patience = 10
     patience_counter = 0
 
-    records['qstp'] = {'patience': patience}
+    records['qstp'] = [('patience', patience)]
 
     log_file_name = f"./logs/{args.tag}_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_{args.model}_{args.dataset}.log"
     with open(log_file_name, 'a') as f:
         for key, value in records.items():
-            f.write("{}: {}\n".format(key, value))
+            f.writelines([key, ':\n'])
+            for subk, subv in value:
+                f.writelines(['\t', subk, ':\t\t', str(subv), '\n'])
+        f.write('\n')
+        f.write('-' * 30)
         f.write('\n')
 
     sorted_metrics = None
@@ -487,6 +528,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--k", type=int, default=3
+    )
+    parser.add_argument(
+        "--seed", type=int, required=True
     )
     args = parser.parse_args()
     print(args)

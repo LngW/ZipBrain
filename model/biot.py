@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import numpy as np
 from linear_attention_transformer import LinearAttentionTransformer
 
-from model.blocks import TopKEncoderLayer
+from model.blocks import TopKEncoder
 
 class PatchFrequencyEmbedding(nn.Module):
     def __init__(self, emb_size=256, n_freq=101):
@@ -83,7 +83,7 @@ class BIOTEncoder(nn.Module):
             emb_size=emb_size, n_freq=self.n_fft // 2 + 1
         )
 
-        self.transformer = TopKEncoderLayer(
+        self.transformer = TopKEncoder(
             emb_size=emb_size,
             heads=heads,
             k=kwargs['k'],
