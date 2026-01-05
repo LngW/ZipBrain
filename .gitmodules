@@ -1,6 +1,6 @@
-[submodule "BIOT"]
-	path = BIOT
+[submodule "thirdparty/LaBraM"]
+	path = thirdparty/LaBraM
+	url = https://github.com/935963004/LaBraM
+[submodule "thirdparty/BIOT"]
+	path = thirdparty/BIOT
 	url = https://github.com/ycq091044/BIOT.git
-[submodule "LaBraM"]
-	path = LaBraM
-	url = https://github.com/935963004/LaBraM.git
