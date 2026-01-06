@@ -107,7 +107,7 @@ def prepare_TUAB_dataloader(args):
     # if args.adaptive:
     #     root = "./datasets/TUH/tuh_eeg_abnormal/v3.0.1/edf/processed3"
     # else:
-    root = "./datasets/TUH/tuh_eeg_abnormal/v3.0.1/edf/processed"
+    root = "./datasets/TUH/tuh_eeg_abnormal/v3.0.1/edf/200/processed"
 
     train_files = os.listdir(os.path.join(root, "train"))
     np.random.shuffle(train_files)
