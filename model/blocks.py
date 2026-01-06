@@ -64,16 +64,16 @@ class TopKEncoderLayer(nn.Module):
             nn.Linear(ffn_hidden_size, emb_size),
             nn.Dropout(dropout)
         )
-        self.attn_layer_dropout = nn.Dropout(dropout)
+        # self.attn_layer_dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         # Self-attention part
-        attn_output = self.attention(self.norm1(x))
-        x = x + attn_output
+        attn_output = self.attention(x)
+        x = self.norm1(x + attn_output)
 
         # FFN part
-        ffn_output = self.ffn(self.norm2(x))
-        x = x + ffn_output
+        ffn_output = self.ffn(x)
+        x = self.norm2(x + ffn_output)
         return x
 
 class TopKEncoder(nn.Module):
