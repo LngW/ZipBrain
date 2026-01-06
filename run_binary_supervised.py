@@ -398,7 +398,9 @@ def supervised(args):
 
     records['qstp'] = [('patience', patience)]
 
-    log_file_name = f"./logs/{args.tag}_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_{args.model}_{args.dataset}.log"
+    from pathlib import Path
+    log_file_name = Path(".", "logs", args.tag, f"{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_{args.model}_{args.dataset}.log")
+    log_file_name.parent.mkdir(parents=True, exist_ok=True)
     with open(log_file_name, 'a') as f:
         for key, value in records.items():
             f.writelines([key, ':\n'])
@@ -484,8 +486,9 @@ def supervised(args):
 
     print(f"Run details saved to {log_file_name}")
 
+    return sorted_metrics, best_val_result
 
-if __name__ == "__main__":
+def parse_and_exec(args = None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=100,
                         help="number of epochs")
@@ -532,7 +535,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--seed", type=int, required=True
     )
-    args = parser.parse_args()
-    print(args)
 
-    supervised(args)
+    parsed_args = parser.parse_args(args)
+    print(parsed_args)
+
+    return supervised(parsed_args)
+
+if __name__ == "__main__":
+    parse_and_exec()
