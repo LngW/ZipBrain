@@ -107,7 +107,7 @@ def prepare_TUAB_dataloader(args):
     # if args.adaptive:
     #     root = "./datasets/TUH/tuh_eeg_abnormal/v3.0.1/edf/processed3"
     # else:
-    root = "./datasets/TUH/tuh_eeg_abnormal/v3.0.1/edf/200/processed"
+    root = "./datasets/TUH/tuh_eeg_abnormal/v3.0.1/edf/{}/processed".format(args.subset)
 
     train_files = os.listdir(os.path.join(root, "train"))
     np.random.shuffle(train_files)
@@ -252,6 +252,7 @@ def supervised(args):
 
     records['data'] = [
         ('name', args.dataset),
+        ('subset', args.subset),
         ('batch_size', args.batch_size), 
         ('num_workers', args.num_workers), 
         ('sampling_rate', args.sampling_rate),
@@ -355,12 +356,13 @@ def supervised(args):
             ('k', args.k)
         ]
     elif args.model == "SABIOT":
-        model = SABiotClassifier(
+        model = TopKBiotClassifier(
             n_classes=args.n_classes,
             # set the n_channels according to the pretrained model if necessary
             n_channels=args.in_channels,
             n_fft=args.token_size,
             hop_length=args.hop_length,
+            k = 0
         )
         records['model'] += [
             ('token_size', args.token_size),
@@ -534,6 +536,9 @@ def parse_and_exec(args = None):
     )
     parser.add_argument(
         "--seed", type=int, required=True
+    )
+    parser.add_argument(
+        "--subset", type=str, required=True
     )
 
     parsed_args = parser.parse_args(args)

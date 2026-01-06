@@ -87,7 +87,7 @@ class BIOTEncoder(nn.Module):
             emb_size=emb_size,
             heads=heads,
             k=kwargs['k'],
-            ffn_hidden_size=emb_size * 2,
+            ffn_hidden_size=emb_size * 4,
             num_layers=depth,
             dropout=0.2
         )

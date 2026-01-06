@@ -24,6 +24,7 @@ if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--tag', type=str, required=True)
     parser.add_argument('--seed', type=int, required=True)
+    parser.add_argument('--subset', type=str, required=True)
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--batch_size', type=int, default=128)
 
