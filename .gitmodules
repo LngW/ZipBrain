@@ -4,3 +4,6 @@
 [submodule "thirdparty/BIOT"]
 	path = thirdparty/BIOT
 	url = https://github.com/ycq091044/BIOT.git
+[submodule "thirdparty/ToMe"]
+	path = thirdparty/ToMe
+	url = https://github.com/facebookresearch/ToMe.git

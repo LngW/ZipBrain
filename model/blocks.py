@@ -13,6 +13,8 @@ class TopKSelfAttention(nn.Module):
         self.value = nn.Linear(emb_size, emb_size)
         self.softmax = nn.Softmax(dim=-1)
 
+        self.proj_o = nn.Linear(emb_size, emb_size)
+
     def forward(self, x):
         # x: (batch, seq_len, emb_size)
         batch_size, seq_len, _ = x.shape
@@ -49,6 +51,7 @@ class TopKSelfAttention(nn.Module):
 
         # Concatenate heads and put through final linear layer (if needed)
         out = out.transpose(1, 2).contiguous().view(batch_size, seq_len, self.emb_size)
+        out = self.proj_o(out)
         return out
 
 class TopKEncoderLayer(nn.Module):

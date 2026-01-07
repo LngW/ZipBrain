@@ -5,9 +5,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from linear_attention_transformer import LinearAttentionTransformer
 
-from model.blocks import TopKEncoder
+from .blocks2 import LinearAttentionEncoder
 
 class PatchFrequencyEmbedding(nn.Module):
     def __init__(self, emb_size=256, n_freq=101):
@@ -22,6 +21,7 @@ class PatchFrequencyEmbedding(nn.Module):
         x = x.permute(0, 2, 1)
         x = self.projection(x)
         return x
+
 
 class ClassificationHead(nn.Sequential):
     def __init__(self, emb_size, n_classes):
@@ -82,16 +82,14 @@ class BIOTEncoder(nn.Module):
         self.patch_embedding = PatchFrequencyEmbedding(
             emb_size=emb_size, n_freq=self.n_fft // 2 + 1
         )
-
-        self.transformer = TopKEncoder(
-            emb_size=emb_size,
+        self.transformer = LinearAttentionEncoder(
+            dim=emb_size,
             heads=heads,
-            k=kwargs['k'],
-            ffn_hidden_size=emb_size * 4,
-            num_layers=depth,
-            dropout=0.2
+            depth=depth,
+            max_seq_len=1024,
+            attn_layer_dropout=0.2,  # dropout right after self-attention layer
+            attn_dropout=0.2,  # dropout post-attention
         )
-
         self.positional_encoding = PositionalEncoding(emb_size)
 
         # channel token, N_channels >= your actual channels
