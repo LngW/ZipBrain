@@ -15,17 +15,17 @@ if __name__ == '__main__':
     }
 
     model_args = [
-        # ('BIOT', {'model': 'BIOT'}), 
-        # ('SABIOT', {'model': 'SABIOT'}), 
-        # ('T3BIOT', {'model': 'TKBIOT','k': 3}),
-        # ('T5BIOT', {'model': 'TKBIOT','k': 5}),
-        # ('T7BIOT', {'model': 'TKBIOT','k': 7}),
-        # ('T9BIOT', {'model': 'TKBIOT','k': 9}),
-        # ('T152BIOT', {'model': 'TKBIOT','k': 152}),
-        # ('T76BIOT', {'model': 'TKBIOT','k': 76}),
-        # ('T38BIOT', {'model': 'TKBIOT','k': 38}),
-        # ('T19BIOT', {'model': 'TKBIOT','k': 19}),
-        # ('ToMeBIOTr38', {'model': 'ToMeBIOT','k': 38}),
+        ('BIOT', {'model': 'BIOT'}), 
+        ('SABIOT', {'model': 'SABIOT'}), 
+        ('T3BIOT', {'model': 'TKBIOT','k': 3}),
+        ('T5BIOT', {'model': 'TKBIOT','k': 5}),
+        ('T7BIOT', {'model': 'TKBIOT','k': 7}),
+        ('T9BIOT', {'model': 'TKBIOT','k': 9}),
+        ('T152BIOT', {'model': 'TKBIOT','k': 152}),
+        ('T76BIOT', {'model': 'TKBIOT','k': 76}),
+        ('T38BIOT', {'model': 'TKBIOT','k': 38}),
+        ('T19BIOT', {'model': 'TKBIOT','k': 19}),
+        ('ToMeBIOTr38', {'model': 'ToMeBIOT','k': 38}),
         ('ToMeBIOTr19', {'model': 'ToMeBIOT','k': 19}),
         ('ToMeBIOTr9', {'model': 'ToMeBIOT','k': 9}),
     ]

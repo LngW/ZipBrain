@@ -242,7 +242,7 @@ def supervised(args):
         ('in_channels', args.in_channels),
         ('n_classes', args.n_classes),
     ]
-    with torch.random.fork_rng('cpu'):
+    with torch.random.fork_rng([torch.device('cpu')]):
         model = load_model_by_args(args, records)
         model.to(device)
 

@@ -146,3 +146,5 @@ def load_model_by_args(args, records):
             ]
     else:
         raise NotImplementedError
+    
+    return model
