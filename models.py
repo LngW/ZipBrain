@@ -83,11 +83,13 @@ def load_model_by_args(args, records):
     elif args.model in ['CBIOT', 'TKBIOT', 'SABIOT', 'ToMeBIOT']:
 
         from model import (
-            TopKBiotClassifier, ToMeBiotClassifier, BIOTClassifier as CusBiotClassifier
+            TopKBiotClassifier, 
+            ToMeBiotClassifier, 
+            CusBIOTClassifier
         )
 
         if args.model == "CBIOT":
-            model = CusBiotClassifier(
+            model = CusBIOTClassifier(
                 n_classes=args.n_classes,
                 # set the n_channels according to the pretrained model if necessary
                 n_channels=args.in_channels,
@@ -113,6 +115,7 @@ def load_model_by_args(args, records):
                 ('hop_length', args.hop_length),
                 ('k', args.k)
             ]
+
         elif args.model == "SABIOT":
             model = TopKBiotClassifier(
                 n_classes=args.n_classes,
@@ -127,19 +130,19 @@ def load_model_by_args(args, records):
                 ('hop_length', args.hop_length),
             ]
 
-    elif args.model == "ToMeBIOT":
-        model = ToMeBiotClassifier(
-            n_classes=args.n_classes,
-            # set the n_channels according to the pretrained model if necessary
-            n_channels=args.in_channels,
-            n_fft=args.token_size,
-            hop_length=args.hop_length,
-            r = args.k
-        )
-        records['model'] += [
-            ('token_size', args.token_size),
-            ('hop_length', args.hop_length),
-            ('r', args.k)
-        ]
+        elif args.model == "ToMeBIOT":
+            model = ToMeBiotClassifier(
+                n_classes=args.n_classes,
+                # set the n_channels according to the pretrained model if necessary
+                n_channels=args.in_channels,
+                n_fft=args.token_size,
+                hop_length=args.hop_length,
+                r = args.k
+            )
+            records['model'] += [
+                ('token_size', args.token_size),
+                ('hop_length', args.hop_length),
+                ('r', args.k)
+            ]
     else:
         raise NotImplementedError
