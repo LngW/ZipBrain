@@ -113,13 +113,12 @@ class TopKEncoderLayer(nn.Module):
 
     def forward(self, x):
         # Self-attention part
-        x = self.norm1(x)
-        attn_output = self.attention(x)
+        attn_output = self.attention(self.norm1(x))
         x = x + attn_output
 
         # FFN part
-        x = self.norm2(x)
-        ffn_output = self.ffn(x)
+        # x = self.norm2(x)
+        ffn_output = self.ffn(self.norm2(x))
         x = x + ffn_output
 
         return x
@@ -141,15 +140,15 @@ class ToMeEncoderLayer(nn.Module):
 
     def forward(self, x):
         # Self-attention part
-        x = self.norm1(x)
-        attn_output, k = self.attention(x)
+        # x = self.norm1(x)
+        attn_output, k = self.attention(self.norm1(x))
         x = x + attn_output
         x = self.block(x, k)
 
-        x = self.norm2(x)
+        # x = self.norm2(x)
 
         # FFN part
-        ffn_output = self.ffn(x)
+        ffn_output = self.ffn(self.norm2(x))
         x = x + ffn_output
 
         return x
