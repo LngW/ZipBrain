@@ -1,10 +1,14 @@
 import torch
-from torch import nn
+from torch import einsum, nn
+# from linear_attention_transformer.linear_attention_transformer import Chunk
+# from local_attention import LocalAttention
 
 class MHSelfAttention(nn.Module):
     def __init__(self, dim, d_heads, heads, dropout, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.heads = heads
+
+        # self.local_attn = LocalAttention(128, False, 0.2)
 
         self.to_q = nn.Linear(dim, d_heads * heads, bias = False)
         self.to_k = nn.Linear(dim, d_heads * heads, bias = False)
@@ -14,21 +18,23 @@ class MHSelfAttention(nn.Module):
 
     def forward(self, x):
         bsz, seq = x.shape[:2]
-        q = self.to_q(x).view(bsz, seq, self.heads, -1)
-        k = self.to_k(x).view(bsz, seq, self.heads, -1)
-        v = self.to_v(x).view(bsz, seq, self.heads, -1)
+        # Transpose to (Batch, Heads, Seq, Dim) to mix over Sequence
+        q = self.to_q(x).view(bsz, seq, self.heads, -1).transpose(1, 2)
+        k = self.to_k(x).view(bsz, seq, self.heads, -1).transpose(1, 2)
+        v = self.to_v(x).view(bsz, seq, self.heads, -1).transpose(1, 2)
 
         dim = q.shape[-1]
 
         q = q.softmax(dim=-1)
-        k = k.softmax(dim=-2)
+        k = k.softmax(dim=-2) # Softmax over Sequence dimension (now dim -2)
 
         q = q * dim ** -0.5
 
-        context = torch.matmul(k.transpose(-1, -2), v)
-
-        attn = torch.matmul(q, context)
-        attn = attn.view(bsz, seq, -1)
+        context = einsum('bhnd,bhne->bhde', k, v)
+        attn = einsum('bhnd,bhde->bhne', q, context)
+        # context = torch.matmul(k.transpose(-1, -2), v)
+        # attn = torch.matmul(q, context)
+        attn = attn.transpose(1, 2).reshape(bsz, seq, -1)
         attn = self.to_out(attn)
         attn = self.dropout(attn)
 
@@ -50,39 +56,44 @@ class FeedForward(nn.Module):
 
         return x
 
-# class EncoderLayer(nn.Module):
-#     def __init__(self, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
+class PreNorm(nn.Module):
+    def __init__(self, dim, fn, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.norm = nn.LayerNorm(dim)
+        self.fn = fn
 
-#     def forward(self, x):
-#         return x
+    def forward(self, x):
+        x = self.norm(x)
+        x = self.fn(x)
+        return x
 
 class EncoderLayer(nn.Module):
     def __init__(self, dim, attn, ffn, *args, **kwargs):
         super().__init__()
-        self.norm1 = nn.LayerNorm(dim)
-        self.norm2 = nn.LayerNorm(dim)
-        self.attn = attn
-        self.ffn = ffn
+        self.attn = PreNorm(dim, attn)
+        self.ffn = PreNorm(dim, ffn)
     
     def forward(self, x):
-        x = x + self.attn(self.norm1(x))
-        x = x + self.ffn(self.norm2(x))
+        x = x + self.attn(x)
+        x = x + self.ffn(x)
         return x
 
 class LinearAttentionEncoder(nn.Module):
     def __init__(self, dim, heads, depth, ff_dropout = 0., attn_dropout = 0., *args, **kwargs):
         super().__init__()
-        self.layers = nn.ModuleList([
-            EncoderLayer(
-                dim,
-                MHSelfAttention(dim, heads, dim // heads, attn_dropout),
-                FeedForward(dim, ff_dropout),
-            )
-            for _ in range(depth)
-        ])
+        layers = nn.ModuleList()
+        for _ in range(depth):
+            ffn = FeedForward(dim, ff_dropout)
+            attn = MHSelfAttention(dim, heads, dim // heads, attn_dropout)
+            layers.append(nn.ModuleList([
+                PreNorm(dim, attn),
+                PreNorm(dim, ffn)
+            ]))
+
+        self.layers = layers
 
     def forward(self, x):
-        for layer in self.layers:
-            x = layer(x)
+        for (f, g) in self.layers:
+            x = x + f(x)
+            x = x + g(x)
         return x

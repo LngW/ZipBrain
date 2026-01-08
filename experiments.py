@@ -10,15 +10,24 @@ if __name__ == '__main__':
         'token_size': 200,
         'hop_length': 100,
         'batch_size': 128,
+        'warmup_epochs': 0,
+        'lr': 1e-4,
     }
 
     model_args = [
-        ('BIOT', {'model': 'BIOT'}), 
-        ('SABIOT', {'model': 'SABIOT'}), 
-        ('T3BIOT', {'model': 'TKBIOT','k': 3}),
-        ('T5BIOT', {'model': 'TKBIOT','k': 5}),
-        ('T7BIOT', {'model': 'TKBIOT','k': 7}),
-        ('T9BIOT', {'model': 'TKBIOT','k': 9}),
+        # ('BIOT', {'model': 'BIOT'}), 
+        # ('SABIOT', {'model': 'SABIOT'}), 
+        # ('T3BIOT', {'model': 'TKBIOT','k': 3}),
+        # ('T5BIOT', {'model': 'TKBIOT','k': 5}),
+        # ('T7BIOT', {'model': 'TKBIOT','k': 7}),
+        # ('T9BIOT', {'model': 'TKBIOT','k': 9}),
+        # ('T152BIOT', {'model': 'TKBIOT','k': 152}),
+        # ('T76BIOT', {'model': 'TKBIOT','k': 76}),
+        # ('T38BIOT', {'model': 'TKBIOT','k': 38}),
+        # ('T19BIOT', {'model': 'TKBIOT','k': 19}),
+        # ('ToMeBIOTr38', {'model': 'ToMeBIOT','k': 38}),
+        ('ToMeBIOTr19', {'model': 'ToMeBIOT','k': 19}),
+        ('ToMeBIOTr9', {'model': 'ToMeBIOT','k': 9}),
     ]
 
     parser = ArgumentParser()
@@ -41,7 +50,7 @@ if __name__ == '__main__':
     summary_file = Path('.', 'logs', parsed.tag, 'summary.csv')
     summary_file.parent.mkdir(parents=True, exist_ok=True)
 
-    first_append = True
+    first_append = not summary_file.exists()
     for model_arg in model_args:
         run_arg = []
         for k, v in combined_args.items():

@@ -19,7 +19,7 @@ from thirdparty.BIOT.model import (
 )
 
 from model import (
-    TopKBiotClassifier, SABiotClassifier
+    TopKBiotClassifier, ToMeBiotClassifier, BIOTClassifier as CusBiotClassifier
 )
 
 from thirdparty.BIOT.utils import TUABLoader, CHBMITLoader, PTBLoader, BCE
@@ -247,6 +247,7 @@ def supervised(args):
 
     records['global'] = [
         ('epoch', args.epochs),
+        ('warmup_epochs', args.warmup_epochs),
         ('seed', args.seed)
     ]
 
@@ -270,6 +271,8 @@ def supervised(args):
         ('in_channels', args.in_channels),
         ('n_classes', args.n_classes),
     ]
+
+    # with torch.random.fork_rng()
 
     # define the model
     if args.model == "SPaRCNet":
@@ -341,6 +344,20 @@ def supervised(args):
         if args.pretrain_model_path and (args.sampling_rate == 200):
             model.biot.load_state_dict(torch.load(args.pretrain_model_path))
             print(f"load pretrain model from {args.pretrain_model_path}")
+
+    elif args.model == "CBIOT":
+        model = CusBiotClassifier(
+            n_classes=args.n_classes,
+            # set the n_channels according to the pretrained model if necessary
+            n_channels=args.in_channels,
+            n_fft=args.token_size,
+            hop_length=args.hop_length,
+        )
+        records['model'] += [
+            ('token_size', args.token_size),
+            ('hop_length', args.hop_length),
+        ]
+
     elif args.model == "TKBIOT":
         model = TopKBiotClassifier(
             n_classes=args.n_classes,
@@ -367,6 +384,21 @@ def supervised(args):
         records['model'] += [
             ('token_size', args.token_size),
             ('hop_length', args.hop_length),
+        ]
+
+    elif args.model == "ToMeBIOT":
+        model = ToMeBiotClassifier(
+            n_classes=args.n_classes,
+            # set the n_channels according to the pretrained model if necessary
+            n_channels=args.in_channels,
+            n_fft=args.token_size,
+            hop_length=args.hop_length,
+            r = args.k
+        )
+        records['model'] += [
+            ('token_size', args.token_size),
+            ('hop_length', args.hop_length),
+            ('r', args.k)
         ]
     else:
         raise NotImplementedError
@@ -416,6 +448,11 @@ def supervised(args):
 
     for epoch in range(args.epochs):
         model.train()
+        if epoch < args.warmup_epochs:
+            warmup_lr = args.lr * (epoch + 1) / args.warmup_epochs
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = warmup_lr
+
         train_loss = 0
         for batch in tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}"):
             X, y = batch
@@ -435,7 +472,8 @@ def supervised(args):
         print(f"Epoch {epoch+1} | Train Loss: {train_loss:.4f} | Val AUROC: {val_result['roc_auc']:.4f}")
 
         # Scheduler
-        scheduler.step(val_result['roc_auc'])
+        if epoch >= args.warmup_epochs:
+            scheduler.step(val_result['roc_auc'])
 
         # log & checkpoint
         run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -451,7 +489,9 @@ def supervised(args):
             f.write('\n')
 
         # Save checkpoint for each epoch
-        torch.save(model.state_dict(), f"checkpoints/{args.tag}_{args.model}_{args.dataset}_epoch_{epoch+1}_{run_timestamp}.pt")
+        save_dir = Path('./checkpoints/')
+        save_dir.mkdir(exist_ok=True)
+        torch.save(model.state_dict(), save_dir / f"{args.tag}_{args.model}_{args.dataset}_epoch_{epoch+1}_{run_timestamp}.pt")
 
         if val_result['roc_auc'] > best_val_auroc:
             best_val_auroc = val_result['roc_auc']
@@ -539,6 +579,9 @@ def parse_and_exec(args = None):
     )
     parser.add_argument(
         "--subset", type=str, required=True
+    )
+    parser.add_argument(
+        "--warmup_epochs", type=int, default=0, help="number of warmup epochs"
     )
 
     parsed_args = parser.parse_args(args)

@@ -1,0 +1,7 @@
+torch
+torchvision
+pandas
+numpy
+mne
+linear_attention_transformer
+pyhealth==2.0a10
