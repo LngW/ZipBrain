@@ -2,55 +2,27 @@ import os
 import argparse
 import copy
 from datetime import datetime
+from pathlib import Path
 
 import torch
 from tqdm import tqdm
 import numpy as np
 import torch.nn as nn
 
-
-from thirdparty.BIOT.model import (
-    SPaRCNet,
-    ContraWR,
-    CNNTransformer,
-    FFCL,
-    STTransformer,
-    BIOTClassifier,
-)
-
-from model import (
-    TopKBiotClassifier, ToMeBiotClassifier, BIOTClassifier as CusBiotClassifier
-)
-
 from thirdparty.BIOT.utils import TUABLoader, CHBMITLoader, PTBLoader, BCE
 
+from models import load_model_by_args
 
-def collate_fn_pad(batch):
-    batch = [item for item in batch if item is not None]
-    if len(batch) == 0:
-        return torch.tensor([]), torch.tensor([])
-
-    X_list, y_list = zip(*batch)
-
-    # X is (channels, time)
-    max_len = max(x.shape[-1] for x in X_list)
-
-    X_padded = []
-    for x in X_list:
-        pad_len = max_len - x.shape[-1]
-        if pad_len > 0:
-            # Pad last dimension (time) on the right
-            x = nn.functional.pad(x, (0, pad_len), value=0)
-        X_padded.append(x)
-
-    X_batch = torch.stack(X_padded)
-
-    if isinstance(y_list[0], torch.Tensor):
-        y_batch = torch.stack(y_list)
-    else:
-        y_batch = torch.tensor(y_list)
-
-    return X_batch, y_batch
+def write_records_to_log(log_file_name, records):
+    log_file_name.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_file_name, 'a') as f:
+        for key, value in records.items():
+            f.writelines([key, ':\n'])
+            for subk, subv in value:
+                f.writelines(['\t', subk, ':\t\t', str(subv), '\n'])
+        f.write('\n')
+        f.write('-' * 30)
+        f.write('\n')
 
 
 def evaluate(model, dataloader, device, threshold=None):
@@ -241,16 +213,16 @@ def prepare_PTB_dataloader(args):
 
 def supervised(args):
 
-    records = {}
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    records = {}
     records['global'] = [
         ('epoch', args.epochs),
         ('warmup_epochs', args.warmup_epochs),
         ('seed', args.seed)
     ]
 
+    # get data loaders
     records['data'] = [
         ('name', args.dataset),
         ('subset', args.subset),
@@ -258,154 +230,23 @@ def supervised(args):
         ('num_workers', args.num_workers), 
         ('sampling_rate', args.sampling_rate),
     ]
-
-    # get data loaders
     if args.dataset == "TUAB":
         train_loader, test_loader, val_loader = prepare_TUAB_dataloader(args)
 
     else:
         raise NotImplementedError
 
+    # define the model
     records['model'] = [
         ('name', args.model),
         ('in_channels', args.in_channels),
         ('n_classes', args.n_classes),
     ]
+    with torch.random.fork_rng('cpu'):
+        model = load_model_by_args(args, records)
+        model.to(device)
 
-    # with torch.random.fork_rng()
-
-    # define the model
-    if args.model == "SPaRCNet":
-        model = SPaRCNet(
-            in_channels=args.in_channels,
-            sample_length=int(args.sampling_rate * args.sample_length),
-            n_classes=args.n_classes,
-            block_layers=4,
-            growth_rate=16,
-            bn_size=16,
-            drop_rate=0.5,
-            conv_bias=True,
-            batch_norm=True,
-        )
-
-    elif args.model == "ContraWR":
-        model = ContraWR(
-            in_channels=args.in_channels,
-            n_classes=args.n_classes,
-            fft=args.token_size,
-            steps=args.hop_length // 5,
-        )
-
-    elif args.model == "CNNTransformer":
-        model = CNNTransformer(
-            in_channels=args.in_channels,
-            n_classes=args.n_classes,
-            fft=args.sampling_rate,
-            steps=args.hop_length // 5,
-            dropout=0.2,
-            nhead=4,
-            emb_size=256,
-        )
-
-    elif args.model == "FFCL":
-        model = FFCL(
-            in_channels=args.in_channels,
-            n_classes=args.n_classes,
-            fft=args.token_size,
-            steps=args.hop_length // 5,
-            sample_length=int(args.sampling_rate * args.sample_length),
-            shrink_steps=20,
-        )
-
-    elif args.model == "STTransformer":
-        model = STTransformer(
-            emb_size=256,
-            depth=4,
-            n_classes=args.n_classes,
-            channel_legnth=int(
-                args.sampling_rate * args.sample_length
-            ),  # (sampling_rate * duration)
-            n_channels=args.in_channels,
-        )
-
-    elif args.model == "BIOT":
-        model = BIOTClassifier(
-            n_classes=args.n_classes,
-            # set the n_channels according to the pretrained model if necessary
-            n_channels=args.in_channels,
-            n_fft=args.token_size,
-            hop_length=args.hop_length,
-        )
-        records['model'] += [
-            ('token_size', args.token_size),
-            ('hop_length', args.hop_length),
-        ]
-
-        if args.pretrain_model_path and (args.sampling_rate == 200):
-            model.biot.load_state_dict(torch.load(args.pretrain_model_path))
-            print(f"load pretrain model from {args.pretrain_model_path}")
-
-    elif args.model == "CBIOT":
-        model = CusBiotClassifier(
-            n_classes=args.n_classes,
-            # set the n_channels according to the pretrained model if necessary
-            n_channels=args.in_channels,
-            n_fft=args.token_size,
-            hop_length=args.hop_length,
-        )
-        records['model'] += [
-            ('token_size', args.token_size),
-            ('hop_length', args.hop_length),
-        ]
-
-    elif args.model == "TKBIOT":
-        model = TopKBiotClassifier(
-            n_classes=args.n_classes,
-            # set the n_channels according to the pretrained model if necessary
-            n_channels=args.in_channels,
-            n_fft=args.token_size,
-            hop_length=args.hop_length,
-            k=args.k
-        )
-        records['model'] += [
-            ('token_size', args.token_size),
-            ('hop_length', args.hop_length),
-            ('k', args.k)
-        ]
-    elif args.model == "SABIOT":
-        model = TopKBiotClassifier(
-            n_classes=args.n_classes,
-            # set the n_channels according to the pretrained model if necessary
-            n_channels=args.in_channels,
-            n_fft=args.token_size,
-            hop_length=args.hop_length,
-            k = 0
-        )
-        records['model'] += [
-            ('token_size', args.token_size),
-            ('hop_length', args.hop_length),
-        ]
-
-    elif args.model == "ToMeBIOT":
-        model = ToMeBiotClassifier(
-            n_classes=args.n_classes,
-            # set the n_channels according to the pretrained model if necessary
-            n_channels=args.in_channels,
-            n_fft=args.token_size,
-            hop_length=args.hop_length,
-            r = args.k
-        )
-        records['model'] += [
-            ('token_size', args.token_size),
-            ('hop_length', args.hop_length),
-            ('r', args.k)
-        ]
-    else:
-        raise NotImplementedError
-
-    # records['args'].extend([(k, v) for k, v in vars(args).items()])
-
-    model.to(device)
+    # define the optimizer
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=args.lr,
@@ -417,11 +258,12 @@ def supervised(args):
         ('weight_decay', args.weight_decay)
     ]
 
+    # define the learning rate scheduler
     tmp = {'mode': 'max', 'factor': 0.5, 'patience': 3, 'cooldown': 3}
+    records["sche"] = [('name', 'ReduceLROnPlateau')] + [(k, v) for k, v in tmp.items()]
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, **tmp
     )
-    records["sche"] = [('name', 'ReduceLROnPlateau')] + [(k, v) for k, v in tmp.items()]
 
     best_val_auroc = -1
     best_threshold = 0.5
@@ -429,22 +271,15 @@ def supervised(args):
     best_val_result = None
     patience = 10
     patience_counter = 0
+    # For logging
+    sorted_metrics = None
 
+    # configs for quick stopping
     records['qstp'] = [('patience', patience)]
 
-    from pathlib import Path
-    log_file_name = Path(".", "logs", args.tag, f"{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_{args.model}_{args.dataset}.log")
-    log_file_name.parent.mkdir(parents=True, exist_ok=True)
-    with open(log_file_name, 'a') as f:
-        for key, value in records.items():
-            f.writelines([key, ':\n'])
-            for subk, subv in value:
-                f.writelines(['\t', subk, ':\t\t', str(subv), '\n'])
-        f.write('\n')
-        f.write('-' * 30)
-        f.write('\n')
-
-    sorted_metrics = None
+    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_file_name = Path(".", "logs", args.tag, f"{run_timestamp}_{args.model}_{args.dataset}.log")
+    write_records_to_log( log_file_name, records )
 
     for epoch in range(args.epochs):
         model.train()
@@ -475,8 +310,7 @@ def supervised(args):
         if epoch >= args.warmup_epochs:
             scheduler.step(val_result['roc_auc'])
 
-        # log & checkpoint
-        run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        # Log metrics
         with open(log_file_name, 'a') as f:
             if sorted_metrics is None:
                 sorted_metrics = list(val_result.keys())
@@ -491,8 +325,9 @@ def supervised(args):
         # Save checkpoint for each epoch
         save_dir = Path('./checkpoints/')
         save_dir.mkdir(exist_ok=True)
-        torch.save(model.state_dict(), save_dir / f"{args.tag}_{args.model}_{args.dataset}_epoch_{epoch+1}_{run_timestamp}.pt")
+        torch.save(model.state_dict(), save_dir / f"{args.tag}_{args.model}_{args.dataset}_{run_timestamp}_epoch_{epoch+1}.pt")
 
+        # Quick-stopping
         if val_result['roc_auc'] > best_val_auroc:
             best_val_auroc = val_result['roc_auc']
             best_threshold = val_threshold
