@@ -50,7 +50,7 @@ def main():
     parser = ArgumentParser()
     parser.add_argument('--tag', type=str, required=True)
     parser.add_argument('--subset', type=str, required=True)
-    parser.add_argument('--seed', action='extend', type=int, nargs='+', default=[])
+    parser.add_argument('--seed', type=int, required=True)
     parser.add_argument('--model', action='extend', type=str, nargs='*', default=[])
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--batch_size', type=int, default=128)
@@ -58,7 +58,6 @@ def main():
     parser.add_argument('--lr', default=1e-4)
 
     parser.add_argument('--dry', action='store_true')
-    parser.add_argument('--seed_first', action='store_true')
 
     parsed = parser.parse_args()
 
@@ -68,7 +67,6 @@ def main():
     parsed_args = dict(vars(parsed))
     parsed_args.pop('dry', None)
     parsed_args.pop('seed', None)
-    parsed_args.pop('seed_first', None)
     parsed_args.pop('model', None)
 
     combined_args.update(parsed_args)
@@ -76,19 +74,13 @@ def main():
     summary_file = Path('.', 'logs', parsed.tag, 'summary.csv')
     summary_file.parent.mkdir(parents=True, exist_ok=True)
 
-    seeds_to_run = parsed.seed
     models_to_run = model_args if parsed.model is None else [(it, model_args[it]) for it in parsed.model if it in model_args]
     models_to_run = [(k, [it for subk, subv in v.items() for it in [f'--{subk}', f'{subv}']]) for k, v in models_to_run]
 
     shared_args = [ it for k, v in combined_args.items() for it in [f'--{k}', f'{v}'] ]
-    if parsed.seed_first:
-        for seed in seeds_to_run:
-            for model_arg in models_to_run:
-                go_exec(shared_args, seed, model_arg, summary_file)
-    else:
-        for model_arg in models_to_run:
-            for seed in seeds_to_run:
-                go_exec(shared_args, seed, model_arg, summary_file)
+
+    for model_arg in models_to_run:
+        go_exec(shared_args, parsed.seed, model_arg, summary_file)
 
 if __name__ == '__main__':
     main()
