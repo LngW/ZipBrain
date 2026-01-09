@@ -128,13 +128,13 @@ def split_and_dump(fetch_folder : pathlib.Path, dump_folder, label):
 
 if __name__ == '__main__':
 
-    num_rec = 200
+    num_rec = 100
 
     src_path = '~/Datasets/TUH/tuh_eeg_abnormal/v3.0.1/edf/'
     org_path = './datasets/TUH/tuh_eeg_abnormal/v3.0.1/edf/{}/original/'.format(num_rec)
     tgt_path = './datasets/TUH/tuh_eeg_abnormal/v3.0.1/edf/{}/processed/'.format(num_rec)
 
-    create_minimal_dataset(num_rec, src_path, org_path)
+    # create_minimal_dataset(num_rec, src_path, org_path)
 
     for folder in ['train', 'val', 'test']:
         for idx, label in enumerate(['normal', 'abnormal']):
