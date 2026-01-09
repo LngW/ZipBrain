@@ -1,7 +1,7 @@
 import torch
 from torch import einsum, nn
-# from linear_attention_transformer.linear_attention_transformer import Chunk
-# from local_attention import LocalAttention
+
+from .blocks import ToMeBlock
 
 class MHSelfAttention(nn.Module):
     def __init__(self, dim, d_heads, heads, dropout, *args, **kwargs):
@@ -19,9 +19,9 @@ class MHSelfAttention(nn.Module):
     def forward(self, x):
         bsz, seq = x.shape[:2]
         # Transpose to (Batch, Heads, Seq, Dim) to mix over Sequence
-        q = self.to_q(x).view(bsz, seq, self.heads, -1).transpose(1, 2)
-        k = self.to_k(x).view(bsz, seq, self.heads, -1).transpose(1, 2)
-        v = self.to_v(x).view(bsz, seq, self.heads, -1).transpose(1, 2)
+        q = self.to_q(x).reshape(bsz, seq, self.heads, -1).transpose(1, 2)
+        k = self.to_k(x).reshape(bsz, seq, self.heads, -1).transpose(1, 2)
+        v = self.to_v(x).reshape(bsz, seq, self.heads, -1).transpose(1, 2)
 
         dim = q.shape[-1]
 
@@ -38,7 +38,17 @@ class MHSelfAttention(nn.Module):
         attn = self.to_out(attn)
         attn = self.dropout(attn)
 
+        return self._generate_output(attn, k)
+    
+    def _generate_output(self, attn, k):
         return attn
+
+class ToMeLinAttn(MHSelfAttention):
+    def __init__(self, dim, d_heads, heads, dropout, *args, **kwargs):
+        super().__init__(dim, d_heads, heads, dropout, *args, **kwargs)
+
+    def _generate_output(self, attn, k):
+        return attn, k
 
 class FeedForward(nn.Module):
     def __init__(self, dim, dropout, *args, **kwargs):
@@ -78,12 +88,28 @@ class EncoderLayer(nn.Module):
         x = x + self.ffn(x)
         return x
 
+class ToMeEncoderLayer(nn.Module):
+    def __init__(self, dim, attn, ffn, r = 2, *args, **kwargs):
+        super().__init__()
+        self.attn = PreNorm(dim, attn)
+        self.ffn = PreNorm(dim, ffn)
+        self.block = ToMeBlock(r)
+    
+    def forward(self, x):
+        attn, k = self.attn(x)
+        x = x + attn
+
+        x = self.block(x, k)
+        
+        x = x + self.ffn(x)
+        return x
+
 class LinearAttentionEncoder(nn.Module):
     def __init__(self, dim, heads, depth, ff_dropout = 0., attn_dropout = 0., *args, **kwargs):
         super().__init__()
         layers = nn.ModuleList()
         for _ in range(depth):
-            ffn = FeedForward(dim, ff_dropout)
+            ffn = FeedForward(dim, dropout=ff_dropout)
             attn = MHSelfAttention(dim, heads, dim // heads, attn_dropout)
             layers.append(nn.ModuleList([
                 PreNorm(dim, attn),
@@ -96,4 +122,27 @@ class LinearAttentionEncoder(nn.Module):
         for (f, g) in self.layers:
             x = x + f(x)
             x = x + g(x)
+        return x
+    
+class ToMeEncoder(nn.Module):
+    def __init__(self, emb_size, heads, r, num_layers, dropout=0.1, **kwargs):
+        super().__init__()
+        ffn = FeedForward(emb_size, dropout=0)
+        attn = ToMeLinAttn(emb_size, heads, emb_size // heads, dropout)
+        self.layers = nn.ModuleList([
+            ToMeEncoderLayer(emb_size, attn, ffn, r)
+            for _ in range(num_layers)
+        ])
+
+        self._tome_info = {
+            'size': None
+        }
+
+        for layer in self.layers:
+            layer.block._tome_info = self._tome_info
+
+    def forward(self, x):
+        self._tome_info['size'] = None
+        for layer in self.layers:
+            x = layer(x)
         return x

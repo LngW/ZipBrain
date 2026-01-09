@@ -87,12 +87,13 @@ def load_model_by_args(args, records):
             if args.pretrain_model_path and (args.sampling_rate == 200):
                 model.biot.load_state_dict(torch.load(args.pretrain_model_path))
                 print(f"load pretrain model from {args.pretrain_model_path}")
-    elif args.model in ['CBIOT', 'TKBIOT', 'SABIOT', 'ToMeBIOT']:
+    elif args.model in ['CBIOT', 'TKBIOT', 'SABIOT', 'ToMeBIOT', 'ToMeCBIOT']:
 
         from model import (
             TopKBiotClassifier, 
             ToMeBiotClassifier, 
-            CusBIOTClassifier
+            CusBIOTClassifier,
+            ToMeCBiotClassifier,
         )
 
         if args.model == "CBIOT":
@@ -151,7 +152,32 @@ def load_model_by_args(args, records):
                 ('hop_length', args.hop_length),
                 ('r', args.k)
             ]
+        elif args.model == "ToMeCBIOT":
+            model = ToMeCBiotClassifier(
+                n_classes=args.n_classes,
+                # set the n_channels according to the pretrained model if necessary
+                n_channels=args.in_channels,
+                n_fft=args.token_size,
+                hop_length=args.hop_length,
+                r = args.k
+            )
+            records['model'] += [
+                ('token_size', args.token_size),
+                ('hop_length', args.hop_length),
+                ('r', args.k)
+            ]
     else:
         raise NotImplementedError
     
     return model
+
+
+if __name__ == '__main__':
+    from thirdparty.BIOT.model.biot import BIOTClassifier
+    from model.biot_cus import BIOTClassifier as CusBIOTClassifier
+
+    biot = BIOTClassifier(n_classes=1, n_channels=16, n_fft=200, hop_length=100)
+    cusBiot = CusBIOTClassifier(n_classes=1, n_channels=16, n_fft=200, hop_length=100)
+
+    print(biot)
+    print(cusBiot)

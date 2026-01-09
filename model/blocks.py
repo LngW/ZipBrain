@@ -88,7 +88,7 @@ class ToMeBlock(nn.Module):
         if self.r > 0:
             bsz, hd, seq, _ = k.shape
             merge, _ = bipartite_soft_matching(
-                k.transpose(1,2).view(bsz, seq, -1),
+                k.transpose(1,2).reshape(bsz, seq, -1),
                 self.r
             )
 

@@ -33,6 +33,7 @@ def main():
 
     model_args = {
         'BIOT': {'model': 'BIOT'},
+        'CBIOT': {'model': 'CBIOT'},
         'SABIOT': {'model': 'SABIOT'},
         'T3BIOT': {'model': 'TKBIOT','k': 3},
         'T5BIOT': {'model': 'TKBIOT','k': 5},
@@ -45,6 +46,9 @@ def main():
         'ToMeBIOTr38': {'model': 'ToMeBIOT','k': 38},
         'ToMeBIOTr19': {'model': 'ToMeBIOT','k': 19},
         'ToMeBIOTr9': {'model': 'ToMeBIOT','k': 9},
+        'ToMeCBIOTr38': {'model': 'ToMeCBIOT', 'k': 38},
+        'ToMeCBIOTr19': {'model': 'ToMeCBIOT', 'k': 19},
+        'ToMeCBIOTr9': {'model': 'ToMeCBIOT', 'k': 9},
     }
 
     parser = ArgumentParser()
