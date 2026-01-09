@@ -169,6 +169,10 @@ def load_model_by_args(args, records):
     else:
         raise NotImplementedError
     
+    records['model'] += [
+        ('model_struct', ''.join(f'\n\t\t{it}' for it in str(model).split('\n')))
+    ]
+
     return model
 
 
