@@ -1,6 +1,13 @@
 import torch
 
 def load_model_by_args(args, records):
+
+    records['model'] = [
+        ('name', args.model),
+        ('in_channels', args.in_channels),
+        ('n_classes', args.n_classes),
+    ]
+
     if args.model in ['SPaRCNet', 'ContraWR', 'CNNTransformer', 'FFCL', 'STTransformer', 'BIOT']:
         from thirdparty.BIOT.model import (
             SPaRCNet,

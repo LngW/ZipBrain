@@ -12,6 +12,7 @@ import torch.nn as nn
 from thirdparty.BIOT.utils import TUABLoader, CHBMITLoader, PTBLoader, BCE
 
 from models import load_model_by_args
+from datas import prepare_dataloader_by_args
 
 def write_records_to_log(log_file_name, records):
     log_file_name.parent.mkdir(parents=True, exist_ok=True)
@@ -66,150 +67,28 @@ def evaluate(model, dataloader, device, threshold=None):
     )
     return result, threshold
 
-
-def prepare_TUAB_dataloader(args):
-    # set random seed
-    seed = args.seed
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-
-    # root = "/srv/local/data/TUH/tuh3/tuh_eeg_abnormal/v3.0.0/edf/processed"
-    # if args.adaptive:
-    #     root = "./datasets/TUH/tuh_eeg_abnormal/v3.0.1/edf/processed3"
-    # else:
-    root = "./datasets/TUH/tuh_eeg_abnormal/v3.0.1/edf/{}/processed".format(args.subset)
-
-    train_files = os.listdir(os.path.join(root, "train"))
-    np.random.shuffle(train_files)
-    # train_files = train_files[:100000]
-    val_files = os.listdir(os.path.join(root, "val"))
-    test_files = os.listdir(os.path.join(root, "test"))
-
-    print(len(train_files), len(val_files), len(test_files))
-
-    # collate_fn = None
-
-    # prepare training and test data loader
-    train_loader = torch.utils.data.DataLoader(
-        TUABLoader(os.path.join(root, "train"),
-                   train_files, args.sampling_rate),
-        batch_size=args.batch_size,
-        shuffle=True,
-        drop_last=True,
-        num_workers=args.num_workers,
-        persistent_workers=True,
-        # collate_fn=collate_fn,
-    )
-    test_loader = torch.utils.data.DataLoader(
-        TUABLoader(os.path.join(root, "test"), test_files, args.sampling_rate),
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.num_workers,
-        persistent_workers=True,
-        # collate_fn=collate_fn,
-    )
-    val_loader = torch.utils.data.DataLoader(
-        TUABLoader(os.path.join(root, "val"), val_files, args.sampling_rate),
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.num_workers,
-        persistent_workers=True,
-        # collate_fn=collate_fn,
-    )
-    print(len(train_loader), len(val_loader), len(test_loader))
-    return train_loader, test_loader, val_loader
-
-
-def prepare_CHB_MIT_dataloader(args):
-    # set random seed
-    seed = 12345
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-
-    root = "/srv/local/data/physionet.org/files/chbmit/1.0.0/clean_segments"
-
-    train_files = os.listdir(os.path.join(root, "train"))
-    val_files = os.listdir(os.path.join(root, "val"))
-    test_files = os.listdir(os.path.join(root, "test"))
-
-    print(len(train_files), len(val_files), len(test_files))
-
-    # prepare training and test data loader
-    train_loader = torch.utils.data.DataLoader(
-        CHBMITLoader(os.path.join(root, "train"),
-                     train_files, args.sampling_rate),
-        batch_size=args.batch_size,
-        shuffle=True,
-        drop_last=True,
-        num_workers=args.num_workers,
-        persistent_workers=True,
-    )
-    test_loader = torch.utils.data.DataLoader(
-        CHBMITLoader(os.path.join(root, "test"),
-                     test_files, args.sampling_rate),
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.num_workers,
-        persistent_workers=True,
-    )
-    val_loader = torch.utils.data.DataLoader(
-        CHBMITLoader(os.path.join(root, "val"), val_files, args.sampling_rate),
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.num_workers,
-        persistent_workers=True,
-    )
-    print(len(train_loader), len(val_loader), len(test_loader))
-    return train_loader, test_loader, val_loader
-
-
-def prepare_PTB_dataloader(args):
-    # set random seed
-    seed = 12345
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-
-    root = "/srv/local/data/WFDB/processed2"
-
-    train_files = os.listdir(os.path.join(root, "train"))
-    val_files = os.listdir(os.path.join(root, "val"))
-    test_files = os.listdir(os.path.join(root, "test"))
-
-    print(len(train_files), len(val_files), len(test_files))
-
-    # prepare training and test data loader
-    train_loader = torch.utils.data.DataLoader(
-        PTBLoader(os.path.join(root, "train"),
-                  train_files, args.sampling_rate),
-        batch_size=args.batch_size,
-        shuffle=True,
-        drop_last=True,
-        num_workers=args.num_workers,
-        persistent_workers=True,
-    )
-    test_loader = torch.utils.data.DataLoader(
-        PTBLoader(os.path.join(root, "test"), test_files, args.sampling_rate),
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.num_workers,
-        persistent_workers=True,
-    )
-    val_loader = torch.utils.data.DataLoader(
-        PTBLoader(os.path.join(root, "val"), val_files, args.sampling_rate),
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.num_workers,
-        persistent_workers=True,
-    )
-    print(len(train_loader), len(val_loader), len(test_loader))
-    return train_loader, test_loader, val_loader
-
+def create_optimizer_by_args(args, records, model):
+    optim_name = args.optimizer.lower()
+    if optim_name == 'adam':
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+        )
+    elif optim_name == 'adamw':
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr = args.lr,
+            weight_decay=args.weight_decay,
+        )
+    else:
+        raise NotImplementedError("Optimizers other than Adam and AdamW are not supported now")
+    records['optim'] = [
+        ('name', args.optimizer),
+        ('learning_rate', args.lr),
+        ('weight_decay', args.weight_decay),
+    ]
+    return optimizer
 
 def supervised(args):
 
@@ -223,40 +102,15 @@ def supervised(args):
     ]
 
     # get data loaders
-    records['data'] = [
-        ('name', args.dataset),
-        ('subset', args.subset),
-        ('batch_size', args.batch_size), 
-        ('num_workers', args.num_workers), 
-        ('sampling_rate', args.sampling_rate),
-    ]
-    if args.dataset == "TUAB":
-        train_loader, test_loader, val_loader = prepare_TUAB_dataloader(args)
-
-    else:
-        raise NotImplementedError
+    train_loader, test_loader, val_loader = prepare_dataloader_by_args(args, records)
 
     # define the model
-    records['model'] = [
-        ('name', args.model),
-        ('in_channels', args.in_channels),
-        ('n_classes', args.n_classes),
-    ]
     with torch.random.fork_rng([torch.device('cpu')]):
         model = load_model_by_args(args, records)
         model.to(device)
 
     # define the optimizer
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=args.lr,
-        weight_decay=args.weight_decay,
-    )
-    records['optim'] = [
-        ('name', 'Adam'),
-        ('learning_rate', args.lr),
-        ('weight_decay', args.weight_decay)
-    ]
+    optimizer = create_optimizer_by_args(args, records, model)
 
     # define the learning rate scheduler
     tmp = {'mode': 'max', 'factor': 0.5, 'patience': 3, 'cooldown': 3}
@@ -318,7 +172,7 @@ def supervised(args):
                 f.write(",\t".join(['epoch', 'timestamp', 'train_loss'] + sorted_metrics))
                 f.write("\n")
 
-            line = [epoch + 1, run_timestamp, train_loss] + [val_result[it] for it in sorted_metrics]
+            line = [epoch + 1, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), train_loss] + [val_result[it] for it in sorted_metrics]
             f.write(',\t'.join([str(it) for it in line]))
             f.write('\n')
 
@@ -369,6 +223,7 @@ def parse_and_exec(args = None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=100,
                         help="number of epochs")
+    parser.add_argument("--optimizer", type=str, default='Adam', choices=['Adam', 'AdamW'])
     parser.add_argument("--lr", type=float, default=1e-3, help="learning rate")
     parser.add_argument("--weight_decay", type=float,
                         default=1e-5, help="weight decay")
