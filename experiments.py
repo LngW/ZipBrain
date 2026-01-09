@@ -1,23 +1,6 @@
 from argparse import ArgumentParser
 from pathlib import Path
 
-def go_exec(shared, seed, model_arg, summary_file):
-    from run_binary_supervised import parse_and_exec
-    metric_keys, results = parse_and_exec(shared + ['--seed', str(seed)] + model_arg[1])
-
-    first_append = not summary_file.exists()
-    with open(summary_file, 'a') as handle:
-        if first_append:
-            handle.write(",".join(['model', 'seed'] + metric_keys))
-            handle.write('\n')
-            first_append = False
-
-        to_log = [model_arg[0], seed] + [results[it] for it in metric_keys]
-
-        handle.write(",".join([str(it) for it in to_log]))
-        handle.write('\n')
-        handle.flush()
-
 def main():
     args = {
         'dataset': 'TUAB',
@@ -55,7 +38,7 @@ def main():
     parser.add_argument('--tag', type=str, required=True)
     parser.add_argument('--subset', type=str, required=True)
     parser.add_argument('--seed', type=int, required=True)
-    parser.add_argument('--model', action='extend', type=str, nargs='*', default=[])
+    parser.add_argument('--model', type=str, required=True)
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--num_workers', type=int, default=4)
@@ -70,7 +53,6 @@ def main():
 
     parsed_args = dict(vars(parsed))
     parsed_args.pop('dry', None)
-    parsed_args.pop('seed', None)
     parsed_args.pop('model', None)
 
     combined_args.update(parsed_args)
@@ -78,13 +60,33 @@ def main():
     summary_file = Path('.', 'logs', parsed.tag, 'summary.csv')
     summary_file.parent.mkdir(parents=True, exist_ok=True)
 
-    models_to_run = model_args if parsed.model is None else [(it, model_args[it]) for it in parsed.model if it in model_args]
-    models_to_run = [(k, [it for subk, subv in v.items() for it in [f'--{subk}', f'{subv}']]) for k, v in models_to_run]
+    if parsed.model not in model_args:
+        raise NotImplementedError("Un-supported model name")
+    
+    def map_dict_to_args(mapping):
+        return [it for k, v in mapping.items() for it in (f'--{k}', f'{v}')]
+    
+    compiled_args = ( 
+        map_dict_to_args(args) 
+        + map_dict_to_args(parsed_args) 
+        + map_dict_to_args(model_args[parsed.model])
+        )
+    
+    from run_binary_supervised import parse_and_exec
+    metric_keys, results = parse_and_exec(compiled_args)
 
-    shared_args = [ it for k, v in combined_args.items() for it in [f'--{k}', f'{v}'] ]
+    first_append = not summary_file.exists()
+    with open(summary_file, 'a') as handle:
+        if first_append:
+            handle.write(",".join(['model', 'seed'] + metric_keys))
+            handle.write('\n')
+            first_append = False
 
-    for model_arg in models_to_run:
-        go_exec(shared_args, parsed.seed, model_arg, summary_file)
+        to_log = [parsed.model, parsed.seed] + [results[it] for it in metric_keys]
+
+        handle.write(",".join([str(it) for it in to_log]))
+        handle.write('\n')
+        handle.flush()
 
 if __name__ == '__main__':
     main()
