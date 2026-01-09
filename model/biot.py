@@ -5,7 +5,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from linear_attention_transformer import LinearAttentionTransformer
+
+from .biot_blocks import create_biot_encoder_block
 
 class PatchFrequencyEmbedding(nn.Module):
     def __init__(self, emb_size=256, n_freq=101):
@@ -81,13 +82,14 @@ class BIOTEncoder(nn.Module):
         self.patch_embedding = PatchFrequencyEmbedding(
             emb_size=emb_size, n_freq=self.n_fft // 2 + 1
         )
-        self.transformer = LinearAttentionTransformer(
+        self.transformer = create_biot_encoder_block(
             dim=emb_size,
             heads=heads,
             depth=depth,
             max_seq_len=1024,
             attn_layer_dropout=0.2,  # dropout right after self-attention layer
             attn_dropout=0.2,  # dropout post-attention
+            **kwargs
         )
         self.positional_encoding = PositionalEncoding(emb_size)
 
