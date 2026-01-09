@@ -7,9 +7,8 @@ from pathlib import Path
 import torch
 from tqdm import tqdm
 import numpy as np
-import torch.nn as nn
 
-from thirdparty.BIOT.utils import TUABLoader, CHBMITLoader, PTBLoader, BCE
+from thirdparty.BIOT.utils import BCE
 
 from models import load_model_by_args
 from datas import prepare_dataloader_by_args
