@@ -38,9 +38,6 @@ class MultiHeadAttention(nn.Module):
         # (batch, heads, seq_len, seq_len)
         scores = torch.matmul(q, k.transpose(-2, -1)) / (self.emb_size // self.heads)**0.5
 
-        # Apply Top-K masking
-        # For each query, select the top-k keys
-        # If k <= 0, behaves as a vanilla multihead self-attention
         scores = self._score_masking(scores, q, k, v)
         
         attention_weights = self.softmax(scores)
@@ -59,6 +56,9 @@ class TopKSelfAttention(MultiHeadAttention):
         self.k = k
 
     def _score_masking(self, scores, q, k, v):
+        # Apply Top-K masking
+        # For each query, select the top-k keys
+        # If k <= 0, behaves as a vanilla multihead self-attention
         if self.k > 0:
             topk_scores, topk_indices = torch.topk(scores, self.k, dim=-1)
 

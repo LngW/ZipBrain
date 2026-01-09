@@ -89,83 +89,46 @@ def load_model_by_args(args, records):
                 print(f"load pretrain model from {args.pretrain_model_path}")
     elif args.model in ['CBIOT', 'TKBIOT', 'SABIOT', 'ToMeBIOT', 'ToMeCBIOT']:
 
-        from model import (
-            TopKBiotClassifier, 
-            ToMeBiotClassifier, 
-            CusBIOTClassifier,
-            ToMeCBiotClassifier,
-        )
+        from model import BIOTClassifier
+
+        kwargs = {}
+        records['model'] += [
+            ('token_size', args.token_size),
+            ('hop_length', args.hop_length),
+        ]
 
         if args.model == "CBIOT":
-            model = CusBIOTClassifier(
-                n_classes=args.n_classes,
-                # set the n_channels according to the pretrained model if necessary
-                n_channels=args.in_channels,
-                n_fft=args.token_size,
-                hop_length=args.hop_length,
-            )
-            records['model'] += [
-                ('token_size', args.token_size),
-                ('hop_length', args.hop_length),
-            ]
+            kwargs['variants'] = 'custom'
 
         elif args.model == "TKBIOT":
-            model = TopKBiotClassifier(
-                n_classes=args.n_classes,
-                # set the n_channels according to the pretrained model if necessary
-                n_channels=args.in_channels,
-                n_fft=args.token_size,
-                hop_length=args.hop_length,
-                k=args.k
-            )
-            records['model'] += [
-                ('token_size', args.token_size),
-                ('hop_length', args.hop_length),
-                ('k', args.k)
-            ]
+            kwargs['variants'] = 'topk'
+            kwargs['k'] = args.k
+
+            records['model'] += [ ('k', args.k) ]
 
         elif args.model == "SABIOT":
-            model = TopKBiotClassifier(
-                n_classes=args.n_classes,
-                # set the n_channels according to the pretrained model if necessary
-                n_channels=args.in_channels,
-                n_fft=args.token_size,
-                hop_length=args.hop_length,
-                k = 0
-            )
-            records['model'] += [
-                ('token_size', args.token_size),
-                ('hop_length', args.hop_length),
-            ]
+            kwargs['variants'] = 'topk'
+            kwargs['k'] = 0
 
         elif args.model == "ToMeBIOT":
-            model = ToMeBiotClassifier(
-                n_classes=args.n_classes,
-                # set the n_channels according to the pretrained model if necessary
-                n_channels=args.in_channels,
-                n_fft=args.token_size,
-                hop_length=args.hop_length,
-                r = args.k
-            )
-            records['model'] += [
-                ('token_size', args.token_size),
-                ('hop_length', args.hop_length),
-                ('r', args.k)
-            ]
+            kwargs['variants'] = 'tome'
+            kwargs['r'] = args.k
+            records['model'] += [ ('r', args.k) ]
+
         elif args.model == "ToMeCBIOT":
-            model = ToMeCBiotClassifier(
-                n_classes=args.n_classes,
-                # set the n_channels according to the pretrained model if necessary
-                n_channels=args.in_channels,
-                n_fft=args.token_size,
-                hop_length=args.hop_length,
-                r = args.k
-            )
-            records['model'] += [
-                ('token_size', args.token_size),
-                ('hop_length', args.hop_length),
-                ('r', args.k)
-            ]
+            kwargs['variants'] = 'ctome'
+            kwargs['r'] = args.k
+            records['model'] += [ ('r', args.k) ]
+
+        model = BIOTClassifier(
+            n_classes=args.n_classes,
+            # set the n_channels according to the pretrained model if necessary
+            n_channels=args.in_channels,
+            n_fft=args.token_size,
+            hop_length=args.hop_length,
+            **kwargs
+        )
+        
     else:
         raise NotImplementedError
     
