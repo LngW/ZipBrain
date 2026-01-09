@@ -18,7 +18,7 @@ def create_biot_encoder_block(
             k = kwargs['k'],
             ffn_hidden_size=dim * 4,
             num_layers=depth,
-            dropout=attn_dropout
+            dropout=attn_dropout,
         )
     elif variants == 'tome':
         from .blocks import ToMeEncoder

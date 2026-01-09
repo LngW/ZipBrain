@@ -72,87 +72,107 @@ class TopKSelfAttention(MultiHeadAttention):
         return scores
 
 class ToMeAttention(MultiHeadAttention):
-    def __init__(self, emb_size, heads, k, dropout=0.1, *args, **kwargs):
+    def __init__(self, emb_size, heads, dropout=0.1, *args, **kwargs):
         super().__init__(emb_size, heads, dropout, *args, **kwargs)
 
     def _generate_returns(self, out, score, q, k, v):
         return out, k
 
-class ToMeBlock(nn.Module):
-    def __init__(self, r = 2, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.r = r
+def ToMeBlock(r = 2, *args, **kwargs):
+    from .tome.merge import bipartite_soft_matching, merge_wavg
 
-    def forward(self, x, k):
-        from .tome.merge import bipartite_soft_matching, merge_wavg
-        if self.r > 0:
+    class ToMeBlock(nn.Module):
+        def __init__(self, r = 2, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.r = r
+
+        def forward(self, x, k, size_old):
             bsz, hd, seq, _ = k.shape
             merge, _ = bipartite_soft_matching(
                 k.transpose(1,2).reshape(bsz, seq, -1),
                 self.r
             )
 
-            x, self._tome_info['size'] = merge_wavg(merge, x, self._tome_info['size'])
+            x, size = merge_wavg(merge, x, size_old)
 
-        return x
+            return x, size
         
+    return ToMeBlock(r = r, *args, **kwargs)
+    
+class FeedForward(nn.Module):
+    def __init__(self, emb_size, ffn_hidden_size, ffn_dropout, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.w1 = nn.Linear(emb_size, ffn_hidden_size)
+        self.act = nn.GELU()
+        self.dropout = nn.Dropout(ffn_dropout)
+        self.w2 = nn.Linear(ffn_hidden_size, emb_size)
+
+    def forward(self, x):
+        x = self.w1(x)
+        x = self.act(x)
+        x = self.dropout(x)
+        x = self.w2(x)
+        return x
+
+class PreNorm(nn.Module):
+    def __init__(self, dim, fn, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.norm = nn.LayerNorm(dim)
+        self.fn = fn
+
+    def forward(self, x):
+        return self.fn(self.norm(x))
+
+class PreNormResBlock(nn.Module):
+    def __init__(self, dim, fn, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.norm = nn.LayerNorm(dim)
+        self.fn = fn
+
+    def forward(self, x):
+        x = x + self.fn(self.norm(x))
+        return x
 
 class TopKEncoderLayer(nn.Module):
     def __init__(self, emb_size, heads, k, ffn_hidden_size, dropout=0.1):
         super().__init__()
-        self.attention = TopKSelfAttention(emb_size, heads, k, dropout)
-        self.norm1 = nn.LayerNorm(emb_size)
-        self.norm2 = nn.LayerNorm(emb_size)
-        self.ffn = nn.Sequential(
-            nn.Linear(emb_size, ffn_hidden_size),
-            nn.GELU(),
-            nn.Linear(ffn_hidden_size, emb_size),
-            nn.Dropout(dropout)
-        )
-        # self.attn_layer_dropout = nn.Dropout(dropout)
+        attn = TopKSelfAttention(emb_size, heads, k, dropout)
+        ffn = FeedForward(emb_size, ffn_hidden_size, 0)
+        self.attention = PreNormResBlock(emb_size, attn)
+        self.ffn = PreNormResBlock(emb_size, ffn)
 
     def forward(self, x):
         # Self-attention part
-        attn_output = self.attention(self.norm1(x))
-        x = x + attn_output
+        x = self.attention(x)
 
         # FFN part
-        # x = self.norm2(x)
-        ffn_output = self.ffn(self.norm2(x))
-        x = x + ffn_output
-
+        x = self.ffn(x)
         return x
 
 class ToMeEncoderLayer(nn.Module):
     def __init__(self, emb_size, heads, r, ffn_hidden_size, dropout=0.1):
         super().__init__()
-        self.attention = ToMeAttention(emb_size, heads, dropout)
+        attn = ToMeAttention(emb_size, heads, dropout)
+        ffn = FeedForward(emb_size, ffn_hidden_size, 0)
+
+        self.attention = PreNorm(emb_size, attn)
         self.block = ToMeBlock(r)
-        self.norm1 = nn.LayerNorm(emb_size)
-        self.norm2 = nn.LayerNorm(emb_size)
-        self.ffn = nn.Sequential(
-            nn.Linear(emb_size, ffn_hidden_size),
-            nn.GELU(),
-            nn.Linear(ffn_hidden_size, emb_size),
-            nn.Dropout(dropout)
-        )
-        # self.attn_layer_dropout = nn.Dropout(dropout)
+        self.ffn = PreNorm(emb_size, ffn)
 
-    def forward(self, x):
+    def forward(self, x, size):
         # Self-attention part
-        # x = self.norm1(x)
-        attn_output, k = self.attention(self.norm1(x))
-        x = x + attn_output
+        x_, k = self.attention(x)
+        x = x + x_
 
-        x = self.block(x, k)
-
-        # x = self.norm2(x)
+        # ToMe part
+        x, size = self.block(x, k, size)
 
         # FFN part
-        ffn_output = self.ffn(self.norm2(x))
+        ffn_output = self.ffn(x)
         x = x + ffn_output
 
-        return x
+        return x, size
 
 class TopKEncoder(nn.Module):
     def __init__(self, emb_size, heads, k, ffn_hidden_size, num_layers, dropout=0.1):
@@ -170,19 +190,6 @@ class TopKEncoder(nn.Module):
             x = layer(x)
         return x
 
-class VanillaEncoder(nn.Module):
-    def __init__(self, emb_size, heads, ffn_hidden_size, num_layers, dropout=0.1):
-        super().__init__()
-        self.layers = nn.ModuleList([
-            TopKEncoderLayer(emb_size, heads, 0, ffn_hidden_size, dropout)
-            for _ in range(num_layers)
-        ])
-
-    def forward(self, x):
-        for layer in self.layers:
-            x = layer(x)
-        return x
-    
 class ToMeEncoder(nn.Module):
     def __init__(self, emb_size, heads, r, ffn_hidden_size, num_layers, dropout=0.1):
         super().__init__()
@@ -191,15 +198,16 @@ class ToMeEncoder(nn.Module):
             for _ in range(num_layers)
         ])
 
-        self._tome_info = {
-            'size': None
-        }
+        # self._tome_info = {
+        #     'size': None
+        # }
 
-        for layer in self.layers:
-            layer.block._tome_info = self._tome_info
+        # for layer in self.layers:
+        #     layer.block._tome_info = self._tome_info
 
     def forward(self, x):
-        self._tome_info['size'] = None
+        # self._tome_info['size'] = None
+        size = None
         for layer in self.layers:
-            x = layer(x)
+            x, size = layer(x, size)
         return x

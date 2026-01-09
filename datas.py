@@ -26,17 +26,23 @@ def prepare_dataloader_by_args(args, records):
 
 
 def prepare_TUAB_dataloader(args):
-    # set random seed
-    seed = args.seed
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
+    # set random seed # Moved to run_binary_supervised !
+    # seed = args.seed
+    # torch.manual_seed(seed)
+    # torch.cuda.manual_seed(seed)
+    # torch.cuda.manual_seed_all(seed)
+    # np.random.seed(seed)
+    # torch.use_deterministic_algorithms(True)
+    # torch.backends.cudnn.benchmark=False
+    # torch.backends.cudnn.deterministic=True
+
+    generator = torch.Generator()
+    generator.manual_seed(args.seed)
 
     root = "./datasets/TUH/tuh_eeg_abnormal/v3.0.1/edf/{}/processed".format(args.subset)
 
     train_files = os.listdir(os.path.join(root, "train"))
-    np.random.shuffle(train_files)
+    np.random.default_rng(args.seed).shuffle(train_files)
     # train_files = train_files[:100000]
     val_files = os.listdir(os.path.join(root, "val"))
     test_files = os.listdir(os.path.join(root, "test"))
@@ -54,6 +60,7 @@ def prepare_TUAB_dataloader(args):
         drop_last=True,
         num_workers=args.num_workers,
         persistent_workers=True,
+        generator=generator
         # collate_fn=collate_fn,
     )
     test_loader = torch.utils.data.DataLoader(

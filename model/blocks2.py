@@ -92,8 +92,8 @@ class ToMeEncoderLayer(nn.Module):
     def __init__(self, dim, attn, ffn, r = 2, *args, **kwargs):
         super().__init__()
         self.attn = PreNorm(dim, attn)
-        self.ffn = PreNorm(dim, ffn)
         self.block = ToMeBlock(r)
+        self.ffn = PreNorm(dim, ffn)
     
     def forward(self, x):
         attn, k = self.attn(x)

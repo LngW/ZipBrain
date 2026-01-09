@@ -66,6 +66,15 @@ def evaluate(model, dataloader, device, threshold=None):
     )
     return result, threshold
 
+def set_seeds(args):
+    seed = args.seed
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    torch.backends.cudnn.benchmark=False
+    torch.backends.cudnn.deterministic=True
+
 def create_optimizer_by_args(args, records, model):
     optim_name = args.optimizer.lower()
     if optim_name == 'adam':
@@ -99,6 +108,7 @@ def supervised(args):
         ('warmup_epochs', args.warmup_epochs),
         ('seed', args.seed)
     ]
+    set_seeds(args)
 
     # get data loaders
     train_loader, test_loader, val_loader = prepare_dataloader_by_args(args, records)
@@ -106,7 +116,7 @@ def supervised(args):
     # define the model
     with torch.random.fork_rng([torch.device('cpu')]):
         model = load_model_by_args(args, records)
-        model.to(device)
+    model.to(device)
 
     # define the optimizer
     optimizer = create_optimizer_by_args(args, records, model)
@@ -133,6 +143,9 @@ def supervised(args):
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     log_file_name = Path(".", "logs", args.tag, f"{run_timestamp}_{args.model}_{args.dataset}.log")
     write_records_to_log( log_file_name, records )
+
+    if args.epochs < 1:
+        return [], {}
 
     for epoch in range(args.epochs):
         model.train()
