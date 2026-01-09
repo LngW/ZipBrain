@@ -143,6 +143,7 @@ class ToMeEncoderLayer(nn.Module):
         # x = self.norm1(x)
         attn_output, k = self.attention(self.norm1(x))
         x = x + attn_output
+
         x = self.block(x, k)
 
         # x = self.norm2(x)
@@ -186,7 +187,7 @@ class ToMeEncoder(nn.Module):
     def __init__(self, emb_size, heads, r, ffn_hidden_size, num_layers, dropout=0.1):
         super().__init__()
         self.layers = nn.ModuleList([
-            ToMeEncoderLayer(emb_size, heads, 2, ffn_hidden_size, dropout)
+            ToMeEncoderLayer(emb_size, heads, r, ffn_hidden_size, dropout)
             for _ in range(num_layers)
         ])
 
