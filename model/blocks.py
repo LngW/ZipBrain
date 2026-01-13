@@ -197,15 +197,7 @@ class ToMeEncoder(nn.Module):
             for _ in range(num_layers)
         ])
 
-        # self._tome_info = {
-        #     'size': None
-        # }
-
-        # for layer in self.layers:
-        #     layer.block._tome_info = self._tome_info
-
     def forward(self, x):
-        # self._tome_info['size'] = None
         size = None
         for layer in self.layers:
             x, size = layer(x, size)
