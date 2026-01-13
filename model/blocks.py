@@ -123,24 +123,23 @@ class PreNorm(nn.Module):
 
     def forward(self, x):
         return self.fn(self.norm(x))
-
-class PreNormResBlock(nn.Module):
-    def __init__(self, dim, fn, *args, **kwargs):
+    
+class ResidualBlock(nn.Module):
+    def __init__(self, fn, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.norm = nn.LayerNorm(dim)
         self.fn = fn
-
-    def forward(self, x):
-        x = x + self.fn(self.norm(x))
-        return x
+    
+    def forward(self, x, **kwargs):
+        return x + self.fn(x)
 
 class TopKEncoderLayer(nn.Module):
     def __init__(self, emb_size, heads, k, ffn_hidden_size, dropout=0.1):
         super().__init__()
         attn = TopKSelfAttention(emb_size, heads, k, dropout)
         ffn = FeedForward(emb_size, ffn_hidden_size, 0)
-        self.attention = PreNormResBlock(emb_size, attn)
-        self.ffn = PreNormResBlock(emb_size, ffn)
+
+        self.attention = ResidualBlock(PreNorm(emb_size, attn))
+        self.ffn = ResidualBlock(PreNorm(emb_size, ffn))
 
     def forward(self, x):
         # Self-attention part

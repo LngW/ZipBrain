@@ -135,16 +135,22 @@ def load_model_by_args(args, records):
     records['model'] += [
         ('model_struct', ''.join(f'\n\t\t{it}' for it in str(model).split('\n')))
     ]
+    records['model'] += [('total_params', total_params)]
+    records['model'] += [('trainable_params', trainable_params)]
 
     return model
 
 
 if __name__ == '__main__':
     from thirdparty.BIOT.model.biot import BIOTClassifier
-    from model.biot_cus import BIOTClassifier as CusBIOTClassifier
+    # from model.biot_cus import BIOTClassifier as CusBIOTClassifier
 
-    biot = BIOTClassifier(n_classes=1, n_channels=16, n_fft=200, hop_length=100)
-    cusBiot = CusBIOTClassifier(n_classes=1, n_channels=16, n_fft=200, hop_length=100)
+    model = BIOTClassifier(n_classes=1, n_channels=16, n_fft=200, hop_length=100)
+    # cusBiot = CusBIOTClassifier(n_classes=1, n_channels=16, n_fft=200, hop_length=100)
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-    print(biot)
-    print(cusBiot)
+    print(model)
+    print('total_params: ', total_params)
+    print('trainable_params: ', trainable_params)
+    # print(cusBiot)

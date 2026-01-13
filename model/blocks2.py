@@ -32,8 +32,6 @@ class MHSelfAttention(nn.Module):
 
         context = einsum('bhnd,bhne->bhde', k, v)
         attn = einsum('bhnd,bhde->bhne', q, context)
-        # context = torch.matmul(k.transpose(-1, -2), v)
-        # attn = torch.matmul(q, context)
         attn = attn.transpose(1, 2).reshape(bsz, seq, -1)
         attn = self.to_out(attn)
         attn = self.dropout(attn)
