@@ -1,5 +1,5 @@
 [submodule "thirdparty/LaBraM"]
-	path = thirdparty/LaBraM
+	path = LaBraM/LaBraM/
 	url = https://github.com/935963004/LaBraM
 [submodule "thirdparty/BIOT"]
 	path = thirdparty/BIOT
