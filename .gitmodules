@@ -7,3 +7,6 @@
 [submodule "thirdparty/ToMe"]
 	path = thirdparty/ToMe
 	url = https://github.com/facebookresearch/ToMe.git
+[submodule "thirdparty/EEGPT"]
+	path = thirdparty/EEGPT
+	url = https://github.com/BINE022/EEGPT
