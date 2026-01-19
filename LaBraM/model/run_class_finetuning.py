@@ -41,6 +41,8 @@ def get_args():
 
     # ToMe block
     parser.add_argument('--tome_r', type=int, default=0)
+    # Top-k Attention
+    parser.add_argument('--top_k', type=int, default=0)
 
     # robust evaluation
     parser.add_argument('--robust_test', default=None, type=str,
@@ -208,7 +210,8 @@ def get_models(args):
         use_abs_pos_emb=args.abs_pos_emb,
         init_values=args.layer_scale_init_value,
         qkv_bias=args.qkv_bias,
-        r=args.tome_r
+        r=args.tome_r,
+        topk=args.top_k
     )
 
     return model
