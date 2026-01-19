@@ -39,6 +39,9 @@ def get_args():
     parser.add_argument('--update_freq', default=1, type=int)
     parser.add_argument('--save_ckpt_freq', default=5, type=int)
 
+    # ToMe block
+    parser.add_argument('--tome_r', type=int, default=0)
+
     # robust evaluation
     parser.add_argument('--robust_test', default=None, type=str,
                         help='robust evaluation dataset')
@@ -144,7 +147,7 @@ def get_args():
                         help='resume from checkpoint')
     parser.add_argument('--auto_resume', action='store_true')
     parser.add_argument('--no_auto_resume', action='store_false', dest='auto_resume')
-    parser.set_defaults(auto_resume=True)
+    # parser.set_defaults(auto_resume=True)
 
     parser.add_argument('--save_ckpt', action='store_true')
     parser.add_argument('--no_save_ckpt', action='store_false', dest='save_ckpt')
@@ -205,6 +208,7 @@ def get_models(args):
         use_abs_pos_emb=args.abs_pos_emb,
         init_values=args.layer_scale_init_value,
         qkv_bias=args.qkv_bias,
+        r=args.tome_r
     )
 
     return model
@@ -284,7 +288,7 @@ def main(args, ds_init):
 
     if global_rank == 0 and args.log_dir is not None:
         os.makedirs(args.log_dir, exist_ok=True)
-        log_writer = utils.TensorboardLogger(log_dir=args.log_dir)
+        log_writer = utils.TensorboardLogger(log_dir=args.log_dir, comment=f"{args.seed}_{args.tome_r}")
     else:
         log_writer = None
 

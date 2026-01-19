@@ -62,6 +62,26 @@ class Mlp(nn.Module):
         x = self.drop(x)
         return x
 
+def ToMeBlock(r = 2, *args, **kwargs):
+    from tome.merge import bipartite_soft_matching, merge_wavg
+
+    class ToMeBlock(nn.Module):
+        def __init__(self, r = 2, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.r = r
+
+        def forward(self, x, k, size_old):
+            bsz, hd, seq, _ = k.shape
+            merge, _ = bipartite_soft_matching(
+                k.transpose(1,2).reshape(bsz, seq, -1),
+                self.r
+            )
+
+            x, size = merge_wavg(merge, x, size_old)
+
+            return x, size
+        
+    return ToMeBlock(r = r, *args, **kwargs)
 
 class Attention(nn.Module):
     def __init__(
@@ -173,7 +193,7 @@ class Block(nn.Module):
 
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_norm=None, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., init_values=None, act_layer=nn.GELU, norm_layer=nn.LayerNorm,
-                 window_size=None, attn_head_dim=None):
+                 window_size=None, attn_head_dim=None, r=0):
         super().__init__()
         self.norm1 = norm_layer(dim)
         self.attn = Attention(
@@ -183,6 +203,7 @@ class Block(nn.Module):
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
+        self.tome = ToMeBlock(r=r)
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
         if init_values > 0:
@@ -191,22 +212,35 @@ class Block(nn.Module):
         else:
             self.gamma_1, self.gamma_2 = None, None
 
-    def forward(self, x, rel_pos_bias=None, return_attention=False, return_qkv=False):
+    def do_token_merge(self, x, qkv, size):
+        tmp = [x[:, :1]]
+        reduced, size =  self.tome(x[:, 1:], qkv[1, :, :, 1:], size)
+        tmp.append(reduced)
+        x = torch.concat(tmp, dim=1)
+        return x, size
+
+    def forward(self, x, size, rel_pos_bias=None, return_attention=False, return_qkv=False):
         if return_attention:
             return self.attn(self.norm1(x), rel_pos_bias=rel_pos_bias, return_attention=True)
+
         if return_qkv:
             y, qkv = self.attn(self.norm1(x), rel_pos_bias=rel_pos_bias, return_qkv=return_qkv)
-            x = x + self.drop_path(self.gamma_1 * y)
-            x = x + self.drop_path(self.gamma_2 * self.mlp(self.norm2(x)))
-            return x, qkv
+        else:
+            y = self.attn(self.norm1(x), rel_pos_bias=rel_pos_bias)
 
         if self.gamma_1 is None:
-            x = x + self.drop_path(self.attn(self.norm1(x), rel_pos_bias=rel_pos_bias))
+            x = x + self.drop_path(y)
+            x, size = self.do_token_merge(x, qkv, size)
             x = x + self.drop_path(self.mlp(self.norm2(x)))
         else:
-            x = x + self.drop_path(self.gamma_1 * self.attn(self.norm1(x), rel_pos_bias=rel_pos_bias))
+            x = x + self.drop_path(self.gamma_1 * y)
+            x, size = self.do_token_merge(x, qkv, size)
             x = x + self.drop_path(self.gamma_2 * self.mlp(self.norm2(x)))
-        return x
+
+        if return_qkv:
+            return x, qkv, size
+        else:
+            return x, size
 
 
 class PatchEmbed(nn.Module):
@@ -265,7 +299,7 @@ class NeuralTransformer(nn.Module):
                  num_heads=10, mlp_ratio=4., qkv_bias=False, qk_norm=None, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
                  drop_path_rate=0., norm_layer=nn.LayerNorm, init_values=None,
                  use_abs_pos_emb=True, use_rel_pos_bias=False, use_shared_rel_pos_bias=False,
-                 use_mean_pooling=True, init_scale=0.001, **kwargs):
+                 use_mean_pooling=True, init_scale=0.001, r = 0, **kwargs):
         super().__init__()
         self.num_classes = num_classes
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
@@ -294,7 +328,9 @@ class NeuralTransformer(nn.Module):
             Block(
                 dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_norm=qk_norm, qk_scale=qk_scale,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer,
-                init_values=init_values, window_size=None)
+                init_values=init_values, window_size=None,
+                r = r
+            )
             for i in range(depth)])
         self.norm = nn.Identity() if use_mean_pooling else norm_layer(embed_dim)
         self.fc_norm = norm_layer(embed_dim) if use_mean_pooling else None
@@ -367,8 +403,9 @@ class NeuralTransformer(nn.Module):
 
         x = self.pos_drop(x)
         
+        size = None
         for blk in self.blocks:
-            x = blk(x, rel_pos_bias=None)
+            x, _, size = blk(x, size=size, rel_pos_bias=None, return_qkv=True)
         
         x = self.norm(x)
         if self.fc_norm is not None:

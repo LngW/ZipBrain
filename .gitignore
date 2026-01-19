@@ -9,3 +9,6 @@ logs/
 
 # For offline git repo migration
 *.pack
+
+LaBraM/log/
+LaBraM/logs/
