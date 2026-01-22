@@ -29,6 +29,10 @@ def get_args():
     parser.add_argument('--update_freq', default=1, type=int)
     parser.add_argument('--save_ckpt_freq', default=5, type=int)
 
+    # For TC_EEG
+    parser.add_argument('--tome_r', type=int, default=0)
+    parser.add_argument('--top_k', type=int, default=0)
+
     # robust evaluation
     parser.add_argument('--robust_test', default=None, type=str,
                         help='robust evaluation dataset')
@@ -134,7 +138,7 @@ def get_args():
                         help='resume from checkpoint')
     parser.add_argument('--auto_resume', action='store_true')
     parser.add_argument('--no_auto_resume', action='store_false', dest='auto_resume')
-    parser.set_defaults(auto_resume=True)
+    # parser.set_defaults(auto_resume=True)
 
     parser.add_argument('--save_ckpt', action='store_true')
     parser.add_argument('--no_save_ckpt', action='store_false', dest='save_ckpt')
@@ -214,7 +218,9 @@ def get_models(args):
         img_size=[len(use_channels_names),2000], 
         use_channels_names=use_channels_names, 
         use_chan_conv=True,
-        use_mean_pooling=args.use_mean_pooling,)
+        use_mean_pooling=args.use_mean_pooling,
+        tome_r = args.tome_r,
+        top_k = args.top_k,)
     
     # model = create_model(
     #     args.model,
@@ -230,7 +236,7 @@ def get_models(args):
 
 def get_dataset(args):
     if args.dataset == 'TUAB':
-        train_dataset, test_dataset, val_dataset = utils.prepare_TUAB_dataset("../datasets/downstream/tuh_eeg_abnormal/v3.0.1/edf/processed/")
+        train_dataset, test_dataset, val_dataset = utils.prepare_TUAB_dataset("./datasets/tuab/10/processed/")
         ch_names = ['EEG FP1', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
                     'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
         ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]

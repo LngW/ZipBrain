@@ -74,7 +74,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             loss, output = train_class_batch(
                 model, samples, targets, criterion, input_chans)
         else:
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast('cuda'):
                 loss, output = train_class_batch(
                     model, samples, targets, criterion, input_chans)
 
@@ -178,7 +178,7 @@ def evaluate(data_loader, model, device, header='Test:', ch_names=None, metrics=
             target = target.float().unsqueeze(-1)
         
         # compute output
-        with torch.cuda.amp.autocast():
+        with torch.amp.autocast('cuda'):
             output = model(EEG)
             loss = criterion(output, target)
         

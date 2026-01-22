@@ -223,12 +223,15 @@ class MLP(nn.Module):
         return x
 
 class Attention(nn.Module):
-    def __init__(self, dim, num_heads=8, qkv_bias=False, attn_drop=0., proj_drop=0., is_causal=False, use_rope=False, return_attention=False):
+    def __init__(self, dim, num_heads=8, qkv_bias=False, attn_drop=0., proj_drop=0., is_causal=False, use_rope=False, return_attention=False, 
+                 top_k = 0):
         super().__init__()
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
 
         self.use_rope = use_rope
+
+        self.top_k = top_k
         
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
             
@@ -255,34 +258,73 @@ class Attention(nn.Module):
             else:
                 attn_weight = torch.softmax((q @ k.transpose(-2, -1) / math.sqrt(q.size(-1))), dim=-1)
             return attn_weight
+
         # efficient attention using Flash Attention CUDA kernels
-        y = torch.nn.functional.scaled_dot_product_attention(
-            q, k, v, attn_mask=None, dropout_p=self.attn_drop if self.training else 0, is_causal=self.is_causal)
+        if self.top_k > 0 and self.top_k < T:
+            attn = (q @ k.transpose(-2, -1))
+            topk, _ = torch.topk(attn, self.top_k, dim=-1)
+            attn[attn < topk[..., -1:]] = -torch.inf
+            attn = attn.softmax(dim=-1)
+            attn = torch.dropout(attn, self.attn_drop, train=self.training)
+            y = (attn @ v)
+        else:
+            y = torch.nn.functional.scaled_dot_product_attention(
+                q, k, v, attn_mask=None, dropout_p=self.attn_drop if self.training else 0, is_causal=self.is_causal)
+
         x = y.transpose(1, 2).contiguous().view(B, T, C) #(B, nh, T, hs) -> (B, T, hs*nh)
         x = self.proj(x)
         x = self.proj_drop(x)
-        return x
+        return x, k
+
+def ToMeBlock(r = 2, *args, **kwargs):
+    from .tome.merge import bipartite_soft_matching, merge_wavg
+
+    class ToMeBlock(nn.Module):
+        def __init__(self, r = 2, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.r = r
+
+        def forward(self, x, k, size_old):
+            bsz, hd, seq, _ = k.shape
+            merge, _ = bipartite_soft_matching(
+                k.transpose(1,2).reshape(bsz, seq, -1),
+                self.r
+            )
+
+            x, size = merge_wavg(merge, x, size_old)
+
+            return x, size
+        
+    return ToMeBlock(r = r, *args, **kwargs)
 
 class Block(nn.Module):
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, drop=0., attn_drop=0.,
-                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, is_causal=False, use_rope=False, return_attention=False):
+                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, is_causal=False, use_rope=False, return_attention=False,
+                 tome_r = 0, top_k = 0):
         super().__init__()
         
         self.return_attention= return_attention
         self.norm1 = norm_layer(dim)
         self.attn = Attention(
-            dim, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=drop, is_causal=is_causal, use_rope=use_rope, return_attention = return_attention)
+            dim, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=drop, is_causal=is_causal, use_rope=use_rope, return_attention = return_attention,
+            top_k = top_k)
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
+
+        self.tome_block = ToMeBlock(r = tome_r)
+
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = MLP(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
-    def forward(self, x, freqs=None):
-        y = self.attn(self.norm1(x), freqs)
+    def forward(self, x, size, freqs=None):
+        y, k = self.attn(self.norm1(x), freqs)
         if self.return_attention: return y
         x = x + self.drop_path(y)
+
+        x, size = self.tome_block(x, k, size)
+
         x = x + self.drop_path(self.mlp(self.norm2(x)))
-        return x
+        return x, size
 
 class PatchEmbed(nn.Module):
     """ Image to Patch Embedding
@@ -402,8 +444,9 @@ class EEGTransformerReconstructor(nn.Module):
         
         
         # -- fwd prop
+        size = None
         for blk in self.reconstructor_blocks:
-            x = blk(x, freqs_x) # B, NC, D
+            x, size = blk(x, size, freqs_x) # B, NC, D
             if blk.return_attention==True: return x
         
         # x = self.reconstructor_norm(x) 
@@ -460,7 +503,9 @@ class EEGTransformer(nn.Module):
             Block(
                 dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer, 
-                is_causal=False, use_rope= False, return_attention=(i+1)==return_attention_layer)
+                is_causal=False, use_rope= False, return_attention=(i+1)==return_attention_layer,
+                tome_r = kwargs.get('tome_r', 0), top_k=kwargs.get('top_k', 0)
+                )
             for i in range(depth)])
         self.norm = norm_layer(embed_dim)
         # ------
@@ -540,8 +585,9 @@ class EEGTransformer(nn.Module):
         x = torch.cat([x,summary_token], dim=1)  # BmN, mC+embed_num, D
         
         # -- fwd prop
+        size = None
         for i, blk in enumerate(self.blocks):
-            x = blk(x) # B*N, mC+1, D
+            x, size = blk(x, size) # B*N, mC+1, D
             if blk.return_attention==True: return x
 
         x = x[:, -summary_token.shape[1]:, :]
@@ -627,6 +673,8 @@ class EEGPTClassifier(nn.Module):
         
         super().__init__()    
         
+        embed_dim = 64
+
         self.use_chan_conv = use_chan_conv
         if use_chan_conv:
             #0.793
@@ -661,39 +709,41 @@ class EEGPTClassifier(nn.Module):
             img_size=img_size,
             patch_size= 32*2,
             patch_stride=patch_stride,
-            embed_dim = 512,
+            embed_dim = embed_dim,
             embed_num = 4,
             depth     = 8,
-            num_heads = 8,
+            num_heads = 4,
             mlp_ratio =4.0,
             drop_rate =0.0,
             attn_drop_rate=0.0,
             drop_path_rate=0.0,
             init_std=0.02,
             qkv_bias=True, 
-            norm_layer=partial(nn.LayerNorm, eps=1e-6))
+            norm_layer=partial(nn.LayerNorm, eps=1e-6),
+            tome_r = kwargs.get('tome_r', 0), top_k=kwargs.get('top_k', 0)
+            )
         
-        reconstructor = EEGTransformerReconstructor(
-            num_patches=target_encoder.num_patches,
-            patch_size             =32*2,
-            embed_dim              =512,
-            embed_num              =4,
-            reconstructor_embed_dim=512,
-            depth                  =8,
-            num_heads              =8,
-            mlp_ratio=4.0,
-            drop_rate=0.0,
-            attn_drop_rate=0.0,
-            drop_path_rate=0.0,
-            init_std=0.02,
-            qkv_bias=True, 
-            norm_layer=partial(nn.LayerNorm, eps=1e-6))
+        # reconstructor = EEGTransformerReconstructor(
+        #     num_patches=target_encoder.num_patches,
+        #     patch_size             =32*2,
+        #     embed_dim              =512,
+        #     embed_num              =4,
+        #     reconstructor_embed_dim=512,
+        #     depth                  =8,
+        #     num_heads              =8,
+        #     mlp_ratio=4.0,
+        #     drop_rate=0.0,
+        #     attn_drop_rate=0.0,
+        #     drop_path_rate=0.0,
+        #     init_std=0.02,
+        #     qkv_bias=True, 
+        #     norm_layer=partial(nn.LayerNorm, eps=1e-6))
         
         self.target_encoder = target_encoder
-        self.reconstructor  = reconstructor
+        # self.reconstructor  = reconstructor
         self.chans_id       = target_encoder.prepare_chan_ids(use_channels_names)
         
-        embed_dim = 512
+        # embed_dim = 512
         self.embed_dim = embed_dim
         self.norm = nn.Identity() if use_mean_pooling else norm_layer(embed_dim)
         self.fc_norm = norm_layer(embed_dim) if use_mean_pooling else None
@@ -706,21 +756,22 @@ class EEGPTClassifier(nn.Module):
             # nn.ReLU(),
             nn.Dropout(0.5),
             # LinearWithConstraint(4*self.embed_dim*40, num_classes)
-            LinearWithConstraint(63488, num_classes),
+            LinearWithConstraint(4*31*embed_dim, num_classes),
     
             # nn.Linear(4*self.embed_dim*31, num_clases)
         )
     
     def get_num_layers(self):
-        return self.target_encoder.get_num_layers() + self.reconstructor.get_num_layers()
+        return self.target_encoder.get_num_layers() # + self.reconstructor.get_num_layers()
     
     def get_classifier(self):
         return self.head
     
     @torch.jit.ignore
     def no_weight_decay(self):
-        return set(["target_encoder."+x for x in self.target_encoder.no_weight_decay()] + \
-               ["reconstructor."+x for x in self.reconstructor.no_weight_decay()])
+        return set(["target_encoder."+x for x in self.target_encoder.no_weight_decay()] # + \
+            #    ["reconstructor."+x for x in self.reconstructor.no_weight_decay()]
+            )
 
     def reset_classifier(self, num_classes, global_pool=''):
         self.num_classes = num_classes
