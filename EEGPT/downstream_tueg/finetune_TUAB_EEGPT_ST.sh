@@ -1,55 +1,47 @@
 #!/usr/bin/env bash
-set -x  # print the commands
+common_args=(
+    --output_dir ./checkpoints/finetune_tuab_eegpt/
+    --model EEGPT
+    --weight_decay 0.05
+    --batch_size 100
+    --lr 5e-4
+    --update_freq 1
+    --warmup_epochs 5
+    --epochs 10
+    --layer_decay 0.65
+    --dist_eval
+    --save_ckpt_freq 5
+    --disable_rel_pos_bias
+    --abs_pos_emb
+    --dataset TUAB
+    --disable_qkv_bias
+)
+common_args="${common_args[@]}"
 
-# export MASTER_PORT=${MASTER_PORT:-12320}  # You should set the same master_port in all the nodes
-export MASTER_PORT=$((12000 + $RANDOM % 20000))
+log_dir="./log/no_finetune"
 
-# official train/test splits. valid numbers: 1, 2, 3
-SPLIT=${SPLIT:-1}
+for seed in 12345856 85875035 46812486 68486431 86435434 34525135; do
+    folder_name="tuab_tiny_${seed}_baseline"
+    python run_class_finetuning_EEGPT_change.py $common_args \
+        --output_dir ./checkpoints/$folder_name \
+        --log_dir $log_dir/$folder_name \
+        --seed $seed
 
-N_NODES=${N_NODES:-1}  # Number of nodes
-GPUS_PER_NODE=${GPUS_PER_NODE:-2}  # Number of GPUs in each node
-SRUN_ARGS=${SRUN_ARGS:-""}  # Other slurm task args
-PY_ARGS=${@:2}  # Other training args
+    for r in 2 1; do
+        folder_name="tuab_tiny_${seed}_tome_${r}"
+        python run_class_finetuning_EEGPT_change.py $common_args  \
+            --output_dir ./checkpoints/$folder_name  \
+            --log_dir $log_dir/$folder_name  \
+            --seed $seed  \
+            --tome_r $r
+    done
 
-# Please refer to `run_mae_pretraining.py` for the meaning of the following hyperreferences
-# CUDA_VISIBLE_DEVICES=4,5 OMP_NUM_THREADS=1 python -m torch.distributed.run --nproc_per_node=${GPUS_PER_NODE} \
-#         --master_port ${MASTER_PORT} --nnodes=${N_NODES} --node_rank=0 --master_addr="localhost" \
-#         run_class_finetuning_EEGPT_change.py \
-#         --output_dir ./checkpoints/finetune_tuab_eegpt/ \
-#         --log_dir ./log/finetune_tuab_eegpt \
-#         --model EEGPT \
-#         --finetune ../checkpoint/eegpt_mcae_58chs_4s_large4E.ckpt \
-#         --weight_decay 0.05 \
-#         --batch_size 100\
-#         --lr 5e-4 \
-#         --update_freq 1 \
-#         --warmup_epochs 5 \
-#         --epochs 50 \
-#         --layer_decay 0.65 \
-#         --dist_eval \
-#         --save_ckpt_freq 5 \
-#         --disable_rel_pos_bias \
-#         --abs_pos_emb \
-#         --dataset TUAB \
-#         --disable_qkv_bias \
-#         --seed 0
-
-python run_class_finetuning_EEGPT_change.py \
-        --output_dir ./checkpoints/finetune_tuab_eegpt/ \
-        --log_dir ./log/finetune_tuab_eegpt \
-        --model EEGPT \
-        --weight_decay 0.05 \
-        --batch_size 100 \
-        --lr 5e-4 \
-        --update_freq 1 \
-        --warmup_epochs 5 \
-        --epochs 50 \
-        --layer_decay 0.65 \
-        --dist_eval \
-        --save_ckpt_freq 5 \
-        --disable_rel_pos_bias \
-        --abs_pos_emb \
-        --dataset TUAB \
-        --disable_qkv_bias \
-        --seed 0
+    for k in 12 23 46; do
+        folder_name="tuab_tiny_${seed}_top_${k}"
+        python run_class_finetuning_EEGPT_change.py $common_args  \
+            --output_dir ./checkpoints/$folder_name  \
+            --log_dir $log_dir/$folder_name  \
+            --seed $seed  \
+            --top_k $k
+    done
+done
