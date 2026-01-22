@@ -18,9 +18,12 @@ common_args=(
 )
 common_args="${common_args[@]}"
 
+# Use same set of seeds for evaluation
+. ../../seeds
+
 log_dir="./log/no_finetune"
 
-for seed in 12345856 85875035 46812486 68486431 86435434 34525135; do
+for seed in "${seeds[@]}"; do
     folder_name="tuab_tiny_${seed}_baseline"
     python run_class_finetuning_EEGPT_change.py $common_args \
         --output_dir ./checkpoints/$folder_name \
