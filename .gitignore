@@ -1,6 +1,6 @@
 datasets/
-checkpoints/
-logs/
+checkpoints*/
+logs*/
 .venv/
 .venv.biot/
 **/__pycache__/
