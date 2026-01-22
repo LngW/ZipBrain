@@ -19,7 +19,7 @@ common_args=(
 common_args="${common_args[@]}"
 
 # Use same set of seeds for evaluation
-. ../../seeds
+. ../../../seeds
 
 log_dir="./log/no_finetune"
 

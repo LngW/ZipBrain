@@ -77,8 +77,8 @@ def split_and_dump(params):
 
 def main():
     from pathlib import Path
-    root = Path(".", '..', '..', 'datasets', 'TUH', 'tuh_eeg_abnormal', 'v3.0.1', 'edf', '10')
-    fetch_dir = root / 'original'
+    fetch_dir = Path(".", '..', '..', '..', 'datasets', 'TUH', 'tuh_eeg_abnormal', 'v3.0.1', 'edf', '10', 'original')
+    # fetch_dir = root / 'original'
     dump_dir = Path('.', 'datasets', 'tuab', '10', 'processed')
 
     for subset in ['train', 'val', 'test']:
