@@ -16,3 +16,6 @@ LaBraM/logs/
 **/log*/
 
 .vscode/
+
+# CBraMod
+!models/CBraMod/datasets/
