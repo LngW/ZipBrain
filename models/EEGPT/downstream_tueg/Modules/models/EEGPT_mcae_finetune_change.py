@@ -673,7 +673,7 @@ class EEGPTClassifier(nn.Module):
         
         super().__init__()    
         
-        embed_dim = 64
+        embed_dim = 256
 
         self.use_chan_conv = use_chan_conv
         if use_chan_conv:
@@ -712,7 +712,7 @@ class EEGPTClassifier(nn.Module):
             embed_dim = embed_dim,
             embed_num = 4,
             depth     = 8,
-            num_heads = 4,
+            num_heads = 8,
             mlp_ratio =4.0,
             drop_rate =0.0,
             attn_drop_rate=0.0,
