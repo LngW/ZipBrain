@@ -31,6 +31,10 @@ def main():
     # all_patch_reps_onelayer: use all patch features with a one-layer classifier;
     # avgpooling_patch_reps: use average pooling for patch features;
 
+    parser.add_argument('--top_k_s', type=int, default=0)
+    parser.add_argument('--top_k_t', type=int, default=0)
+    parser.add_argument('--tome_r', type=int, default=0)
+
     """############ Downstream dataset settings ############"""
     parser.add_argument('--downstream_dataset', type=str, default='MentalArithmetic',
                         help='[FACED, SEED-V, PhysioNet-MI, SHU-MI, ISRUC, CHB-MIT, BCIC2020-3, Mumtaz2016, '
@@ -48,8 +52,8 @@ def main():
                         help='multi_lr')  # set different learning rates for different modules
     parser.add_argument('--frozen', type=bool,
                         default=False, help='frozen')
-    parser.add_argument('--use_pretrained_weights', type=bool,
-                        default=True, help='use_pretrained_weights')
+    parser.add_argument('--use_pretrained_weights', action='store_true',
+                        help='use_pretrained_weights')
     parser.add_argument('--foundation_dir', type=str,
                         default='pretrained_weights/pretrained_weights.pth',
                         help='foundation_dir')

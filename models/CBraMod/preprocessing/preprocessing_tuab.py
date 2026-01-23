@@ -142,6 +142,26 @@ if __name__ == "__main__":
     """
     TUAB dataset is downloaded from https://isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml
     """
+    from pathlib import Path
+    parameters = []
+    fetch_root = Path('.', '..', '..', 'datasets', 'TUH', 'tuh_eeg_abnormal', 'v3.0.1', 'edf', '10', 'original')
+    dump_root = Path('.', 'datas', 'tuab', 'v3.0.1', 'edf', '10', 'process_refine')
+    for ds in ['train', 'val', 'test']:
+        for label, label_name in enumerate(['normal', 'abnormal']):
+            fetch_dir = fetch_root / ds / label_name
+            dump_dir = dump_root / ds
+            dump_dir.mkdir(parents=True, exist_ok=True)
+            for sub in fetch_dir.glob("*.edf"):
+                parameters.append([fetch_dir, sub.name, dump_dir, label])
+
+        # split and dump in parallel
+    with Pool(processes=4) as pool:
+        # Use the pool.map function to apply the square function to each element in the numbers list
+        result = pool.map(split_and_dump, parameters)
+    
+    exit()
+
+
     # root to abnormal dataset
     root = "/data/datasets/BigDownstream/TUAB/edf"
     channel_std = "01_tcp_ar"

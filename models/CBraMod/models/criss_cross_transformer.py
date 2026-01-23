@@ -8,6 +8,65 @@ import warnings
 from torch import Tensor
 from torch.nn import functional as F
 
+def ToMeBlock(r = 2, *args, **kwargs):
+    from .tome.merge import bipartite_soft_matching, merge_wavg
+
+    class ToMeBlock(nn.Module):
+        def __init__(self, r = 2, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.r = r
+
+        def forward(self, x, k, size_old):
+            bsz, hd, seq, _ = k.shape
+            merge, _ = bipartite_soft_matching(
+                k.transpose(1,2).reshape(bsz, seq, -1),
+                self.r
+            )
+
+            x, size = merge_wavg(merge, x, size_old)
+
+            return x, size
+        
+    return ToMeBlock(r = r, *args, **kwargs)
+
+# Use a customized Multihead attention to integrate ToMe and top-k
+class Attention(nn.Module):
+    def __init__(self, d_model, nhead, dropout, bias, batch_first, device, dtype, 
+                 topk = 0):
+        super().__init__()
+        self.d_model = d_model
+        self.nhead = nhead
+        self.d_head = d_model // nhead
+        self.topk = topk
+
+        self.batch_first = batch_first
+
+        self.q_proj = nn.Linear(d_model, d_model, bias = bias, device = device, dtype = dtype)
+        self.k_proj = nn.Linear(d_model, d_model, bias = bias, device = device, dtype = dtype)
+        self.v_proj = nn.Linear(d_model, d_model, bias = bias, device = device, dtype = dtype)
+        self.dropout = nn.Dropout(dropout)
+
+        self.out_proj = nn.Linear(d_model, d_model)
+
+        pass
+
+    def forward(self, q, k, v, /, attn_mask, key_padding_mask, need_weights):
+        n_head = self.nhead
+        d_head = self.d_head
+        qs = self.q_proj(q).view(*(q.shape[:2]), n_head, d_head).transpose(1, 2)
+        ks = self.k_proj(k).view(*(k.shape[:2]), n_head, d_head).transpose(1, 2)
+        vs = self.v_proj(v).view(*(v.shape[:2]), n_head, d_head).transpose(1, 2)
+
+        attn = qs @ ks.transpose(-1, -2)
+        if self.topk > 0 and self.topk < q.shape[1]:
+            topk, _ = torch.topk(attn, self.topk, dim=-1)
+            attn[attn < topk[..., -1:]] = -torch.inf
+
+        scores = attn.softmax(-1)
+        output = (scores @ vs).transpose(1, 2).reshape(*q.shape)
+
+        output = self.out_proj(output)
+        return self.dropout(output), ks
 
 class TransformerEncoder(nn.Module):
     def __init__(self, encoder_layer, num_layers, norm=None, enable_nested_tensor=True, mask_check=True):
@@ -25,8 +84,9 @@ class TransformerEncoder(nn.Module):
             is_causal: Optional[bool] = None) -> Tensor:
 
         output = src
+        size = None
         for mod in self.layers:
-            output = mod(output, src_mask=mask)
+            output, size = mod(output, size, src_mask=mask)
         if self.norm is not None:
             output = self.norm(output)
         return output
@@ -38,14 +98,17 @@ class TransformerEncoderLayer(nn.Module):
     def __init__(self, d_model: int, nhead: int, dim_feedforward: int = 2048, dropout: float = 0.1,
                  activation: Union[str, Callable[[Tensor], Tensor]] = F.relu,
                  layer_norm_eps: float = 1e-5, batch_first: bool = False, norm_first: bool = False,
-                 bias: bool = True, device=None, dtype=None) -> None:
+                 bias: bool = True, device=None, dtype=None,
+                 tome_r = 0, top_k_s = 0, top_k_t = 0) -> None:
         factory_kwargs = {'device': device, 'dtype': dtype}
         super().__init__()
-        self.self_attn_s = nn.MultiheadAttention(d_model//2, nhead // 2, dropout=dropout,
+        self.self_attn_s = Attention(d_model//2, nhead // 2, dropout=dropout,
                                                  bias=bias, batch_first=batch_first,
+                                                 topk=top_k_s,
                                                  **factory_kwargs)
-        self.self_attn_t = nn.MultiheadAttention(d_model//2, nhead // 2, dropout=dropout,
+        self.self_attn_t = Attention(d_model//2, nhead // 2, dropout=dropout,
                                                  bias=bias, batch_first=batch_first,
+                                                 topk=top_k_t,
                                                  **factory_kwargs)
 
         # Implementation of Feedforward model
@@ -58,6 +121,8 @@ class TransformerEncoderLayer(nn.Module):
         self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
+
+        self.tome_block = ToMeBlock(tome_r)
 
         # Legacy string support for activation function.
         if isinstance(activation, str):
@@ -82,14 +147,19 @@ class TransformerEncoderLayer(nn.Module):
     def forward(
             self,
             src: Tensor,
+            size: Tensor,
             src_mask: Optional[Tensor] = None,
             src_key_padding_mask: Optional[Tensor] = None,
             is_causal: bool = False) -> Tensor:
 
         x = src
-        x = x + self._sa_block(self.norm1(x), src_mask, src_key_padding_mask, is_causal=is_causal)
+        x1, k = self._sa_block(self.norm1(x), src_mask, src_key_padding_mask, is_causal=is_causal)
+        x = x + x1
+        k = k.reshape(x.shape[0], x.shape[1], *(k.shape[1:])).permute(0, 2, 3, 1, 4).flatten(3)
+        x2, size = self.tome_block(x.transpose(1,2).flatten(2), k, size)
+        x = x2.reshape(x.shape[0], -1, x.shape[1], x.shape[3]).transpose(1, 2)
         x = x + self._ff_block(self.norm2(x))
-        return x
+        return x, size
 
     # self-attention block
     def _sa_block(self, x: Tensor,
@@ -99,18 +169,18 @@ class TransformerEncoderLayer(nn.Module):
         xt = x[:, :, :, patch_size // 2:]
         xs = xs.transpose(1, 2).contiguous().view(bz*patch_num, ch_num, patch_size // 2)
         xt = xt.contiguous().view(bz*ch_num, patch_num, patch_size // 2)
-        xs = self.self_attn_s(xs, xs, xs,
+        xs, _ = self.self_attn_s(xs, xs, xs,
                              attn_mask=attn_mask,
                              key_padding_mask=key_padding_mask,
-                             need_weights=False)[0]
+                             need_weights=False)
         xs = xs.contiguous().view(bz, patch_num, ch_num, patch_size//2).transpose(1, 2)
-        xt = self.self_attn_t(xt, xt, xt,
+        xt, kt = self.self_attn_t(xt, xt, xt,
                               attn_mask=attn_mask,
                               key_padding_mask=key_padding_mask,
-                              need_weights=False)[0]
+                              need_weights=False)
         xt = xt.contiguous().view(bz, ch_num, patch_num, patch_size//2)
         x = torch.concat((xs, xt), dim=3)
-        return self.dropout1(x)
+        return self.dropout1(x), kt
 
     # feed forward block
     def _ff_block(self, x: Tensor) -> Tensor:

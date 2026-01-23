@@ -7,12 +7,14 @@ from models.criss_cross_transformer import TransformerEncoderLayer, TransformerE
 
 class CBraMod(nn.Module):
     def __init__(self, in_dim=200, out_dim=200, d_model=200, dim_feedforward=800, seq_len=30, n_layer=12,
-                    nhead=8):
+                    nhead=8,
+                    tome_r = 0, top_k_s = 0, top_k_t = 0):
         super().__init__()
         self.patch_embedding = PatchEmbedding(in_dim, out_dim, d_model, seq_len)
         encoder_layer = TransformerEncoderLayer(
             d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, batch_first=True, norm_first=True,
-            activation=F.gelu
+            activation=F.gelu,
+            tome_r=tome_r, top_k_s=top_k_s, top_k_t=top_k_t
         )
         self.encoder = TransformerEncoder(encoder_layer, num_layers=n_layer, enable_nested_tensor=False)
         self.proj_out = nn.Sequential(
