@@ -10,3 +10,6 @@
 [submodule "thirdparty/LaBraM"]
 	path = thirdparty/LaBraM
 	url = https://github.com/935963004/LaBraM
+[submodule "thirdparty/CBraMod"]
+	path = thirdparty/CBraMod
+	url = https://github.com/wjq-learning/CBraMod
