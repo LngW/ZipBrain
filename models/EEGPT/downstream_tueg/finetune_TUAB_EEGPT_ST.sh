@@ -7,7 +7,7 @@ common_args=(
     --lr 5e-4
     --update_freq 1
     --warmup_epochs 5
-    --epochs 10
+    --epochs 25
     --layer_decay 0.65
     --dist_eval
     --save_ckpt_freq 5
@@ -39,7 +39,7 @@ for seed in "${seeds[@]}"; do
             --tome_r $r
     done
 
-    for k in 12 23 46; do
+    for k in 4 2 1; do
         folder_name="tuab_tiny_${seed}_top_${k}"
         python run_class_finetuning_EEGPT_change.py $common_args  \
             --output_dir ./checkpoints/$folder_name  \
