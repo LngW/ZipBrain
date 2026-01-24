@@ -2,14 +2,14 @@
 
 common_args=(
     --cuda 0
-    --epochs 1
+    --epochs 25
     --batch_size 64
     --lr 5e-4
     --weight_decay 0.05
     --downstream_dataset TUAB
-    --datasets_dir ./datas/tuab/v3.0.1/edf/10/process_refine
+    --datasets_dir ./datas/tuab/v3.0.1/edf/100/process_refine
     --num_of_classes 1
-    --num_workers 2
+    --num_workers 4
     # --use_pretrained_weights ""
 )
 common_args="${common_args[@]}"

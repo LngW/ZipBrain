@@ -11,7 +11,8 @@ class Model(nn.Module):
         self.backbone = CBraMod(
             in_dim=200, out_dim=200, d_model=200,
             dim_feedforward=800, seq_len=30,
-            n_layer=12, nhead=8
+            n_layer=12, nhead=8,
+            tome_r=param.tome_r, top_k_s=param.top_k_s, top_k_t=param.top_k_t,
         )
         if param.use_pretrained_weights:
             map_location = torch.device(f'cuda:{param.cuda}')

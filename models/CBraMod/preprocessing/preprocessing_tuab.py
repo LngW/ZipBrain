@@ -144,8 +144,8 @@ if __name__ == "__main__":
     """
     from pathlib import Path
     parameters = []
-    fetch_root = Path('.', '..', '..', 'datasets', 'TUH', 'tuh_eeg_abnormal', 'v3.0.1', 'edf', '10', 'original')
-    dump_root = Path('.', 'datas', 'tuab', 'v3.0.1', 'edf', '10', 'process_refine')
+    fetch_root = Path('.', '..', '..', 'datasets', 'TUH', 'tuh_eeg_abnormal', 'v3.0.1', 'edf', '100', 'original')
+    dump_root = Path('.', 'datas', 'tuab', 'v3.0.1', 'edf', '100', 'process_refine')
     for ds in ['train', 'val', 'test']:
         for label, label_name in enumerate(['normal', 'abnormal']):
             fetch_dir = fetch_root / ds / label_name
