@@ -64,6 +64,9 @@ class Trainer(object):
         self.optimizer_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer, T_max=self.params.epochs * self.data_length, eta_min=1e-6
         )
+        self.optimizer_scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            self.optimizer, total_steps=self.params.epochs * self.data_length, max_lr=self.params.lr
+        )
         print(self.model)
 
     def train_for_multiclass(self):
