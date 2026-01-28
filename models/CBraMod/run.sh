@@ -3,7 +3,7 @@
 common_args=(
     --cuda 0
     --epochs 25
-    --batch_size 64
+    --batch_size 128
     --lr 5e-4
     --weight_decay 0.05
     --downstream_dataset TUAB
@@ -17,17 +17,23 @@ common_args="${common_args[@]}"
 echo $common_args
 
 cp_dir="checkpoints"
-log_dir="log"
+log_dir="log4"
+
+if [ ! -d "./$log_dir" ]; then
+    mkdir './'$log_dir
+fi
 
 . ../../seeds
 
 for seed in "${seeds[@]}"; do
+    echo tuab_base_"${seed}"_baseline
     python ./finetune_main.py $common_args \
         --model_dir ./$cp_dir/tuab_base_baseline \
         --seed $seed \
         > ./$log_dir/tuab_base_"${seed}"_baseline.log
     for k in 2 1; do
         folder_name="tuab_base_${seed}_top_${k}_t"
+        echo $folder_name
         python ./finetune_main.py $common_args  \
             --model_dir ./$cp_dir/$folder_name  \
             --seed $seed  \
@@ -36,6 +42,7 @@ for seed in "${seeds[@]}"; do
     done
     for k in 4 2 1; do
         folder_name="tuab_base_${seed}_top_${k}_s"
+        echo $folder_name
         python ./finetune_main.py $common_args  \
             --model_dir ./$cp_dir/$folder_name  \
             --seed $seed  \

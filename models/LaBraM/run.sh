@@ -2,7 +2,7 @@ cd ~/projects/TC_EEG/LaBraM/
 
 common_args=(
     --model labram_base_patch200_200
-    --finetune ../thirdparty/LaBraM/checkpoints/labram-base.pth
+    # --finetune ../thirdparty/LaBraM/checkpoints/labram-base.pth
     --weight_decay 0.05
     --batch_size 64
     --lr 5e-4
@@ -23,13 +23,13 @@ cp_dir="checkpoints_nf"
 log_dir="log_nf"
 
 for seed in 12345856 85875035 46812486 68486431 86435434 34525135; do
-    python ./model/run_class_finetuning.py $common_args_nf \
+    python ./model/run_class_finetuning.py $common_args \
         --output_dir ./$cp_dir/tuab_base_baseline \
         --log_dir ./$log_dir/tuab_base_"${seed}"_baseline \
         --seed $seed
     for r in 10 5; do
         folder_name="tuab_base_${seed}_tome_${r}"
-        python ./model/run_class_finetuning.py $common_args_nf  \
+        python ./model/run_class_finetuning.py $common_args  \
             --output_dir ./$cp_dir/$folder_name  \
             --log_dir ./$log_dir/$folder_name  \
             --seed $seed  \
@@ -37,7 +37,7 @@ for seed in 12345856 85875035 46812486 68486431 86435434 34525135; do
     done
     for k in 12 23 46; do
         folder_name="tuab_base_${seed}_top_${k}"
-        python ./model/run_class_finetuning.py $common_args_nf  \
+        python ./model/run_class_finetuning.py $common_args  \
             --output_dir ./$cp_dir/$folder_name  \
             --log_dir ./$log_dir/$folder_name  \
             --seed $seed  \
