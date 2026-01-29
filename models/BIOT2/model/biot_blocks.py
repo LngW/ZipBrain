@@ -72,13 +72,13 @@ class Attention(nn.Module):
         scores = scores / np.sqrt(HD)
 
         if self.top_k > 0 and self.top_k < N:
-            top_k_values, _ = torch.topk(scores, self.top_k, dim=-1, sorted=False)
-            scores[scores < top_k_values.min(dim=-1, keepdim=True)] = -torch.inf
+            topk, _ = torch.topk(scores, self.top_k, dim=-1)
+            scores[scores < topk[..., -1:]] = -torch.inf
 
         weights = torch.softmax(scores, dim = -1)
         weights = self.dropout(weights)
         out = weights @ v
-        out = rearrange(out, "bhnd->bn(hd)")
+        out = rearrange(out, "b h n d->b n (h d)")
         out = self.out_proj(out)
 
         return out
@@ -91,9 +91,9 @@ class Attention(nn.Module):
 
         q = q * HD ** -0.5
 
-        context = einsum(k, v, 'bhnd,bhne->bhde')
-        out = einsum(q, context, 'bhnd,bhde->bhne')
-        out = rearrange(out, 'bhne->bn(he)')
+        context = einsum(k, v, 'b h n d, b h n e->b h d e')
+        out = einsum(q, context, 'b h n d, b h d e-> b h n e')
+        out = rearrange(out, 'b h n e->b n (h e)')
         out = self.out_proj(out)
 
         return out
@@ -145,7 +145,7 @@ class Encoder(nn.Module):
         layers = nn.ModuleList()
 
         for _ in range(depth):
-            layers.append(Block(dim, heads, dropout, linear = linear, top_k=top_k))
+            layers.append(Block(dim, heads, dropout, linear = linear, top_k=top_k, tome_r=tome_r))
         
         self.layers = layers
 
