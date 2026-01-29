@@ -126,7 +126,7 @@ class LitModel_finetune(pl.LightningModule):
 
 def prepare_TUAB_dataloader(args):
     # set random seed
-    seed = 12345
+    seed = args.seed
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -269,91 +269,93 @@ def supervised(args):
         raise NotImplementedError
 
     # define the model
-    if args.model == "SPaRCNet":
-        model = SPaRCNet(
-            in_channels=args.in_channels,
-            sample_length=int(args.sampling_rate * args.sample_length),
-            n_classes=args.n_classes,
-            block_layers=4,
-            growth_rate=16,
-            bn_size=16,
-            drop_rate=0.5,
-            conv_bias=True,
-            batch_norm=True,
-        )
+    with torch.random.fork_rng():
+        if args.model == "SPaRCNet":
+            model = SPaRCNet(
+                in_channels=args.in_channels,
+                sample_length=int(args.sampling_rate * args.sample_length),
+                n_classes=args.n_classes,
+                block_layers=4,
+                growth_rate=16,
+                bn_size=16,
+                drop_rate=0.5,
+                conv_bias=True,
+                batch_norm=True,
+            )
 
-    elif args.model == "ContraWR":
-        model = ContraWR(
-            in_channels=args.in_channels,
-            n_classes=args.n_classes,
-            fft=args.token_size,
-            steps=args.hop_length // 5,
-        )
+        elif args.model == "ContraWR":
+            model = ContraWR(
+                in_channels=args.in_channels,
+                n_classes=args.n_classes,
+                fft=args.token_size,
+                steps=args.hop_length // 5,
+            )
 
-    elif args.model == "CNNTransformer":
-        model = CNNTransformer(
-            in_channels=args.in_channels,
-            n_classes=args.n_classes,
-            fft=args.sampling_rate,
-            steps=args.hop_length // 5,
-            dropout=0.2,
-            nhead=4,
-            emb_size=256,
-        )
+        elif args.model == "CNNTransformer":
+            model = CNNTransformer(
+                in_channels=args.in_channels,
+                n_classes=args.n_classes,
+                fft=args.sampling_rate,
+                steps=args.hop_length // 5,
+                dropout=0.2,
+                nhead=4,
+                emb_size=256,
+            )
 
-    elif args.model == "FFCL":
-        model = FFCL(
-            in_channels=args.in_channels,
-            n_classes=args.n_classes,
-            fft=args.token_size,
-            steps=args.hop_length // 5,
-            sample_length=int(args.sampling_rate * args.sample_length),
-            shrink_steps=20,
-        )
+        elif args.model == "FFCL":
+            model = FFCL(
+                in_channels=args.in_channels,
+                n_classes=args.n_classes,
+                fft=args.token_size,
+                steps=args.hop_length // 5,
+                sample_length=int(args.sampling_rate * args.sample_length),
+                shrink_steps=20,
+            )
 
-    elif args.model == "STTransformer":
-        model = STTransformer(
-            emb_size=256,
-            depth=4,
-            n_classes=args.n_classes,
-            channel_legnth=int(
-                args.sampling_rate * args.sample_length
-            ),  # (sampling_rate * duration)
-            n_channels=args.in_channels,
-        )
+        elif args.model == "STTransformer":
+            model = STTransformer(
+                emb_size=256,
+                depth=4,
+                n_classes=args.n_classes,
+                channel_legnth=int(
+                    args.sampling_rate * args.sample_length
+                ),  # (sampling_rate * duration)
+                n_channels=args.in_channels,
+            )
 
-    elif args.model == "BIOT":
-        model = BIOTClassifier(
-            n_classes=args.n_classes,
-            # set the n_channels according to the pretrained model if necessary
-            n_channels=args.in_channels,
-            n_fft=args.token_size,
-            hop_length=args.hop_length,
-            linear = args.linear, # modifications for tc_eeg
-            top_k = args.top_k,
-            tome_r = args.tome_r
-        )
-        if args.pretrain_model_path and (args.sampling_rate == 200):
-            model.biot.load_state_dict(torch.load(args.pretrain_model_path))
-            print(f"load pretrain model from {args.pretrain_model_path}")
+        elif args.model == "BIOT":
+            model = BIOTClassifier(
+                n_classes=args.n_classes,
+                # set the n_channels according to the pretrained model if necessary
+                n_channels=args.in_channels,
+                n_fft=args.token_size,
+                hop_length=args.hop_length,
+                linear = args.linear, # modifications for tc_eeg
+                top_k = args.top_k,
+                tome_r = args.tome_r
+            )
+            if args.pretrain_model_path and (args.sampling_rate == 200):
+                model.biot.load_state_dict(torch.load(args.pretrain_model_path))
+                print(f"load pretrain model from {args.pretrain_model_path}")
 
-    else:
-        raise NotImplementedError
+        else:
+            raise NotImplementedError
     lightning_model = LitModel_finetune(args, model)
 
     # logger and callbacks
-    version = f"{args.dataset}-{args.model}-{args.lr}-{args.batch_size}-{args.sampling_rate}-{args.token_size}-{args.hop_length}"
+    # version = f"{args.dataset}-{args.model}-{args.lr}-{args.batch_size}-{args.sampling_rate}-{args.token_size}-{args.hop_length}"
+    version = f"{args.dataset}-{args.model}-{args.lr}-{args.batch_size}-{args.sampling_rate}-{args.token_size}-{args.hop_length}-{args.seed}"
     logger = TensorBoardLogger(
-        save_dir="./" + args.log_dir + "/", # modification for tc_eeg
+        save_dir="./logs/", # modification for tc_eeg
         version=version,
-        name="log",
+        name=args.log_dir, # modification for tc_eeg
     )
     early_stop_callback = EarlyStopping(
         monitor="val_auroc", patience=5, verbose=False, mode="max"
     )
 
     trainer = pl.Trainer(
-        devices=[0],
+        devices=[args.cuda],
         accelerator="gpu",
         strategy=DDPStrategy(find_unused_parameters=False),
         auto_select_gpus=True,
@@ -413,7 +415,9 @@ if __name__ == "__main__":
     )
 
     # modification made for tc_eeg
+    parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--log_dir", type=str, required=True)
+    parser.add_argument("--cuda", type=int, default=0)
     parser.add_argument("--top_k", type=int, default=0)
     parser.add_argument("--tome_r", type=int, default=0)
     parser.add_argument("--linear", action='store_true', default=False)
