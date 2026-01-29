@@ -80,69 +80,13 @@ def split_and_dump(params):
                     {"X": channeled_data[:, i * 2000 : (i + 1) * 2000], "y": label},
                     open(dump_path, "wb"),
                 )
-
-
-if __name__ == "__main__":
-    """
-    TUAB dataset is downloaded from https://isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml
-    """
-    # # root to abnormal dataset
-    # root = "/userhome1/jiangweibang/Datasets/TUH_Abnormal/v3.0.0/edf/"
-    # channel_std = "01_tcp_ar"
-
-    # # train, val abnormal subjects
-    # train_val_abnormal = os.path.join(root, "train", "abnormal", channel_std)
-    # train_val_a_sub = list(
-    #     set([item.split("_")[0] for item in os.listdir(train_val_abnormal)])
-    # )
-    # np.random.shuffle(train_val_a_sub)
-    # train_a_sub, val_a_sub = (
-    #     train_val_a_sub[: int(len(train_val_a_sub) * 0.8)],
-    #     train_val_a_sub[int(len(train_val_a_sub) * 0.8) :],
-    # )
-
-    # # train, val normal subjects
-    # train_val_normal = os.path.join(root, "train", "normal", channel_std)
-    # train_val_n_sub = list(
-    #     set([item.split("_")[0] for item in os.listdir(train_val_normal)])
-    # )
-    # np.random.shuffle(train_val_n_sub)
-    # train_n_sub, val_n_sub = (
-    #     train_val_n_sub[: int(len(train_val_n_sub) * 0.8)],
-    #     train_val_n_sub[int(len(train_val_n_sub) * 0.8) :],
-    # )
-
-    # # test abnormal subjects
-    # test_abnormal = os.path.join(root, "eval", "abnormal", channel_std)
-    # test_a_sub = list(set([item.split("_")[0] for item in os.listdir(test_abnormal)]))
-
-    # # test normal subjects
-    # test_normal = os.path.join(root, "eval", "normal", channel_std)
-    # test_n_sub = list(set([item.split("_")[0] for item in os.listdir(test_normal)]))
-
-    # # create the train, val, test sample folder
-    # if not os.path.exists(os.path.join(root, "processed")):
-    #     os.makedirs(os.path.join(root, "processed"))
-
-    # if not os.path.exists(os.path.join(root, "processed", "train")):
-    #     os.makedirs(os.path.join(root, "processed", "train"))
-    # train_dump_folder = os.path.join(root, "processed", "train")
-
-    # if not os.path.exists(os.path.join(root, "processed", "val")):
-    #     os.makedirs(os.path.join(root, "processed", "val"))
-    # val_dump_folder = os.path.join(root, "processed", "val")
-
-    # if not os.path.exists(os.path.join(root, "processed", "test")):
-    #     os.makedirs(os.path.join(root, "processed", "test"))
-    # test_dump_folder = os.path.join(root, "processed", "test")
-
+def main():
     from pathlib import Path
-    root = Path.home() / 'TC_EEG' / 'LaBraM' / 'datasets' / 'tuab'
-    original = root / 'original'
-    processed = root / 'processed'
+    original = Path('..' , '..' , 'datasets' , 'TUH' , 'tuh_eeg_abnormal' , 'v3.0.1' , 'edf' , '100' , 'original')
+    processed = Path( '.' , 'datasets' , 'datasets' , 'processed' )
 
+    parameters = []
     for it in ['train', 'val', 'test']:
-    # for it in ['val']:
         for label, label_name in enumerate(['normal', 'abnormal']):
             fin = original / it / label_name
             fout = processed / it 
@@ -151,24 +95,87 @@ if __name__ == "__main__":
 
             subs = fin.glob('*.edf')
             for sub in subs:
-                split_and_dump([fin, sub.name, fout, label])
+                parameters.append([fin, sub.name, fout, label])
+    
+    with Pool(processes=8) as pool:
+        # Use the pool.map function to apply the square function to each element in the numbers list
+        result = pool.map(split_and_dump, parameters)
+
+    exit()
+
+if __name__ == "__main__":
+    """
+    TUAB dataset is downloaded from https://isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml
+    """
+
+    main()
+
+    # root to abnormal dataset
+    root = "/userhome1/jiangweibang/Datasets/TUH_Abnormal/v3.0.0/edf/"
+    channel_std = "01_tcp_ar"
+
+    # train, val abnormal subjects
+    train_val_abnormal = os.path.join(root, "train", "abnormal", channel_std)
+    train_val_a_sub = list(
+        set([item.split("_")[0] for item in os.listdir(train_val_abnormal)])
+    )
+    np.random.shuffle(train_val_a_sub)
+    train_a_sub, val_a_sub = (
+        train_val_a_sub[: int(len(train_val_a_sub) * 0.8)],
+        train_val_a_sub[int(len(train_val_a_sub) * 0.8) :],
+    )
+
+    # train, val normal subjects
+    train_val_normal = os.path.join(root, "train", "normal", channel_std)
+    train_val_n_sub = list(
+        set([item.split("_")[0] for item in os.listdir(train_val_normal)])
+    )
+    np.random.shuffle(train_val_n_sub)
+    train_n_sub, val_n_sub = (
+        train_val_n_sub[: int(len(train_val_n_sub) * 0.8)],
+        train_val_n_sub[int(len(train_val_n_sub) * 0.8) :],
+    )
+
+    # test abnormal subjects
+    test_abnormal = os.path.join(root, "eval", "abnormal", channel_std)
+    test_a_sub = list(set([item.split("_")[0] for item in os.listdir(test_abnormal)]))
+
+    # test normal subjects
+    test_normal = os.path.join(root, "eval", "normal", channel_std)
+    test_n_sub = list(set([item.split("_")[0] for item in os.listdir(test_normal)]))
+
+    # create the train, val, test sample folder
+    if not os.path.exists(os.path.join(root, "processed")):
+        os.makedirs(os.path.join(root, "processed"))
+
+    if not os.path.exists(os.path.join(root, "processed", "train")):
+        os.makedirs(os.path.join(root, "processed", "train"))
+    train_dump_folder = os.path.join(root, "processed", "train")
+
+    if not os.path.exists(os.path.join(root, "processed", "val")):
+        os.makedirs(os.path.join(root, "processed", "val"))
+    val_dump_folder = os.path.join(root, "processed", "val")
+
+    if not os.path.exists(os.path.join(root, "processed", "test")):
+        os.makedirs(os.path.join(root, "processed", "test"))
+    test_dump_folder = os.path.join(root, "processed", "test")
 
     # fetch_folder, sub, dump_folder, labels
     parameters = []
-    # for train_sub in train_a_sub:
-    #     parameters.append([train_val_abnormal, train_sub, train_dump_folder, 1])
-    # for train_sub in train_n_sub:
-    #     parameters.append([train_val_normal, train_sub, train_dump_folder, 0])
-    # for val_sub in val_a_sub:
-    #     parameters.append([train_val_abnormal, val_sub, val_dump_folder, 1])
-    # for val_sub in val_n_sub:
-    #     parameters.append([train_val_normal, val_sub, val_dump_folder, 0])
-    # for test_sub in test_a_sub:
-    #     parameters.append([test_abnormal, test_sub, test_dump_folder, 1])
-    # for test_sub in test_n_sub:
-    #     parameters.append([test_normal, test_sub, test_dump_folder, 0])
+    for train_sub in train_a_sub:
+        parameters.append([train_val_abnormal, train_sub, train_dump_folder, 1])
+    for train_sub in train_n_sub:
+        parameters.append([train_val_normal, train_sub, train_dump_folder, 0])
+    for val_sub in val_a_sub:
+        parameters.append([train_val_abnormal, val_sub, val_dump_folder, 1])
+    for val_sub in val_n_sub:
+        parameters.append([train_val_normal, val_sub, val_dump_folder, 0])
+    for test_sub in test_a_sub:
+        parameters.append([test_abnormal, test_sub, test_dump_folder, 1])
+    for test_sub in test_n_sub:
+        parameters.append([test_normal, test_sub, test_dump_folder, 0])
 
     # split and dump in parallel
-    # with Pool(processes=8) as pool:
-    #     # Use the pool.map function to apply the square function to each element in the numbers list
-    #     result = pool.map(split_and_dump, parameters)
+    with Pool(processes=24) as pool:
+        # Use the pool.map function to apply the square function to each element in the numbers list
+        result = pool.map(split_and_dump, parameters)
