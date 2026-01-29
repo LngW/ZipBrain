@@ -355,7 +355,7 @@ def supervised(args):
     )
 
     trainer = pl.Trainer(
-        devices=[args.cuda],
+        devices=[0],
         accelerator="gpu",
         strategy=DDPStrategy(find_unused_parameters=False),
         auto_select_gpus=True,
@@ -417,7 +417,6 @@ if __name__ == "__main__":
     # modification made for tc_eeg
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--log_dir", type=str, required=True)
-    parser.add_argument("--cuda", type=int, default=0)
     parser.add_argument("--top_k", type=int, default=0)
     parser.add_argument("--tome_r", type=int, default=0)
     parser.add_argument("--linear", action='store_true', default=False)

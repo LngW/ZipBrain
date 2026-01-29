@@ -14,6 +14,8 @@ common_args=(
 common_args="${common_args[@]}"
 . ../../seeds
 
+export CUDA_VISIBLE_DEVICES=0
+
 for seed in $seeds; do
     python run_binary_supervised.py $common_args --seed $seed --log_dir baseline_std
     python run_binary_supervised.py $common_args --seed $seed --log_dir baseline_lin --linear
