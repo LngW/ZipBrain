@@ -376,6 +376,7 @@ def supervised(args):
         model=lightning_model, ckpt_path="best", dataloaders=test_loader
     )[0]
     print(pretrain_result)
+    torch.distributed.destroy_process_group()
 
 
 if __name__ == "__main__":
