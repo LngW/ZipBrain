@@ -140,7 +140,7 @@ class Encoder(nn.Module):
         layers = nn.ModuleList()
 
         for _ in range(depth):
-            layers.append(Block(dim, heads, dropout, top_k, linear))
+            layers.append(Block(dim, heads, dropout, linear = linear, top_k=top_k))
         
         self.layers = layers
 
