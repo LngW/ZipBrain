@@ -83,7 +83,7 @@ def split_and_dump(params):
 def main():
     from pathlib import Path
     original = Path('..' , '..' , 'datasets' , 'TUH' , 'tuh_eeg_abnormal' , 'v3.0.1' , 'edf' , '100' , 'original')
-    processed = Path( '.' , 'datasets' , 'datasets' , 'processed' )
+    processed = Path( '.' , 'datasets' , 'tuab' , 'processed' )
 
     parameters = []
     for it in ['train', 'val', 'test']:

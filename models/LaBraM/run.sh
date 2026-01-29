@@ -25,7 +25,7 @@ log_dir="saves/logs"
 
 export CUDA_VISIBLE_DEVICES=0
 
-for seed in $seeds; do
+for seed in "${seeds[@]}"; do
     python run_class_finetuning.py $common_args \
         --output_dir ./$cp_dir/tuab_base_${seed}_baseline \
         --log_dir ./$log_dir/tuab_base_"${seed}"_baseline \
