@@ -7,7 +7,7 @@ common_args=(
     --token_size 200
     --hop_length 100
     --sample_length 10
-    --batch_size 512
+    --batch_size 256
     --model BIOT
     --num_workers 8
 )
