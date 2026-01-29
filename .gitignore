@@ -18,7 +18,7 @@ LaBraM/logs/
 .vscode/
 
 # BIOT
-!models/BIOT2/datasets/**/*.py
+!models/BIOT2/datasets/*/*.py
 
 # CBraMod
 !models/CBraMod/datasets/
