@@ -7,6 +7,7 @@ import torch.nn as nn
 import warnings
 from torch import Tensor
 from torch.nn import functional as F
+import math
 
 def ToMeBlock(r = 2, *args, **kwargs):
     from .tome.merge import bipartite_soft_matching, merge_wavg
@@ -57,16 +58,17 @@ class Attention(nn.Module):
         ks = self.k_proj(k).view(*(k.shape[:2]), n_head, d_head).transpose(1, 2)
         vs = self.v_proj(v).view(*(v.shape[:2]), n_head, d_head).transpose(1, 2)
 
-        attn = qs @ ks.transpose(-1, -2)
+        attn_score = (qs @ ks.transpose(-1, -2)) / math.sqrt(d_head)
         if self.topk > 0 and self.topk < q.shape[1]:
-            topk, _ = torch.topk(attn, self.topk, dim=-1)
-            attn[attn < topk[..., -1:]] = -torch.inf
+            topk, _ = torch.topk(attn_score, self.topk, dim=-1, sorted=False)
+            attn_score[attn_score < topk.min(dim=-1, keepdim = True)] = -torch.inf
 
-        scores = attn.softmax(-1)
-        output = (scores @ vs).transpose(1, 2).reshape(*q.shape)
+        attn_weight = attn_score.softmax(-1)
+        attn_weight = self.dropout(attn_weight)
+        output = (attn_weight @ vs).transpose(1, 2).reshape(*q.shape)
 
         output = self.out_proj(output)
-        return self.dropout(output), ks
+        return output, ks
 
 class TransformerEncoder(nn.Module):
     def __init__(self, encoder_layer, num_layers, norm=None, enable_nested_tensor=True, mask_check=True):

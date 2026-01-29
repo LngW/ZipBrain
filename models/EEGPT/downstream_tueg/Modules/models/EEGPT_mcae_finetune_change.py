@@ -259,15 +259,15 @@ class Attention(nn.Module):
                 attn_weight = torch.softmax((q @ k.transpose(-2, -1) / math.sqrt(q.size(-1))), dim=-1)
             return attn_weight
 
-        # efficient attention using Flash Attention CUDA kernels
         if self.top_k > 0 and self.top_k < T:
-            attn = (q @ k.transpose(-2, -1))
+            attn = (q @ k.transpose(-2, -1)) / np.sqrt(q.size(-1))
             topk, _ = torch.topk(attn, self.top_k, dim=-1)
             attn[attn < topk[..., -1:]] = -torch.inf
             attn = attn.softmax(dim=-1)
             attn = torch.dropout(attn, self.attn_drop, train=self.training)
             y = (attn @ v)
         else:
+            # efficient attention using Flash Attention CUDA kernels
             y = torch.nn.functional.scaled_dot_product_attention(
                 q, k, v, attn_mask=None, dropout_p=self.attn_drop if self.training else 0, is_causal=self.is_causal)
 

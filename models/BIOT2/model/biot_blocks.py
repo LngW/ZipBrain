@@ -1,5 +1,7 @@
 import torch
 from torch import nn
+from einops import einsum, rearrange
+import numpy as np
 
 def create_biot_encoder_block(
     dim, 
@@ -67,19 +69,21 @@ class Attention(nn.Module):
         B, N, D = x.shape
         H, HD = self.n_heads, self.d_heads
         scores = q @ k.transpose(-1, -2)
+        scores = scores / np.sqrt(HD)
 
         if self.top_k > 0 and self.top_k < N:
             top_k_values, _ = torch.topk(scores, self.top_k, dim=-1, sorted=False)
             scores[scores < top_k_values.min(dim=-1, keepdim=True)] = -torch.inf
 
         weights = torch.softmax(scores, dim = -1)
+        weights = self.dropout(weights)
         out = weights @ v
-        out = out.transpose(1, 2).flatten(-2)
+        out = rearrange(out, "bhnd->bn(hd)")
+        out = self.out_proj(out)
 
         return out
 
     def __li_attn(self, x, q, k, v):
-        from torch import einsum
         B, N, D = x.shape
         H, HD = self.n_heads, self.d_heads
         q = q.softmax(dim=-1)
@@ -87,25 +91,26 @@ class Attention(nn.Module):
 
         q = q * HD ** -0.5
 
-        context = einsum('bhnd,bhne->bhde', k, v)
-        out = einsum('bhnd,bhde->bhne', q, context)
-        out = einsum('b h n e -> b n (h e)')
+        context = einsum(k, v, 'bhnd,bhne->bhde')
+        out = einsum(q, context, 'bhnd,bhde->bhne')
+        out = rearrange(out, 'bhne->bn(he)')
+        out = self.out_proj(out)
 
         return out
 
     def forward(self, x):
         B, N, D = x.shape
         H, HD = self.n_heads, self.d_heads
-        qkv = self.qkv_proj(x).view(B, N, 3, H, HD)
-        q, k, v = qkv.permute(2, 0, 3, 1, 4)
+        qkv = self.qkv_proj(x)
+        q, k, v = rearrange(qkv, "b n (p h d) -> p b h n d", p=3, h=H, d=HD) #.permute(2, 0, 3, 1, 4)
 
         if self.linear:
             out = self.__li_attn(x, q, k, v)
         else:
             out = self.__sa_attn(x, q, k, v)
 
-        out = self.out_proj(out)
-        out = self.dropout(out)
+        # out = self.out_proj(out)
+        # out = self.dropout(out)
 
         return out, k
 
