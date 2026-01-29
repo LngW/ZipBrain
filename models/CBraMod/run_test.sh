@@ -2,8 +2,8 @@
 
 common_args=(
     --cuda 0
-    --epochs 25
-    --batch_size 128
+    --epochs 2
+    --batch_size 64
     --lr 5e-4
     --weight_decay 0.05
     --downstream_dataset TUAB
@@ -25,7 +25,7 @@ fi
 
 . ../../seeds
 
-for seed in "${seeds[@]}"; do
+for seed in "$seeds"; do
     echo tuab_base_"${seed}"_baseline
     python ./finetune_main.py $common_args \
         --model_dir ./$cp_dir/tuab_base_${seed}_baseline \

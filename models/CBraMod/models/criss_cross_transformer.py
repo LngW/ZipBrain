@@ -45,7 +45,7 @@ class Attention(nn.Module):
         self.q_proj = nn.Linear(d_model, d_model, bias = bias, device = device, dtype = dtype)
         self.k_proj = nn.Linear(d_model, d_model, bias = bias, device = device, dtype = dtype)
         self.v_proj = nn.Linear(d_model, d_model, bias = bias, device = device, dtype = dtype)
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = dropout
 
         self.out_proj = nn.Linear(d_model, d_model)
 
@@ -61,11 +61,11 @@ class Attention(nn.Module):
         attn_score = (qs @ ks.transpose(-1, -2)) / math.sqrt(d_head)
         if self.topk > 0 and self.topk < q.shape[1]:
             topk, _ = torch.topk(attn_score, self.topk, dim=-1, sorted=False)
-            attn_score[attn_score < topk.min(dim=-1, keepdim = True)] = -torch.inf
+            attn_score[attn_score < topk.amin(dim=-1, keepdim = True)] = -torch.inf
 
-        attn_weight = attn_score.softmax(-1)
-        attn_weight = self.dropout(attn_weight)
-        output = (attn_weight @ vs).transpose(1, 2).reshape(*q.shape)
+        attn_weight = torch.softmax(attn_score, -1)
+        attn_weight = torch.dropout(attn_weight, self.dropout, self.training)
+        output = (attn_weight @ vs).transpose(1, 2).flatten(-2)
 
         output = self.out_proj(output)
         return output, ks
