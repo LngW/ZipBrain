@@ -15,11 +15,11 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pyhealth.metrics import binary_metrics_fn
 
 from model import (
-    SPaRCNet,
-    ContraWR,
-    CNNTransformer,
-    FFCL,
-    STTransformer,
+    # SPaRCNet,
+    # ContraWR,
+    # CNNTransformer,
+    # FFCL,
+    # STTransformer,
     BIOTClassifier,
 )
 from utils import TUABLoader, CHBMITLoader, PTBLoader, focal_loss, BCE
@@ -133,6 +133,7 @@ def prepare_TUAB_dataloader(args):
     np.random.seed(seed)
 
     root = "/srv/local/data/TUH/tuh3/tuh_eeg_abnormal/v3.0.0/edf/processed"
+    root = './datasets/TUAB/processed_100'
 
     train_files = os.listdir(os.path.join(root, "train"))
     np.random.shuffle(train_files)
@@ -328,6 +329,9 @@ def supervised(args):
             n_channels=args.in_channels,
             n_fft=args.token_size,
             hop_length=args.hop_length,
+            linear = args.linear, # modifications for tc_eeg
+            top_k = args.top_k,
+            tome_r = args.tome_r
         )
         if args.pretrain_model_path and (args.sampling_rate == 200):
             model.biot.load_state_dict(torch.load(args.pretrain_model_path))
@@ -340,7 +344,7 @@ def supervised(args):
     # logger and callbacks
     version = f"{args.dataset}-{args.model}-{args.lr}-{args.batch_size}-{args.sampling_rate}-{args.token_size}-{args.hop_length}"
     logger = TensorBoardLogger(
-        save_dir="./",
+        save_dir="./" + args.log_dir + "/", # modification for tc_eeg
         version=version,
         name="log",
     )
@@ -407,6 +411,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--pretrain_model_path", type=str, default="", help="pretrained model path"
     )
+
+    # modification made for tc_eeg
+    parser.add_argument("--log_dir", type=str, required=True)
+    parser.add_argument("--top_k", type=int, default=0)
+    parser.add_argument("--tome_r", type=int, default=0)
+    parser.add_argument("--linear", action='store_true', default=False)
+    # end of modification
+
     args = parser.parse_args()
     print(args)
 

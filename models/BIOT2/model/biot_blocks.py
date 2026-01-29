@@ -76,6 +76,8 @@ class Attention(nn.Module):
         out = weights @ v
         out = out.transpose(1, 2).flatten(-2)
 
+        return out
+
     def __li_attn(self, x, q, k, v):
         from torch import einsum
         B, N, D = x.shape
@@ -125,8 +127,8 @@ class Block(nn.Module):
         dx, k = self.attn(self.norm1(x))
         x = x + dx
 
-        if self.tome_r > 0 and self.tome_r < x.shape[1]:
-            x, size = self.tome(x, k, size)
+        # if self.tome_r > 0 and self.tome_r < x.shape[1]:
+        x, size = self.tome(x, k, size)
 
         x = x + self.ffn(self.norm2(x))
 
@@ -139,6 +141,8 @@ class Encoder(nn.Module):
 
         for _ in range(depth):
             layers.append(Block(dim, heads, dropout, top_k, linear))
+        
+        self.layers = layers
 
     def forward(self, x):
         size = None
