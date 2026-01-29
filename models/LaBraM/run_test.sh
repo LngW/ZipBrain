@@ -7,7 +7,7 @@ common_args=(
     --lr 5e-4
     --update_freq 1
     --warmup_epochs 1
-    --epochs 25
+    --epochs 2
     --layer_decay 0.65
     --drop_path 0.1
     --save_ckpt_freq 5
