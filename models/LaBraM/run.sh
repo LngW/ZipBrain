@@ -3,7 +3,7 @@ common_args=(
     --model labram_base_patch200_200
     # --finetune ../thirdparty/LaBraM/checkpoints/labram-base.pth
     --weight_decay 0.05
-    --batch_size 256
+    --batch_size 64
     --lr 5e-4
     --update_freq 1
     --warmup_epochs 1
