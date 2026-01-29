@@ -75,11 +75,38 @@ def split_and_dump(params):
                     open(dump_path, "wb"),
                 )
 
+def main():
+    from pathlib import Path
+    fetch_dir = Path(".", '..', '..', '..', 'datasets', 'TUH', 'tuh_eeg_abnormal', 'v3.0.1', 'edf', '100', 'original')
+    # fetch_dir = root / 'original'
+    dump_dir = Path('.', 'datasets', 'tuab', '100', 'processed')
+
+    parameters = []
+    for subset in ['train', 'val', 'test']:
+        for label, label_name in enumerate(['normal', 'abnormal']):
+            fin = fetch_dir / subset / label_name
+            fout = dump_dir / subset
+
+            fout.mkdir(parents=True, exist_ok=True)
+
+            subs = fin.glob('*.edf')
+            for sub in subs:
+                parameters.append([fin, sub.name, fout, label])
+
+    # split and dump in parallel
+    with Pool(processes=8) as pool:
+        # Use the pool.map function to apply the square function to each element in the numbers list
+        result = pool.map(split_and_dump, parameters)
+
+    exit()    
 
 if __name__ == "__main__":
     """
     TUAB dataset is downloaded from https://isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml
     """
+
+    main()
+
     # root to abnormal dataset
     root = "../datasets/downstream/tuh_eeg_abnormal/v3.0.0/edf/"
     channel_std = "01_tcp_ar"
