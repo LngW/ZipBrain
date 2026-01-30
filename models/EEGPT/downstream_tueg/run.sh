@@ -41,6 +41,15 @@ for seed in "${seeds[@]}"; do
             --tome_r $r
     done
 
+    for r in "3 3 2 2 0 0 0 0" "3 0 3 0 2 0 2 0"; do
+        folder_name="tuab_tiny_${seed}_tome_${r// /}"
+        python run_class_finetuning_EEGPT_change.py $common_args  \
+            --output_dir ./$cp_dir/$folder_name  \
+            --log_dir $log_dir/$folder_name  \
+            --seed $seed  \
+            --tome_r $r
+    done
+
     for k in 4 2 1; do
         folder_name="tuab_tiny_${seed}_top_${k}"
         python run_class_finetuning_EEGPT_change.py $common_args  \

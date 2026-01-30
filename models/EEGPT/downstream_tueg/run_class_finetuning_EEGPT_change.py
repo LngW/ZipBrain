@@ -30,7 +30,7 @@ def get_args():
     parser.add_argument('--save_ckpt_freq', default=5, type=int)
 
     # For TC_EEG
-    parser.add_argument('--tome_r', type=int, default=0)
+    parser.add_argument('--tome_r', type=int, default=[0], nargs='+')
     parser.add_argument('--top_k', type=int, default=0)
 
     # robust evaluation

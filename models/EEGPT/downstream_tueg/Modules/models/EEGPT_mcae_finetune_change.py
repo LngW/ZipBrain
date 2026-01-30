@@ -499,12 +499,18 @@ class EEGTransformer(nn.Module):
         self.chan_embed = nn.Embedding(len(CHANNEL_DICT), embed_dim)
         # --
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
+        tome_r_list = kwargs.get('tome_r', [0])
+        if len(tome_r_list) == 1:
+            tome_r_list = tome_r_list * depth
+        elif not len(tome_r_list) == depth:
+            raise ValueError("rs in tome_r list {} do not equal to depth {} or 1, we can not contruct this model!".format(len(tome_r_list), depth))
+
         self.blocks = nn.ModuleList([
             Block(
                 dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer, 
                 is_causal=False, use_rope= False, return_attention=(i+1)==return_attention_layer,
-                tome_r = kwargs.get('tome_r', 0), top_k=kwargs.get('top_k', 0)
+                tome_r = tome_r_list[i], top_k=kwargs.get('top_k', 0)
                 )
             for i in range(depth)])
         self.norm = norm_layer(embed_dim)
@@ -720,7 +726,7 @@ class EEGPTClassifier(nn.Module):
             init_std=0.02,
             qkv_bias=True, 
             norm_layer=partial(nn.LayerNorm, eps=1e-6),
-            tome_r = kwargs.get('tome_r', 0), top_k=kwargs.get('top_k', 0)
+            tome_r = kwargs.get('tome_r', [0]), top_k=kwargs.get('top_k', 0)
             )
         
         # reconstructor = EEGTransformerReconstructor(
