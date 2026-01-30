@@ -33,7 +33,8 @@ def main():
 
     parser.add_argument('--top_k_s', type=int, default=0)
     parser.add_argument('--top_k_t', type=int, default=0)
-    parser.add_argument('--tome_r', type=int, default=0)
+    parser.add_argument('--tome_r_s', type=int, default=[0], nargs='+')
+    parser.add_argument('--tome_r_t', type=int, default=[0], nargs='+')
 
     """############ Downstream dataset settings ############"""
     parser.add_argument('--downstream_dataset', type=str, default='MentalArithmetic',

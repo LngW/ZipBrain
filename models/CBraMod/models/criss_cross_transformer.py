@@ -17,16 +17,21 @@ def ToMeBlock(r = 2, *args, **kwargs):
             super().__init__(*args, **kwargs)
             self.r = r
 
-        def forward(self, x, k, size_old):
+        def forward(self, x, k, trace):
             bsz, hd, seq, _ = k.shape
             merge, _ = bipartite_soft_matching(
                 k.transpose(1,2).reshape(bsz, seq, -1),
                 self.r
             )
 
-            x, size = merge_wavg(merge, x, size_old)
+            if trace is None:
+                trace = torch.eye(seq, dtype=x.dtype, device=x.device).unsqueeze(0).repeat(bsz, 1, 1)
 
-            return x, size
+            x = merge(x, mode='sum')
+            trace = merge(trace, mode='sum')
+            x = x / trace.sum(-1, True)
+
+            return x, trace
         
     return ToMeBlock(r = r, *args, **kwargs)
 
@@ -86,9 +91,10 @@ class TransformerEncoder(nn.Module):
             is_causal: Optional[bool] = None) -> Tensor:
 
         output = src
-        size = None
+        trace_t = None
+        trace_s = None
         for mod in self.layers:
-            output, size = mod(output, size, src_mask=mask)
+            output, trace_t, trace_s = mod(output, trace_t, trace_s, src_mask=mask)
         if self.norm is not None:
             output = self.norm(output)
         return output
@@ -101,7 +107,7 @@ class TransformerEncoderLayer(nn.Module):
                  activation: Union[str, Callable[[Tensor], Tensor]] = F.relu,
                  layer_norm_eps: float = 1e-5, batch_first: bool = False, norm_first: bool = False,
                  bias: bool = True, device=None, dtype=None,
-                 tome_r = 0, top_k_s = 0, top_k_t = 0) -> None:
+                 top_k_s = 0, top_k_t = 0) -> None:
         factory_kwargs = {'device': device, 'dtype': dtype}
         super().__init__()
         self.self_attn_s = Attention(d_model//2, nhead // 2, dropout=dropout,
@@ -124,7 +130,8 @@ class TransformerEncoderLayer(nn.Module):
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
 
-        self.tome_block = ToMeBlock(tome_r)
+        self.tome_block_t = ToMeBlock(0)
+        self.tome_block_s = ToMeBlock(0)
 
         # Legacy string support for activation function.
         if isinstance(activation, str):
@@ -149,40 +156,48 @@ class TransformerEncoderLayer(nn.Module):
     def forward(
             self,
             src: Tensor,
-            size: Tensor,
+            trace_t: Tensor,
+            trace_s: Tensor,
             src_mask: Optional[Tensor] = None,
             src_key_padding_mask: Optional[Tensor] = None,
             is_causal: bool = False) -> Tensor:
 
         x = src
-        x1, k = self._sa_block(self.norm1(x), src_mask, src_key_padding_mask, is_causal=is_causal)
+        x1, trace_t, trace_s = self._sa_block(self.norm1(x), src_mask, src_key_padding_mask, is_causal=is_causal, trace_t=trace_t, trace_s = trace_s)
         x = x + x1
-        k = k.reshape(x.shape[0], x.shape[1], *(k.shape[1:])).permute(0, 2, 3, 1, 4).flatten(3)
-        x2, size = self.tome_block(x.transpose(1,2).flatten(2), k, size)
-        x = x2.reshape(x.shape[0], -1, x.shape[1], x.shape[3]).transpose(1, 2)
         x = x + self._ff_block(self.norm2(x))
-        return x, size
+        return x, trace_t, trace_s
 
     # self-attention block
     def _sa_block(self, x: Tensor,
-                  attn_mask: Optional[Tensor], key_padding_mask: Optional[Tensor], is_causal: bool = False) -> Tensor:
+                  attn_mask: Optional[Tensor], key_padding_mask: Optional[Tensor], is_causal: bool = False, trace_t = None, trace_s = None) -> Tensor:
         bz, ch_num, patch_num, patch_size = x.shape
         xs = x[:, :, :, :patch_size // 2]
         xt = x[:, :, :, patch_size // 2:]
         xs = xs.transpose(1, 2).contiguous().view(bz*patch_num, ch_num, patch_size // 2)
         xt = xt.contiguous().view(bz*ch_num, patch_num, patch_size // 2)
-        xs, _ = self.self_attn_s(xs, xs, xs,
+
+        if trace_s is not None:
+            xs = (trace_s @ xs) / trace_s.sum(-1, keepdim=True)
+        xs, ks = self.self_attn_s(xs, xs, xs,
                              attn_mask=attn_mask,
                              key_padding_mask=key_padding_mask,
                              need_weights=False)
+        xs2, trace_s = self.tome_block_s(xs, ks, trace_s)
+        xs = trace_s.transpose(-1, -2) @ xs2
         xs = xs.contiguous().view(bz, patch_num, ch_num, patch_size//2).transpose(1, 2)
+
+        if trace_t is not None:
+            xt = (trace_t @ xt) / trace_t.sum(-1, keepdim=True)
         xt, kt = self.self_attn_t(xt, xt, xt,
                               attn_mask=attn_mask,
                               key_padding_mask=key_padding_mask,
                               need_weights=False)
+        xt2, trace_t = self.tome_block_t(xt, kt, trace_t)
+        xt = trace_t.transpose(-1, -2) @ xt2
         xt = xt.contiguous().view(bz, ch_num, patch_num, patch_size//2)
         x = torch.concat((xs, xt), dim=3)
-        return self.dropout1(x), kt
+        return self.dropout1(x), trace_t, trace_s
 
     # feed forward block
     def _ff_block(self, x: Tensor) -> Tensor:

@@ -8,13 +8,13 @@ from models.criss_cross_transformer import TransformerEncoderLayer, TransformerE
 class CBraMod(nn.Module):
     def __init__(self, in_dim=200, out_dim=200, d_model=200, dim_feedforward=800, seq_len=30, n_layer=12,
                     nhead=8,
-                    tome_r = 0, top_k_s = 0, top_k_t = 0):
+                    tome_r_t = [0], tome_r_s = [0], top_k_s = 0, top_k_t = 0):
         super().__init__()
         self.patch_embedding = PatchEmbedding(in_dim, out_dim, d_model, seq_len)
         encoder_layer = TransformerEncoderLayer(
             d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, batch_first=True, norm_first=True,
             activation=F.gelu,
-            tome_r=tome_r, top_k_s=top_k_s, top_k_t=top_k_t
+            top_k_s=top_k_s, top_k_t=top_k_t
         )
         self.encoder = TransformerEncoder(encoder_layer, num_layers=n_layer, enable_nested_tensor=False)
         self.proj_out = nn.Sequential(
@@ -25,6 +25,18 @@ class CBraMod(nn.Module):
             nn.Linear(d_model, out_dim),
         )
         self.apply(_weights_init)
+
+        tome_r_t_list = tome_r_t * n_layer if len(tome_r_t) == 1 else tome_r_t
+        tome_r_s_list = tome_r_s * n_layer if len(tome_r_s) == 1 else tome_r_s
+
+        if len(tome_r_t_list) != n_layer:
+            raise ValueError("tome_r_t layers not match")
+        if len(tome_r_s_list) != n_layer:
+            raise ValueError("tome_r_s layers not match")
+        
+        for (rt, rs, layer) in zip(tome_r_t_list, tome_r_s_list, self.encoder.layers):
+            layer.tome_block_t.r = rt
+            layer.tome_block_s.r = rs
 
     def forward(self, x, mask=None):
         patch_emb = self.patch_embedding(x, mask)

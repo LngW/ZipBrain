@@ -52,18 +52,21 @@ class LoadDataset(object):
                 train_set,
                 batch_size=self.params.batch_size,
                 collate_fn=train_set.collate,
+                num_workers=self.params.num_workers,
                 shuffle=True,
             ),
             'val': DataLoader(
                 val_set,
                 batch_size=self.params.batch_size,
                 collate_fn=val_set.collate,
+                num_workers=self.params.num_workers,
                 shuffle=False,
             ),
             'test': DataLoader(
                 test_set,
                 batch_size=self.params.batch_size,
                 collate_fn=test_set.collate,
+                num_workers=self.params.num_workers,
                 shuffle=False,
             ),
         }
