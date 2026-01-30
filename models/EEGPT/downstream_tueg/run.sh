@@ -2,11 +2,11 @@
 common_args=(
     --model EEGPT
     --weight_decay 0.05
-    --batch_size 100
+    --batch_size 256
     --lr 5e-4
     --update_freq 1
     --warmup_epochs 5
-    --epochs 25
+    --epochs 15
     --layer_decay 0.65
     --dist_eval
     --save_ckpt_freq 5
