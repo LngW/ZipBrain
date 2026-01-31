@@ -154,7 +154,10 @@ class Trainer(object):
         roc_auc_best = 0
         pr_auc_best = 0
         cm_best = None
+        global_step = 0
         for epoch in range(self.params.epochs):
+            if self.logger is not None:
+                self.logger.add_scalar('Train/Epoch', global_step, epoch)
             self.model.train()
             start_time = timer()
             losses = []
@@ -168,11 +171,14 @@ class Trainer(object):
 
                 loss.backward()
                 losses.append(loss.data.cpu().numpy())
+                if self.logger is not None:
+                    self.logger.add_scalar('Train/Loss', losses[-1], global_step)
                 if self.params.clip_value > 0:
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.params.clip_value)
                     # torch.nn.utils.clip_grad_value_(self.model.parameters(), self.params.clip_value)
                 self.optimizer.step()
                 self.optimizer_scheduler.step()
+                global_step += 1
 
             optim_state = self.optimizer.state_dict()
 
@@ -205,9 +211,12 @@ class Trainer(object):
                     cm_best = cm
                     self.best_model_states = copy.deepcopy(self.model.state_dict())
                 if self.logger is not None:
-                    self.logger.add_scalars('Train', {'Loss': np.mean(losses)})
-                    self.logger.add_scalars('Val', {'acc': acc, 'bacc': bacc, 'pr_auc': pr_auc, 'roc_auc': roc_auc})
-                    self.logger.add_scalars('Mem', {'AllocMax': torch.cuda.max_memory_allocated() / 1024 / 1024, 'Alloc': torch.cuda.memory_allocated() / 1024 / 1024})
+                    self.logger.add_scalar('Train/Losses', np.mean(losses), epoch)
+                    self.logger.add_scalar('Train/LR', optim_state['param_groups'][0]['lr'], epoch)
+                    for k, v in {'acc': acc, 'bacc': bacc, 'pr_auc': pr_auc, 'roc_auc': roc_auc}.items():
+                        self.logger.add_scalar('Val/' + k, v, epoch)
+                    for k, v in {'AllocMax': torch.cuda.max_memory_allocated(),}.items():
+                        self.logger.add_scalar('Mem/' + k, v / 1024 / 1024, epoch)
         self.model.load_state_dict(self.best_model_states)
         with torch.no_grad():
             print("***************************Test************************")
@@ -222,7 +231,8 @@ class Trainer(object):
                 )
             )
             if self.logger is not None:
-                self.logger.add_scalars('Test', {'acc': acc, 'bacc': bacc, 'pr_auc': pr_auc, 'roc_auc': roc_auc})
+                for k, v in {'acc': acc, 'bacc': bacc, 'pr_auc': pr_auc, 'roc_auc': roc_auc}.items():
+                    self.logger.add_text('Test/' + k, v, 0)
             print(cm)
             if not os.path.isdir(self.params.model_dir):
                 os.makedirs(self.params.model_dir)
