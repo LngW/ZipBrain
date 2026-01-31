@@ -30,15 +30,15 @@ for seed in "${seeds[@]}"; do
     python ./finetune_main.py $common_args \
         --model_dir ./$cp_dir/tuab_base_${seed}_baseline \
         --seed $seed \
-        > ./$log_dir/tuab_base_"${seed}"_baseline.log
+        --log_dir ./$log_dir/tuab_base_"${seed}"_baseline
     for k in 2 1; do
         folder_name="tuab_base_${seed}_top_${k}_t"
         echo $folder_name
         python ./finetune_main.py $common_args  \
             --model_dir ./$cp_dir/$folder_name  \
             --seed $seed  \
-            --top_k_t $k > \
-            ./$log_dir/$folder_name.log
+            --top_k_t $k \
+            --log_dir ./$log_dir/$folder_name
     done
     for k in 4 2 1; do
         folder_name="tuab_base_${seed}_top_${k}_s"
@@ -46,8 +46,8 @@ for seed in "${seeds[@]}"; do
         python ./finetune_main.py $common_args  \
             --model_dir ./$cp_dir/$folder_name  \
             --seed $seed  \
-            --top_k_s $k > \
-            ./$log_dir/$folder_name.log
+            --top_k_s $k  \
+            --log_dir ./$log_dir/$folder_name
     done
     for rt in "1 0 1 0 1 0 1 0 1 0 0 0" "1 1 1 1 1 0 0 0 0 0 0 0"; do
         folder_name="tuab_base_${seed}_tome_${rt// /}_t"
@@ -55,8 +55,8 @@ for seed in "${seeds[@]}"; do
         python ./finetune_main.py $common_args  \
             --model_dir ./$cp_dir/$folder_name  \
             --seed $seed  \
-            --tome_r_t $rt > \
-            ./$log_dir/$folder_name.log
+            --tome_r_t $rt \
+            --log_dir ./$log_dir/$folder_name
     done
     for rs in "2 0 2 0 2 0 2 0 2 0 0 0" "2 2 2 2 2 0 0 0 0 0 0 0"; do
         folder_name="tuab_base_${seed}_tome_${rs// /}_s"
@@ -64,7 +64,7 @@ for seed in "${seeds[@]}"; do
         python ./finetune_main.py $common_args  \
             --model_dir ./$cp_dir/$folder_name  \
             --seed $seed  \
-            --tome_r_s $rs > \
-            ./$log_dir/$folder_name.log
+            --tome_r_s $rs \
+            --log_dir ./$log_dir/$folder_name
     done
 done
