@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from sklearn.metrics import balanced_accuracy_score, f1_score, confusion_matrix, cohen_kappa_score, roc_auc_score, \
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, confusion_matrix, cohen_kappa_score, roc_auc_score, \
     precision_recall_curve, auc, r2_score, mean_squared_error
 from tqdm import tqdm
 
@@ -52,12 +52,13 @@ class Evaluator:
         truths = np.array(truths)
         preds = np.array(preds)
         scores = np.array(scores)
-        acc = balanced_accuracy_score(truths, preds)
+        acc = accuracy_score(truths, preds)
+        bacc = balanced_accuracy_score(truths, preds)
         roc_auc = roc_auc_score(truths, scores)
         precision, recall, thresholds = precision_recall_curve(truths, scores, pos_label=1)
         pr_auc = auc(recall, precision)
         cm = confusion_matrix(truths, preds)
-        return acc, pr_auc, roc_auc, cm
+        return acc, bacc, pr_auc, roc_auc, cm
 
     def get_metrics_for_regression(self, model):
         model.eval()

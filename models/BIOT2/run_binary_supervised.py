@@ -36,7 +36,9 @@ class LitModel_finetune(pl.LightningModule):
         X, y = batch
         prob = self.model(X)
         loss = BCE(prob, y)  # focal_loss(prob, y)
-        self.log("train_loss", loss)
+        self.log("Train/train_loss", loss)
+        self.log("Mem/AllocMax", torch.cuda.max_memory_allocated() / 1024 / 1024)
+        self.log("Mem/ReservMax", torch.cuda.max_memory_reserved() / 1024 / 1024)
         return loss
 
     def validation_step(self, batch, batch_idx):

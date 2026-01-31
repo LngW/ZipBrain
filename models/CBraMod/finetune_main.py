@@ -58,6 +58,8 @@ def main():
     parser.add_argument('--foundation_dir', type=str,
                         default='pretrained_weights/pretrained_weights.pth',
                         help='foundation_dir')
+    
+    parser.add_argument('--log_dir', default=None)
 
     params = parser.parse_args()
     print(params)

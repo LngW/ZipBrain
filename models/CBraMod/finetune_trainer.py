@@ -5,6 +5,7 @@ from timeit import default_timer as timer
 import numpy as np
 import torch
 from torch.nn import CrossEntropyLoss, BCEWithLogitsLoss, MSELoss
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from finetune_evaluator import Evaluator
@@ -67,6 +68,10 @@ class Trainer(object):
         self.optimizer_scheduler = torch.optim.lr_scheduler.OneCycleLR(
             self.optimizer, total_steps=self.params.epochs * self.data_length, max_lr=self.params.lr
         )
+        if params.log_dir is not None:
+            self.logger = SummaryWriter(log_dir=params.log_dir)
+        else:
+            self.logger = None
         print(self.model)
 
     def train_for_multiclass(self):
@@ -172,12 +177,13 @@ class Trainer(object):
             optim_state = self.optimizer.state_dict()
 
             with torch.no_grad():
-                acc, pr_auc, roc_auc, cm = self.val_eval.get_metrics_for_binaryclass(self.model)
+                acc, bacc, pr_auc, roc_auc, cm = self.val_eval.get_metrics_for_binaryclass(self.model)
                 print(
-                    "Epoch {} : Training Loss: {:.5f}, acc: {:.5f}, pr_auc: {:.5f}, roc_auc: {:.5f}, LR: {:.5f}, Time elapsed {:.2f} mins".format(
+                    "Epoch {} : Training Loss: {:.5f}, acc: {:.5f}, bacc: {:.5f}, pr_auc: {:.5f}, roc_auc: {:.5f}, LR: {:.5f}, Time elapsed {:.2f} mins".format(
                         epoch + 1,
                         np.mean(losses),
                         acc,
+                        bacc,
                         pr_auc,
                         roc_auc,
                         optim_state['param_groups'][0]['lr'],
@@ -198,18 +204,25 @@ class Trainer(object):
                     roc_auc_best = roc_auc
                     cm_best = cm
                     self.best_model_states = copy.deepcopy(self.model.state_dict())
+                if self.logger is not None:
+                    self.logger.add_scalars('Train', {'Loss': np.mean(losses)})
+                    self.logger.add_scalars('Val', {'acc': acc, 'bacc': bacc, 'pr_auc': pr_auc, 'roc_auc': roc_auc})
+                    self.logger.add_scalars('Mem', {'AllocMax': torch.cuda.max_memory_allocated() / 1024 / 1024, 'Alloc': torch.cuda.memory_allocated() / 1024 / 1024})
         self.model.load_state_dict(self.best_model_states)
         with torch.no_grad():
             print("***************************Test************************")
-            acc, pr_auc, roc_auc, cm = self.test_eval.get_metrics_for_binaryclass(self.model)
+            acc, bacc, pr_auc, roc_auc, cm = self.test_eval.get_metrics_for_binaryclass(self.model)
             print("***************************Test results************************")
             print(
-                "Test Evaluation: acc: {:.5f}, pr_auc: {:.5f}, roc_auc: {:.5f}".format(
+                "Test Evaluation: acc: {:.5f}, bacc: {:.5f}, pr_auc: {:.5f}, roc_auc: {:.5f}".format(
                     acc,
+                    bacc,
                     pr_auc,
                     roc_auc,
                 )
             )
+            if self.logger is not None:
+                self.logger.add_scalars('Test', {'acc': acc, 'bacc': bacc, 'pr_auc': pr_auc, 'roc_auc': roc_auc})
             print(cm)
             if not os.path.isdir(self.params.model_dir):
                 os.makedirs(self.params.model_dir)

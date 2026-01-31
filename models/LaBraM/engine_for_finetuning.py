@@ -141,6 +141,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             log_writer.update(min_lr=min_lr, head="opt")
             log_writer.update(weight_decay=weight_decay_value, head="opt")
             log_writer.update(grad_norm=grad_norm, head="opt")
+            log_writer.update(allocMax=torch.cuda.max_memory_allocated() / 1024 / 1024, head='Mem')
+            log_writer.update(reservMax=torch.cuda.max_memory_reserved() / 1024 / 1024, head='Mem')
 
             log_writer.set_step()
 
