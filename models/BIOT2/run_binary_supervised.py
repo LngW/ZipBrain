@@ -1,6 +1,7 @@
 import os
 import argparse
 import pickle
+import time
 
 import torch
 from tqdm import tqdm
@@ -261,12 +262,49 @@ def prepare_PTB_dataloader(args):
     print(len(train_loader), len(val_loader), len(test_loader))
     return train_loader, test_loader, val_loader
 
+def prepare_RND_dataloader(args):
+    # set random seed
+    seed = args.seed
+    # torch.manual_seed(seed)
+    g = torch.Generator()
+    g.manual_seed(seed)
+    # np.random.seed(seed)
+
+    class RandomDataset(torch.utils.data.Dataset):
+        def __init__(self, n_samples, n_channels, sampling_rate, sample_length):
+            self.n_samples = n_samples
+            self.data_shape = (n_channels, int(sampling_rate * sample_length))
+
+        def __len__(self):
+            return self.n_samples
+
+        def __getitem__(self, index):
+            X = torch.randn(self.data_shape, generator=g)
+            y = torch.randint(0, 2, (1,), generator=g).float()
+            return X, y
+
+    train_dataset = RandomDataset(1000, args.in_channels, args.sampling_rate, args.sample_length)
+    val_dataset = RandomDataset(200, args.in_channels, args.sampling_rate, args.sample_length)
+    test_dataset = RandomDataset(200, args.in_channels, args.sampling_rate, args.sample_length)
+
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
+    )
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
+    )
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
+    )
+
+    return train_loader, test_loader, val_loader
 
 def supervised(args):
     # get data loaders
     if args.dataset == "TUAB":
         train_loader, test_loader, val_loader = prepare_TUAB_dataloader(args)
-
+    elif args.dataset == "RANDOM":
+        train_loader, test_loader, val_loader = prepare_RND_dataloader(args)
     else:
         raise NotImplementedError
 
@@ -369,14 +407,23 @@ def supervised(args):
     )
 
     # train the model
-    trainer.fit(
-        lightning_model, train_dataloaders=train_loader, val_dataloaders=val_loader
-    )
+    timestamp = int(time.time())
+    from torch.profiler import profile, record_function, ProfilerActivity
+    with profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU]) as prof:
+        with record_function('model_training'):
+            trainer.fit(
+                lightning_model, train_dataloaders=train_loader, val_dataloaders=val_loader
+            )
 
-    # test the model
-    pretrain_result = trainer.test(
-        model=lightning_model, ckpt_path="best", dataloaders=test_loader
-    )[0]
+        with record_function('model_inference'):
+            # test the model
+            pretrain_result = trainer.test(
+                model=lightning_model, ckpt_path="best", dataloaders=test_loader
+            )[0]
+
+    prof.export_chrome_trace("trace_{}.json".format(timestamp))
+    # prof.export_memory_timeline('memory_{}.json'.format(timestamp))
+    # prof.key_averages().
     print(pretrain_result)
     torch.distributed.destroy_process_group()
 

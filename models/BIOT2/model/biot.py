@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import numpy as np
 # from linear_attention_transformer import LinearAttentionTransformer
 from .biot_blocks import create_biot_encoder_block
+from torch.profiler import record_function
 
 class PatchFrequencyEmbedding(nn.Module):
     def __init__(self, emb_size=256, n_freq=101):
@@ -117,33 +118,35 @@ class BIOTEncoder(nn.Module):
         x: [batch_size, channel, ts]
         output: [batch_size, emb_size]
         """
-        emb_seq = []
-        for i in range(x.shape[1]):
-            channel_spec_emb = self.stft(x[:, i : i + 1, :])
-            channel_spec_emb = self.patch_embedding(channel_spec_emb)
-            batch_size, ts, _ = channel_spec_emb.shape
-            # (batch_size, ts, emb)
-            channel_token_emb = (
-                self.channel_tokens(self.index[i + n_channel_offset])
-                .unsqueeze(0)
-                .unsqueeze(0)
-                .repeat(batch_size, ts, 1)
-            )
-            # (batch_size, ts, emb)
-            channel_emb = self.positional_encoding(channel_spec_emb + channel_token_emb)
+        with record_function('biot_stft'):
+            emb_seq = []
+            for i in range(x.shape[1]):
+                channel_spec_emb = self.stft(x[:, i : i + 1, :])
+                channel_spec_emb = self.patch_embedding(channel_spec_emb)
+                batch_size, ts, _ = channel_spec_emb.shape
+                # (batch_size, ts, emb)
+                channel_token_emb = (
+                    self.channel_tokens(self.index[i + n_channel_offset])
+                    .unsqueeze(0)
+                    .unsqueeze(0)
+                    .repeat(batch_size, ts, 1)
+                )
+                # (batch_size, ts, emb)
+                channel_emb = self.positional_encoding(channel_spec_emb + channel_token_emb)
 
-            # perturb
-            if perturb:
-                ts = channel_emb.shape[1]
-                ts_new = np.random.randint(ts // 2, ts)
-                selected_ts = np.random.choice(range(ts), ts_new, replace=False)
-                channel_emb = channel_emb[:, selected_ts]
-            emb_seq.append(channel_emb)
+                # perturb
+                if perturb:
+                    ts = channel_emb.shape[1]
+                    ts_new = np.random.randint(ts // 2, ts)
+                    selected_ts = np.random.choice(range(ts), ts_new, replace=False)
+                    channel_emb = channel_emb[:, selected_ts]
+                emb_seq.append(channel_emb)
 
         # (batch_size, 16 * ts, emb)
         emb = torch.cat(emb_seq, dim=1)
         # (batch_size, emb)
-        emb = self.transformer(emb).mean(dim=1)
+        with record_function('biot_transformer'):
+            emb = self.transformer(emb).mean(dim=1)
         return emb
 
 
@@ -155,8 +158,10 @@ class BIOTClassifier(nn.Module):
         self.classifier = ClassificationHead(emb_size, n_classes)
 
     def forward(self, x):
-        x = self.biot(x)
-        x = self.classifier(x)
+        with record_function('biot'):
+            x = self.biot(x)
+        with record_function('classifier'):
+            x = self.classifier(x)
         return x
 
 
