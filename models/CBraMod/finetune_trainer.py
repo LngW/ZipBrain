@@ -173,6 +173,7 @@ class Trainer(object):
                 losses.append(loss.data.cpu().numpy())
                 if self.logger is not None:
                     self.logger.add_scalar('Train/Loss', losses[-1], global_step)
+                    self.logger.add_scalar('Train/LR', self.optimizer_scheduler.get_last_lr()[0], global_step)
                 if self.params.clip_value > 0:
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.params.clip_value)
                     # torch.nn.utils.clip_grad_value_(self.model.parameters(), self.params.clip_value)
@@ -212,7 +213,6 @@ class Trainer(object):
                     self.best_model_states = copy.deepcopy(self.model.state_dict())
                 if self.logger is not None:
                     self.logger.add_scalar('Train/Losses', np.mean(losses), epoch)
-                    self.logger.add_scalar('Train/LR', optim_state['param_groups'][0]['lr'], epoch)
                     for k, v in {'acc': acc, 'bacc': bacc, 'pr_auc': pr_auc, 'roc_auc': roc_auc}.items():
                         self.logger.add_scalar('Val/' + k, v, epoch)
                     for k, v in {'AllocMax': torch.cuda.max_memory_allocated(),}.items():
@@ -239,6 +239,9 @@ class Trainer(object):
             model_path = self.params.model_dir + "/epoch{}_acc_{:.5f}_pr_{:.5f}_roc_{:.5f}.pth".format(best_f1_epoch, acc, pr_auc, roc_auc)
             torch.save(self.model.state_dict(), model_path)
             print("model save in " + model_path)
+
+        if self.logger is not None:
+            self.logger.flush()
 
     def train_for_regression(self):
         corrcoef_best = 0
