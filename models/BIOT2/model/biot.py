@@ -92,7 +92,8 @@ class BIOTEncoder(nn.Module):
             attn_dropout=0.2,  # dropout post-attention
             tome_r=kwargs.get('tome_r', 0),
             top_k=kwargs.get('top_k', 0),
-            linear=kwargs.get('linear', False)
+            linear=kwargs.get('linear', False),
+            flash=kwargs.get('flash', False),
         )
         self.positional_encoding = PositionalEncoding(emb_size)
 

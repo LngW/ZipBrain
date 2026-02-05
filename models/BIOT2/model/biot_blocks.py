@@ -14,6 +14,7 @@ def create_biot_encoder_block(
     tome_r=0,
     top_k=0,
     linear=False,
+    flash=False,
     **kwargs):
 
     if linear and tome_r == 0 and top_k == 0:
@@ -29,7 +30,7 @@ def create_biot_encoder_block(
     else:
         if linear and top_k != 0:
             raise UserWarning("top_k is set with linear, but top_k is not available in linear attention")
-        return Encoder(dim, heads, depth, attn_layer_dropout, linear, top_k, tome_r)
+        return Encoder(dim, heads, depth, attn_layer_dropout, linear, top_k, tome_r, flash)
 
 def ToMeBlock(r = 2, *args, **kwargs):
     from .tome.merge import bipartite_soft_matching, merge_wavg
@@ -53,31 +54,36 @@ def ToMeBlock(r = 2, *args, **kwargs):
     return ToMeBlock(r = r, *args, **kwargs)
 
 class Attention(nn.Module):
-    def __init__(self, dim, heads, dropout, linear = False, top_k = 0, *args, **kwargs):
+    def __init__(self, dim, heads, dropout, linear = False, top_k = 0, flash = False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.qkv_proj = nn.Linear(dim, 3 * dim)
         self.out_proj = nn.Linear(dim, dim)
 
-        self.dropout = nn.Dropout(dropout)
+        self.dropout_p = dropout
 
         self.n_heads = heads
         self.d_heads = dim // heads
         self.linear = linear
         self.top_k = top_k
+        self.flash = not linear and top_k == 0 and flash
 
     def __sa_attn(self, x, q, k, v):
-        B, N, D = x.shape
-        H, HD = self.n_heads, self.d_heads
-        scores = q @ k.transpose(-1, -2)
-        scores = scores / np.sqrt(HD)
+        if self.flash:
+            out = torch.nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=self.dropout_p if self.training else 0.)
+        else:
+            B, N, D = x.shape
+            H, HD = self.n_heads, self.d_heads
+            scores = q @ k.transpose(-1, -2)
+            scores = scores / np.sqrt(HD)
 
-        if self.top_k > 0 and self.top_k < N:
-            topk, _ = torch.topk(scores, self.top_k, dim=-1)
-            scores[scores < topk[..., -1:]] = -torch.inf
+            if self.top_k > 0 and self.top_k < N:
+                topk, _ = torch.topk(scores, self.top_k, dim=-1)
+                scores[scores < topk[..., -1:]] = -torch.inf
 
-        weights = torch.softmax(scores, dim = -1)
-        weights = self.dropout(weights)
-        out = weights @ v
+            weights = torch.softmax(scores, dim = -1)
+            weights = torch.dropout(weights, self.dropout_p, self.training)
+            out = weights @ v
+
         out = rearrange(out, "b h n d->b n (h d)")
         out = self.out_proj(out)
 
@@ -115,10 +121,10 @@ class Attention(nn.Module):
         return out, k
 
 class Block(nn.Module):
-    def __init__(self, dim, heads, dropout, linear = False, top_k = 0, tome_r = 0, *args, **kwargs):
+    def __init__(self, dim, heads, dropout, linear = False, top_k = 0, tome_r = 0, flash = False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.norm1 = nn.LayerNorm(dim)
-        self.attn = Attention(dim, heads, dropout, linear = linear, top_k = top_k)
+        self.attn = Attention(dim, heads, dropout, linear = linear, top_k = top_k, flash=flash)
         self.norm2 = nn.LayerNorm(dim)
         self.ffn = nn.Sequential(
             nn.Linear(dim, 4 * dim),
@@ -140,12 +146,12 @@ class Block(nn.Module):
         return x, size
 
 class Encoder(nn.Module):
-    def __init__(self, dim, heads, depth, dropout, linear = False, top_k = 0, tome_r = 0, *args, **kwargs):
+    def __init__(self, dim, heads, depth, dropout, linear = False, top_k = 0, tome_r = 0, flash=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         layers = nn.ModuleList()
 
         for _ in range(depth):
-            layers.append(Block(dim, heads, dropout, linear = linear, top_k=top_k, tome_r=tome_r))
+            layers.append(Block(dim, heads, dropout, linear = linear, top_k=top_k, tome_r=tome_r, flash=flash))
         
         self.layers = layers
 
