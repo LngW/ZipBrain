@@ -136,7 +136,7 @@ def prepare_TUAB_dataloader(args):
     np.random.seed(seed)
 
     root = "/srv/local/data/TUH/tuh3/tuh_eeg_abnormal/v3.0.0/edf/processed"
-    root = './datasets/TUAB/processed_10'
+    root = './datasets/TUAB/processed_100'
 
     train_files = os.listdir(os.path.join(root, "train"))
     np.random.shuffle(train_files)
