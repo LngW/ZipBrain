@@ -17,13 +17,12 @@ common_args="${common_args[@]}"
 export CUDA_VISIBLE_DEVICES=0
 
 for seed in "${seeds[@]}"; do
-    python run_binary_supervised.py $common_args --seed $seed --log_dir baseline_std
     python run_binary_supervised.py $common_args --seed $seed --log_dir baseline_lin --linear
-    for k in 76 38 19; do
-        python run_binary_supervised.py $common_args --seed $seed --top_k $k --log_dir top_${k}_std
-    done
+    python run_binary_supervised.py $common_args --seed $seed --log_dir baseline_std
+    python run_binary_supervised.py $common_args --seed $seed --log_dir baseline_std_flash --flash
     for r in 38 19; do
-        python run_binary_supervised.py $common_args --seed $seed --tome_r $r --log_dir tome_${r}_std
         python run_binary_supervised.py $common_args --seed $seed --tome_r $r --log_dir tome_${r}_lin --linear
+        python run_binary_supervised.py $common_args --seed $seed --tome_r $r --log_dir tome_${r}_std
+        python run_binary_supervised.py $common_args --seed $seed --tome_r $r --log_dir tome_${r}_std_flash --flash
     done
 done
