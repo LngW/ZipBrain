@@ -18,9 +18,9 @@ export CUDA_VISIBLE_DEVICES=0
 
 for seed in $seeds; do
     python run_binary_supervised_profile.py $common_args --seed $seed --log_dir baseline_std
-    python run_binary_supervised+profile.py $common_args --seed $seed --log_dir baseline_lin --linear
+    python run_binary_supervised_profile.py $common_args --seed $seed --log_dir baseline_lin --linear
     for r in 38 19; do
-        python run_binary_supervised.py $common_args --seed $seed --tome_r $r --log_dir tome_${r}_std
-        python run_binary_supervised.py $common_args --seed $seed --tome_r $r --log_dir tome_${r}_lin --linear
+        python run_binary_supervised_profile.py $common_args --seed $seed --tome_r $r --log_dir tome_${r}_std
+        python run_binary_supervised_profile.py $common_args --seed $seed --tome_r $r --log_dir tome_${r}_lin --linear
     done
 done
