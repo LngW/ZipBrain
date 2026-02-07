@@ -33,7 +33,7 @@ def create_biot_encoder_block(
         return Encoder(dim, heads, depth, attn_layer_dropout, linear, top_k, tome_r, flash)
 
 def ToMeBlock(r = 2, *args, **kwargs):
-    from .tome.merge import bipartite_soft_matching, merge_wavg
+    from .tome.merge import bipartite_soft_matching, merge_wavg_sum
 
     class ToMeBlock(nn.Module):
         def __init__(self, r = 2, *args, **kwargs):
@@ -42,12 +42,12 @@ def ToMeBlock(r = 2, *args, **kwargs):
 
         def forward(self, x, k, size_old):
             bsz, hd, seq, _ = k.shape
-            merge, _ = bipartite_soft_matching(
+            _, merge, _ = bipartite_soft_matching(
                 k.transpose(1,2).reshape(bsz, seq, -1),
                 self.r
             )
 
-            x, size = merge_wavg(merge, x, size_old)
+            x, size = merge_wavg_sum(merge, x, size_old)
 
             return x, size
         

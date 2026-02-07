@@ -78,6 +78,25 @@ def bipartite_soft_matching(
             return torch.cat([unm[:, :1], dst[:, :1], unm[:, 1:], dst[:, 1:]], dim=1)
         else:
             return torch.cat([unm, dst], dim=1)
+        
+    def merge_sum(x: torch.Tensor) -> torch.Tensor:
+        src, dst = x[..., ::2, :], x[..., 1::2, :]
+        n, t1, c = src.shape
+        unm = src.gather(dim=-2, index=unm_idx.expand(n, t1 - r, c))
+        src = src.gather(dim=-2, index=src_idx.expand(n, r, c))
+        t2 = dst.shape[1]
+        src_idx_metrix = (
+            torch.eye(t2, dtype=torch.int, device=x.device)
+            .unsqueeze(0).expand(n, t2, t2)
+            .gather(-1, dst_idx[:,None,:,0].expand(n, t2, r))
+        )
+        dst = torch.baddbmm(dst, src_idx_metrix.to(x.dtype), src)
+
+        if distill_token:
+            return torch.cat([unm[:, :1], dst[:, :1], unm[:, 1:], dst[:, 1:]], dim=1)
+        else:
+            return torch.cat([unm, dst], dim=1)
+
 
     def unmerge(x: torch.Tensor) -> torch.Tensor:
         unm_len = unm_idx.shape[1]
@@ -94,7 +113,7 @@ def bipartite_soft_matching(
 
         return out
 
-    return merge, unmerge
+    return merge, merge_sum, unmerge
 
 
 def kth_bipartite_soft_matching(
@@ -219,6 +238,22 @@ def merge_wavg(
 
     x = merge(x * size, mode="sum")
     size = merge(size, mode="sum")
+
+    x = x / size
+    return x, size
+
+def merge_wavg_sum(
+    merge: Callable, x: torch.Tensor, size: torch.Tensor = None
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Applies the merge function by taking a weighted average based on token size.
+    Returns the merged tensor and the new token sizes.
+    """
+    if size is None:
+        size = torch.ones_like(x[..., 0, None])
+
+    x = merge(x * size)
+    size = merge(size)
 
     x = x / size
     return x, size
