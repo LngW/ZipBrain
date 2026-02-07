@@ -424,7 +424,7 @@ def supervised(args):
                 model=lightning_model, ckpt_path="best", dataloaders=test_loader
             )[0]
 
-    prof.export_chrome_trace(f'./prifles/{time.time_ns()}.json')
+    prof.export_chrome_trace(f'./profiles/{args.log_dir}.json')
 
     print(pretrain_result)
     logger.close()
