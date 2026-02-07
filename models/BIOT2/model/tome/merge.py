@@ -62,6 +62,12 @@ def bipartite_soft_matching(
         unm_idx = edge_idx[..., r:, :]  # Unmerged Tokens
         src_idx = edge_idx[..., :r, :]  # Merged Tokens
         dst_idx = node_idx[..., None].gather(dim=-2, index=src_idx)
+        n, t2, _ = b.shape
+        src_idx_metrix = (
+            torch.eye(t2, dtype=torch.int, device=b.device)
+            .unsqueeze(0).expand(n, -1, -1)
+            .gather(-1, dst_idx[:,None,:,0].expand(-1, t2, -1))
+        )
 
         if class_token:
             # Sort to ensure the class token is at the start
@@ -84,12 +90,6 @@ def bipartite_soft_matching(
         n, t1, c = src.shape
         unm = src.gather(dim=-2, index=unm_idx.expand(n, t1 - r, c))
         src = src.gather(dim=-2, index=src_idx.expand(n, r, c))
-        t2 = dst.shape[1]
-        src_idx_metrix = (
-            torch.eye(t2, dtype=torch.int, device=x.device)
-            .unsqueeze(0).expand(n, t2, t2)
-            .gather(-1, dst_idx[:,None,:,0].expand(n, t2, r))
-        )
         dst = torch.baddbmm(dst, src_idx_metrix.to(x.dtype), src)
 
         if distill_token:
