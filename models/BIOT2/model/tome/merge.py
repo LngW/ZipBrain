@@ -67,6 +67,7 @@ def bipartite_soft_matching(
             torch.eye(t2, dtype=torch.int, device=b.device)
             .unsqueeze(0).expand(n, -1, -1)
             .gather(-1, dst_idx[:,None,:,0].expand(-1, t2, -1))
+            .contiguous()
         )
 
         if class_token:
