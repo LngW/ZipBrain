@@ -20,7 +20,7 @@ def bipartite_soft_matching(
     r: int,
     class_token: bool = False,
     distill_token: bool = False,
-) -> Tuple[Callable, Callable]:
+) -> Tuple[Callable, Callable, Callable]:
     """
     Applies ToMe with a balanced matching set (50%, 50%).
 
@@ -44,7 +44,7 @@ def bipartite_soft_matching(
     r = min(r, (t - protected) // 2)
 
     if r <= 0:
-        return do_nothing, do_nothing
+        return do_nothing, do_nothing, do_nothing
 
     with torch.no_grad():
         metric = metric / metric.norm(dim=-1, keepdim=True)
