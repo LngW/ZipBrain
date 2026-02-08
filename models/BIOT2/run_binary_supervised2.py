@@ -2,7 +2,6 @@ import os
 import argparse
 import pickle
 import time
-from pathlib import Path
 
 import torch
 from tqdm import tqdm
@@ -15,6 +14,7 @@ from pytorch_lightning.strategies import DDPStrategy
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pyhealth.metrics import binary_metrics_fn
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, roc_auc_score, average_precision_score
 
 from model import (
     # SPaRCNet,
@@ -26,7 +26,115 @@ from model import (
 )
 from utils import TUABLoader, CHBMITLoader, PTBLoader, focal_loss, BCE
 
-from torch.profiler import profile, ProfilerActivity, record_function
+import torch.distributed as dist
+from torch.utils.tensorboard import SummaryWriter
+
+def set_seeds(args):
+    pass
+
+def prepare_dataloader(args):
+    dataset = args.dataset
+    subset = args.subset
+    seed = args.seed
+    data_dir = args.data_dir
+
+    pass
+
+def prepare_model(args) -> torch.nn.Module:
+    with torch.random.fork_rng():
+        if args.model == "SPaRCNet":
+            model = SPaRCNet(
+                in_channels=args.in_channels,
+                sample_length=int(args.sampling_rate * args.sample_length),
+                n_classes=args.n_classes,
+                block_layers=4,
+                growth_rate=16,
+                bn_size=16,
+                drop_rate=0.5,
+                conv_bias=True,
+                batch_norm=True,
+            )
+
+        elif args.model == "ContraWR":
+            model = ContraWR(
+                in_channels=args.in_channels,
+                n_classes=args.n_classes,
+                fft=args.token_size,
+                steps=args.hop_length // 5,
+            )
+
+        elif args.model == "CNNTransformer":
+            model = CNNTransformer(
+                in_channels=args.in_channels,
+                n_classes=args.n_classes,
+                fft=args.sampling_rate,
+                steps=args.hop_length // 5,
+                dropout=0.2,
+                nhead=4,
+                emb_size=256,
+            )
+
+        elif args.model == "FFCL":
+            model = FFCL(
+                in_channels=args.in_channels,
+                n_classes=args.n_classes,
+                fft=args.token_size,
+                steps=args.hop_length // 5,
+                sample_length=int(args.sampling_rate * args.sample_length),
+                shrink_steps=20,
+            )
+
+        elif args.model == "STTransformer":
+            model = STTransformer(
+                emb_size=256,
+                depth=4,
+                n_classes=args.n_classes,
+                channel_legnth=int(
+                    args.sampling_rate * args.sample_length
+                ),  # (sampling_rate * duration)
+                n_channels=args.in_channels,
+            )
+
+        elif args.model == "BIOT":
+            model = BIOTClassifier(
+                n_classes=args.n_classes,
+                # set the n_channels according to the pretrained model if necessary
+                n_channels=args.in_channels,
+                n_fft=args.token_size,
+                hop_length=args.hop_length,
+                linear = args.linear, # modifications for tc_eeg
+                top_k = args.top_k,
+                tome_r = args.tome_r,
+                flash=args.flash,
+            )
+            if args.pretrain_model_path and (args.sampling_rate == 200):
+                model.biot.load_state_dict(torch.load(args.pretrain_model_path))
+                print(f"load pretrain model from {args.pretrain_model_path}")
+
+        else:
+            raise NotImplementedError
+
+def calculate_metrics(y_hat, y_ground):
+    if (
+        sum(y_ground) * (len(y_ground) - sum(y_ground)) != 0
+    ):  # to prevent all 0 or all 1 and raise the AUROC error
+        threshold = np.sort(y_hat)[-int(np.sum(y_ground))]
+        y_hat[y_hat > threshold] = 1
+        y_hat[y_hat < threshold] = 0
+        result = {
+            "accuracy": accuracy_score(y_ground, y_hat),
+            "balanced_accuracy": balanced_accuracy_score(y_ground, y_hat),
+            "pr_auc": average_precision_score(y_ground, y_hat),
+            "roc_auc": roc_auc_score(y_ground, y_hat),
+        }
+    else:
+        result = {
+            "accuracy": 0.0,
+            "balanced_accuracy": 0.0,
+            "pr_auc": 0.0,
+            "roc_auc": 0.0,
+        }
+    return result, threshold
 
 class LitModel_finetune(pl.LightningModule):
     def __init__(self, args, model):
@@ -138,11 +246,7 @@ def prepare_TUAB_dataloader(args):
     np.random.seed(seed)
 
     root = "/srv/local/data/TUH/tuh3/tuh_eeg_abnormal/v3.0.0/edf/processed"
-
-    if args.subset is not None and len(args.subset) > 0:
-        root = './datasets/TUAB/processed_' + args.subset
-    else:
-        root = './datasets/TUAB/processed'
+    root = './datasets/TUAB/processed_10'
 
     train_files = os.listdir(os.path.join(root, "train"))
     np.random.shuffle(train_files)
@@ -305,100 +409,60 @@ def prepare_RND_dataloader(args):
 
     return train_loader, test_loader, val_loader
 
+def train_loop_one_epoch():
+    pass
+
+def train_loop():
+    pass
+
+def eval_loop_one_epoch():
+    pass
+
+def eval_loop():
+    pass
+
+def test_loop_one_epoch():
+    pass
+
+def test_loop():
+    pass
+
 def supervised(args):
-
-    cwd = Path(*args.workspace.split('/'))
-    save_dir = cwd / 'logs'
-    prof_dir = cwd / 'profiles'
-
     # get data loaders
-    if args.dataset == "TUAB":
-        train_loader, test_loader, val_loader = prepare_TUAB_dataloader(args)
-    elif args.dataset == "RANDOM":
-        train_loader, test_loader, val_loader = prepare_RND_dataloader(args)
-    else:
-        raise NotImplementedError
+    
+    train_loader, test_loader, val_loader = prepare_dataloader(args)
+    # if args.dataset == "TUAB":
+    #     train_loader, test_loader, val_loader = prepare_TUAB_dataloader(args)
+    # elif args.dataset == "RANDOM":
+    #     train_loader, test_loader, val_loader = prepare_RND_dataloader(args)
+    # else:
+    #     raise NotImplementedError
 
     # define the model
-    with torch.random.fork_rng():
-        if args.model == "SPaRCNet":
-            model = SPaRCNet(
-                in_channels=args.in_channels,
-                sample_length=int(args.sampling_rate * args.sample_length),
-                n_classes=args.n_classes,
-                block_layers=4,
-                growth_rate=16,
-                bn_size=16,
-                drop_rate=0.5,
-                conv_bias=True,
-                batch_norm=True,
-            )
+    model = prepare_model(args)
 
-        elif args.model == "ContraWR":
-            model = ContraWR(
-                in_channels=args.in_channels,
-                n_classes=args.n_classes,
-                fft=args.token_size,
-                steps=args.hop_length // 5,
-            )
+    # define optimizer and scheduler
+    optimizer = torch.optim.AdamW(
+        model.parameters(), 
+        lr=args.lr, 
+        weight_decay=args.weight_decay,
+    )
 
-        elif args.model == "CNNTransformer":
-            model = CNNTransformer(
-                in_channels=args.in_channels,
-                n_classes=args.n_classes,
-                fft=args.sampling_rate,
-                steps=args.hop_length // 5,
-                dropout=0.2,
-                nhead=4,
-                emb_size=256,
-            )
+    logger = SummaryWriter()
 
-        elif args.model == "FFCL":
-            model = FFCL(
-                in_channels=args.in_channels,
-                n_classes=args.n_classes,
-                fft=args.token_size,
-                steps=args.hop_length // 5,
-                sample_length=int(args.sampling_rate * args.sample_length),
-                shrink_steps=20,
-            )
+    if args.train:
+        train_loop(model, train_loader, logger, optimizer, )
 
-        elif args.model == "STTransformer":
-            model = STTransformer(
-                emb_size=256,
-                depth=4,
-                n_classes=args.n_classes,
-                channel_legnth=int(
-                    args.sampling_rate * args.sample_length
-                ),  # (sampling_rate * duration)
-                n_channels=args.in_channels,
-            )
-
-        elif args.model == "BIOT":
-            model = BIOTClassifier(
-                n_classes=args.n_classes,
-                # set the n_channels according to the pretrained model if necessary
-                n_channels=args.in_channels,
-                n_fft=args.token_size,
-                hop_length=args.hop_length,
-                linear = args.linear, # modifications for tc_eeg
-                top_k = args.top_k,
-                tome_r = args.tome_r,
-                flash=args.flash,
-            )
-            if args.pretrain_model_path and (args.sampling_rate == 200):
-                model.biot.load_state_dict(torch.load(args.pretrain_model_path))
-                print(f"load pretrain model from {args.pretrain_model_path}")
-
-        else:
-            raise NotImplementedError
+    if args.test:
+        test_loop(model, test_loader, logger)
+    
     lightning_model = LitModel_finetune(args, model)
 
     # logger and callbacks
     # version = f"{args.dataset}-{args.model}-{args.lr}-{args.batch_size}-{args.sampling_rate}-{args.token_size}-{args.hop_length}"
     version = f"{args.dataset}-{args.model}-{args.lr}-{args.batch_size}-{args.sampling_rate}-{args.token_size}-{args.hop_length}-{args.seed}"
     logger = TensorBoardLogger(
-        save_dir=save_dir, # modification for tc_eeg
+        save_dir="./logs_2/", # modification for tc_eeg
         version=version,
         name=args.log_dir, # modification for tc_eeg
     )
@@ -409,10 +473,9 @@ def supervised(args):
     trainer = pl.Trainer(
         devices=[0],
         accelerator="gpu",
-        # strategy=DDPStrategy(find_unused_parameters=False),
+        strategy=DDPStrategy(find_unused_parameters=False),
         auto_select_gpus=True,
-        benchmark=False,
-        deterministic=True,
+        benchmark=True,
         enable_checkpointing=True,
         logger=logger,
         max_epochs=args.epochs,
@@ -421,31 +484,26 @@ def supervised(args):
     )
 
     # train the model
-    def profiling_func():
-        with record_function('train'):
+    timestamp = int(time.time())
+    from torch.profiler import profile, record_function, ProfilerActivity
+    with profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU], with_stack=True) as prof:
+        with record_function('model_training'):
             trainer.fit(
                 lightning_model, train_dataloaders=train_loader, val_dataloaders=val_loader
             )
 
-        if args.test:
+        with record_function('model_inference'):
             # test the model
-            with record_function('test'):
-                pretrain_result = trainer.test(
-                    model=lightning_model, ckpt_path="best", dataloaders=test_loader
-                )[0]
+            pretrain_result = trainer.test(
+                model=lightning_model, ckpt_path="best", dataloaders=test_loader
+            )[0]
 
-            print(pretrain_result)
-
-    if args.profile:
-        # prof_dir = f'./{args.workspace}/profiles'
-        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], with_stack=True) as prof:
-            profiling_func()
-
-        prof_dir.mkdir(exist_ok=True)
-        prof.export_chrome_trace(prof_dir / f'{args.log_dir}_{time.time_ns() % (10 ** 8)}.json')
-    else:
-        profiling_func()
+    prof.export_chrome_trace("./profiles/trace_{}.json".format(timestamp))
+    # prof.export_memory_timeline('memory_{}.json'.format(timestamp))
+    # prof.key_averages().
+    print(pretrain_result)
     logger.close()
+    torch.distributed.destroy_process_group()
 
 
 if __name__ == "__main__":
@@ -487,16 +545,11 @@ if __name__ == "__main__":
     # modification made for tc_eeg
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--log_dir", type=str, required=True)
-    parser.add_argument("--subset", type=str, default='')
-
     parser.add_argument("--top_k", type=int, default=0)
     parser.add_argument("--tome_r", type=int, default=0)
     parser.add_argument("--linear", action='store_true', default=False)
     parser.add_argument("--flash", action='store_true', default=False)
-
-    parser.add_argument("--test", action='store_true', default=False)
-    parser.add_argument("--profile", action='store_true', default=False)
-    parser.add_argument("--workspace", type=str, required=True)
+    parser.add_argument("--subset", type=str, required=True)
     # end of modification
 
     args = parser.parse_args()

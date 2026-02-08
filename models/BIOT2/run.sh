@@ -1,4 +1,6 @@
 #!/bin/bash
+workspace='local_run'
+workspace="workspace/${workspace}"
 common_args=(
     # --epochs 2
     --dataset TUAB
@@ -10,7 +12,16 @@ common_args=(
     --batch_size 256
     --model BIOT
     --num_workers 8
+    --subset 100
+    --workspace $workspace
 )
+
+if [ -d $workspace ]; then
+    echo "workspace \"${workspace}\" exist, script exit"
+    exit
+fi
+mkdir -p $workspace
+
 common_args="${common_args[@]}"
 . ../../seeds
 

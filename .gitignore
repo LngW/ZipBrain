@@ -6,6 +6,7 @@ logs*/
 **/__pycache__/
 
 *.csv
+**/workspace
 
 # For offline git repo migration
 *.pack
