@@ -442,7 +442,7 @@ def supervised(args):
             profiling_func()
 
         prof_dir.mkdir(exist_ok=True)
-        prof.export_chrome_trace(prof_dir / f'{args.log_dir}_{time.time_ns() % (10 ** 8)}.json')
+        prof.export_chrome_trace(str(prof_dir / f'{args.log_dir}_{time.time_ns() % (10 ** 8)}.json'))
     else:
         profiling_func()
     logger.close()

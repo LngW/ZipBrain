@@ -3,7 +3,7 @@ workspace='local_profile'
 workspace="workspace/${workspace}"
 common_args=(
     --epochs 2
-    --dataset TUAB
+    --dataset RANDOM
     --in_channels 16
     --sampling_rate 200
     --token_size 200
