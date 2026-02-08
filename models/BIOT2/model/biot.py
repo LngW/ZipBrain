@@ -120,31 +120,56 @@ class BIOTEncoder(nn.Module):
         output: [batch_size, emb_size]
         """
         with record_function('biot_stft'):
-            emb_seq = []
-            for i in range(x.shape[1]):
-                channel_spec_emb = self.stft(x[:, i : i + 1, :])
-                channel_spec_emb = self.patch_embedding(channel_spec_emb)
-                batch_size, ts, _ = channel_spec_emb.shape
-                # (batch_size, ts, emb)
-                channel_token_emb = (
-                    self.channel_tokens(self.index[i + n_channel_offset])
-                    .unsqueeze(0)
-                    .unsqueeze(0)
-                    .repeat(batch_size, ts, 1)
-                )
-                # (batch_size, ts, emb)
-                channel_emb = self.positional_encoding(channel_spec_emb + channel_token_emb)
+            # faster version, with no error when batch_size big enough
+            batch_size, channels, _ = x.shape
+            channel_spec_emb = self.stft(x.flatten(0, 1))
+            channel_spec_emb = self.patch_embedding(channel_spec_emb)
+            _, ts, emb_size = channel_spec_emb.shape
+            channel_spec_emb = channel_spec_emb.reshape(batch_size, channels, ts, emb_size)
+            channel_token_emb = (
+                self.channel_tokens(self.index[n_channel_offset:n_channel_offset + channels])
+                .unsqueeze(1)
+                .unsqueeze(0)
+            )
+            channel_emb = channel_spec_emb + channel_token_emb
+            channel_emb = self.positional_encoding(channel_emb.flatten(0, 1))
 
-                # perturb
-                if perturb:
-                    ts = channel_emb.shape[1]
-                    ts_new = np.random.randint(ts // 2, ts)
-                    selected_ts = np.random.choice(range(ts), ts_new, replace=False)
-                    channel_emb = channel_emb[:, selected_ts]
-                emb_seq.append(channel_emb)
+            emb_batch = channel_emb.reshape(batch_size, ts * channels, emb_size)
+            emb = emb_batch
 
-        # (batch_size, 16 * ts, emb)
-        emb = torch.cat(emb_seq, dim=1)
+            # original implementation, which is slow
+            # emb_seq = []
+            # for i in range(x.shape[1]):
+            #     channel_spec_emb = self.stft(x[:, i : i + 1, :])
+            #     channel_spec_emb = self.patch_embedding(channel_spec_emb)
+            #     batch_size, ts, _ = channel_spec_emb.shape
+            #     # (batch_size, ts, emb)
+            #     channel_token_emb = (
+            #         self.channel_tokens(self.index[i + n_channel_offset])
+            #         .unsqueeze(0)
+            #         .unsqueeze(0)
+            #         .repeat(batch_size, ts, 1)
+            #     )
+            #     # (batch_size, ts, emb)
+            #     channel_emb = self.positional_encoding(channel_spec_emb + channel_token_emb)
+
+            #     # perturb
+            #     if perturb:
+            #         ts = channel_emb.shape[1]
+            #         ts_new = np.random.randint(ts // 2, ts)
+            #         selected_ts = np.random.choice(range(ts), ts_new, replace=False)
+            #         channel_emb = channel_emb[:, selected_ts]
+            #     emb_seq.append(channel_emb)
+
+            # # (batch_size, 16 * ts, emb)
+            # emb = torch.cat(emb_seq, dim=1)
+
+            # if not self.training:
+            #     with torch.no_grad():
+            #         diff = (emb.detach() - emb_batch.detach()).abs().max()
+
+            #         print("training: ", self.training, ", diff: ", diff)
+
         # (batch_size, emb)
         with record_function('biot_transformer'):
             emb = self.transformer(emb).mean(dim=1)

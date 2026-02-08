@@ -80,6 +80,7 @@ class Attention(nn.Module):
                 topk, _ = torch.topk(scores, self.top_k, dim=-1)
                 scores[scores < topk[..., -1:]] = -torch.inf
 
+            scores = scores - scores.amax(-1, True)
             weights = torch.softmax(scores, dim = -1)
             weights = torch.dropout(weights, self.dropout_p, self.training)
             out = weights @ v
@@ -139,7 +140,7 @@ class Block(nn.Module):
         x = x + dx
 
         # if self.tome_r > 0 and self.tome_r < x.shape[1]:
-        x, size = self.tome(x, k, size)
+        x, size = self.tome(x, k.detach(), size)
 
         x = x + self.ffn(self.norm2(x))
 

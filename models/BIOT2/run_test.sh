@@ -1,5 +1,5 @@
 #!/bin/bash
-workspace='local_test_2'
+workspace='test_batch_stft'
 workspace="workspace/${workspace}"
 common_args=(
     --epochs 2
