@@ -392,7 +392,13 @@ def supervised(args):
 
         else:
             raise NotImplementedError
-    lightning_model = LitModel_finetune(args, model)
+
+    if args.load_from_checkpoint is not None:
+        # state_dict = torch.load(args.load_from_checkpoint, weights_only=False)
+        # print(state_dict)
+        lightning_model = LitModel_finetune.load_from_checkpoint(args.load_from_checkpoint, args=args, model = model)
+    else:
+        lightning_model = LitModel_finetune(args, model)
 
     # logger and callbacks
     # version = f"{args.dataset}-{args.model}-{args.lr}-{args.batch_size}-{args.sampling_rate}-{args.token_size}-{args.hop_length}"
@@ -422,16 +428,17 @@ def supervised(args):
 
     # train the model
     def profiling_func():
-        with record_function('train'):
-            trainer.fit(
-                lightning_model, train_dataloaders=train_loader, val_dataloaders=val_loader
-            )
+        if not args.no_train:
+            with record_function('train'):
+                trainer.fit(
+                    lightning_model, train_dataloaders=train_loader, val_dataloaders=val_loader
+                )
 
         if args.test:
             # test the model
             with record_function('test'):
                 pretrain_result = trainer.test(
-                    model=lightning_model, ckpt_path="best", dataloaders=test_loader
+                    model=lightning_model, ckpt_path=(None if args.no_train else "best"), dataloaders=test_loader
                 )[0]
 
             print(pretrain_result)
@@ -445,7 +452,7 @@ def supervised(args):
         prof.export_chrome_trace(str(prof_dir / f'{args.log_dir}_{time.time_ns() % (10 ** 8)}.json'))
     else:
         profiling_func()
-    logger.close()
+    logger.finalize('')
 
 
 if __name__ == "__main__":
@@ -494,6 +501,8 @@ if __name__ == "__main__":
     parser.add_argument("--linear", action='store_true', default=False)
     parser.add_argument("--flash", action='store_true', default=False)
 
+    parser.add_argument("--load_from_checkpoint", type=str, default=None)
+    parser.add_argument("--no_train", action='store_true', default=False)
     parser.add_argument("--test", action='store_true', default=False)
     parser.add_argument("--profile", action='store_true', default=False)
     parser.add_argument("--workspace", type=str, required=True)
