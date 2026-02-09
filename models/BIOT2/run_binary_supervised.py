@@ -385,6 +385,7 @@ def supervised(args):
                 top_k = args.top_k,
                 tome_r = args.tome_r,
                 flash=args.flash,
+                rtl_tome = args.rtl_tome,
             )
             if args.pretrain_model_path and (args.sampling_rate == 200):
                 model.biot.load_state_dict(torch.load(args.pretrain_model_path))
@@ -506,6 +507,7 @@ if __name__ == "__main__":
     parser.add_argument("--test", action='store_true', default=False)
     parser.add_argument("--profile", action='store_true', default=False)
     parser.add_argument("--workspace", type=str, required=True)
+    parser.add_argument("--rtl_tome", action='store_true', default=False)
     # end of modification
 
     args = parser.parse_args()

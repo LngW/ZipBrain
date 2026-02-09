@@ -15,6 +15,7 @@ def create_biot_encoder_block(
     top_k=0,
     linear=False,
     flash=False,
+    rtl_tome=False,
     **kwargs):
 
     if linear and tome_r == 0 and top_k == 0:
@@ -30,9 +31,9 @@ def create_biot_encoder_block(
     else:
         if linear and top_k != 0:
             raise UserWarning("top_k is set with linear, but top_k is not available in linear attention")
-        return Encoder(dim, heads, depth, attn_layer_dropout, linear, top_k, tome_r, flash)
+        return Encoder(dim, heads, depth, attn_layer_dropout, linear, top_k, tome_r, flash, rtl_tome)
 
-def ToMeBlock(r = 2, *args, **kwargs):
+def ToMeBlock(r = 0, *args, **kwargs):
     from .tome.merge import bipartite_soft_matching, merge_wavg_sum
 
     class ToMeBlock(nn.Module):
@@ -52,6 +53,62 @@ def ToMeBlock(r = 2, *args, **kwargs):
             return x, size
         
     return ToMeBlock(r = r, *args, **kwargs)
+
+def RunTimeLengthToMeBlock(r = 0, emb_dim = 256, *args, **kwargs):
+    # from .tome.merge import bipartite_soft_matching, merge_wavg_sum
+
+    class ToMeBlock(nn.Module):
+        def __init__(self, r, emb_dim, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.r = r
+            self.consec = nn.Embedding(1024, emb_dim)
+            # self.skip = nn.Embedding(1024, emb_dim)
+
+        # we need the block go back to shape of (B, C, N, D)
+        def forward(self, x : torch.Tensor, k, size_old):
+            x = x.detach()
+            bsz, c_s, dim = x.shape
+            channels = 16
+            seq = c_s // 16
+            k = k.detach().transpose(1,2).reshape(bsz, channels, seq, dim)
+
+            k = k.reshape(bsz * channels, seq, dim)
+            # normed = torch.linalg.norm(k, dim=-1, keepdim=True)
+            k = k / torch.linalg.norm(k, dim=-1, keepdim=True)
+            scores : torch.Tensor = (k[:, :-1] * k[:, 1:]).sum(-1)
+
+            kval, kidx = torch.topk(scores, r, sorted=False)
+            kidx, _ = kidx.sort(-1)
+
+            cvt = torch.arange(seq, device=k.device)[None].repeat(bsz * channels, 1)
+            for b in range(bsz * channels):
+                for i in range(r):
+                    t = kidx[b, i]
+                    k = cvt[b, t + 1] = cvt[b, t]
+
+            eye = torch.eye(seq, dtype=torch.long, device=k.device)[None].repeat(bsz * channels, 1, 1)
+            proj = torch.gather(eye, -1, cvt[..., None, :].expand(-1, seq, -1))
+            sums = proj.sum(-1, True)
+            proj = proj / torch.maximum(sums, torch.ones_like(sums))
+
+            nidx = torch.empty(bsz * channels, seq - r, dtype=torch.long, device=k.device)
+            for b in range(nidx.shape[0]):
+                j = 0
+                for i in range(seq):
+                    if sums[b, i, 0] > 0:
+                        nidx[b, j] = i
+                        j = j + 1
+
+            rtl = torch.gather(sums.squeeze(-1), -1, nidx)
+            proj = torch.gather(proj, -2, nidx[..., None].expand(-1, -1, seq))
+
+            y0 = self.consec(rtl).view(bsz, channels, seq-r, dim)
+            y1 = proj.view(bsz, channels, seq-r, seq) @ x.view(bsz, channels, seq, dim)
+
+            y = y0 + y1
+            return y.view(bsz, channels * seq, dim), None
+
+    return ToMeBlock(r, emb_dim)
 
 class Attention(nn.Module):
     def __init__(self, dim, heads, dropout, linear = False, top_k = 0, flash = False, *args, **kwargs):
@@ -122,7 +179,7 @@ class Attention(nn.Module):
         return out, k
 
 class Block(nn.Module):
-    def __init__(self, dim, heads, dropout, linear = False, top_k = 0, tome_r = 0, flash = False, *args, **kwargs):
+    def __init__(self, dim, heads, dropout, linear = False, top_k = 0, tome_r = 0, flash = False, rtl_tome=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.norm1 = nn.LayerNorm(dim)
         self.attn = Attention(dim, heads, dropout, linear = linear, top_k = top_k, flash=flash)
@@ -133,7 +190,10 @@ class Block(nn.Module):
             nn.Linear(4 * dim, dim)
         )
 
-        self.tome = ToMeBlock(tome_r)
+        if rtl_tome:
+            self.tome = ToMeBlock(tome_r)
+        else:
+            self.tome = RunTimeLengthToMeBlock(tome_r, dim)
     
     def forward(self, x, size):
         dx, k = self.attn(self.norm1(x))
@@ -147,12 +207,12 @@ class Block(nn.Module):
         return x, size
 
 class Encoder(nn.Module):
-    def __init__(self, dim, heads, depth, dropout, linear = False, top_k = 0, tome_r = 0, flash=False, *args, **kwargs):
+    def __init__(self, dim, heads, depth, dropout, linear = False, top_k = 0, tome_r = 0, flash=False, rtl_tome=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         layers = nn.ModuleList()
 
         for _ in range(depth):
-            layers.append(Block(dim, heads, dropout, linear = linear, top_k=top_k, tome_r=tome_r, flash=flash))
+            layers.append(Block(dim, heads, dropout, linear = linear, top_k=top_k, tome_r=tome_r, flash=flash, rtl_tome=False))
         
         self.layers = layers
 

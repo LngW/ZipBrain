@@ -94,6 +94,7 @@ class BIOTEncoder(nn.Module):
             top_k=kwargs.get('top_k', 0),
             linear=kwargs.get('linear', False),
             flash=kwargs.get('flash', False),
+            rtl_tome = kwargs.get('rtl_tome', False),
         )
         self.positional_encoding = PositionalEncoding(emb_size)
 
@@ -180,7 +181,7 @@ class BIOTEncoder(nn.Module):
 class BIOTClassifier(nn.Module):
     def __init__(self, emb_size=256, heads=8, depth=4, n_classes=6, **kwargs):
         super().__init__()
-        self.biot = BIOTEncoder(emb_size=emb_size, heads=heads, depth=depth, **kwargs)
+        self.biot = BIOTEncoder(emb_size=emb_size, heads=heads, depth=depth, rtl_tome=kwargs['rtl_tome'])
         self.classifier = ClassificationHead(emb_size, n_classes)
 
     def forward(self, x):
