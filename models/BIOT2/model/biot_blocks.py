@@ -90,10 +90,11 @@ def RunTimeLengthToMeBlock(r = 0, n_channels=None, emb_dim = 256, *args, **kwarg
             rtl = metrix.sum(-1)
             proj = metrix / rtl.unsqueeze(-1)
 
-            y0 = self.consec(rtl.to(torch.long)).view(bsz, channels, seq_new, dim)
-            y1 = proj.view(bsz, channels, seq_new, seq) @ x.view(bsz, channels, seq, dim)
+            m0 = self.consec(rtl.to(torch.long)) #.view(bsz, channels, seq_new, dim)
+            m1 = proj #.view(bsz, channels, seq_new, seq)
+            m2 = x.view(bsz * channels, seq, dim)
 
-            y = y0 + y1
+            y = torch.baddbmm(m0, m1, m2)
             return y.view(bsz, channels * seq_new, dim), None
 
     return ToMeBlock(r, n_channels, emb_dim)
