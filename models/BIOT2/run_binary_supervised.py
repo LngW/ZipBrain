@@ -498,7 +498,7 @@ if __name__ == "__main__":
     parser.add_argument("--subset", type=str, default='')
 
     parser.add_argument("--top_k", type=int, default=0)
-    parser.add_argument("--tome_r", type=int, default=0)
+    parser.add_argument("--tome_r", type=int, nargs='+', default=[])
     parser.add_argument("--linear", action='store_true', default=False)
     parser.add_argument("--flash", action='store_true', default=False)
 

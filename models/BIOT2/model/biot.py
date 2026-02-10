@@ -90,7 +90,7 @@ class BIOTEncoder(nn.Module):
             max_seq_len=1024,
             attn_layer_dropout=0.2,  # dropout right after self-attention layer
             attn_dropout=0.2,  # dropout post-attention
-            tome_r=kwargs.get('tome_r', 0),
+            tome_r=kwargs.get('tome_r', []),
             top_k=kwargs.get('top_k', 0),
             linear=kwargs.get('linear', False),
             flash=kwargs.get('flash', False),
@@ -182,7 +182,7 @@ class BIOTEncoder(nn.Module):
 class BIOTClassifier(nn.Module):
     def __init__(self, emb_size=256, heads=8, depth=4, n_classes=6, **kwargs):
         super().__init__()
-        self.biot = BIOTEncoder(emb_size=emb_size, heads=heads, depth=depth, rtl_tome=kwargs['rtl_tome'])
+        self.biot = BIOTEncoder(emb_size=emb_size, heads=heads, depth=depth, **kwargs)
         self.classifier = ClassificationHead(emb_size, n_classes)
 
     def forward(self, x):
