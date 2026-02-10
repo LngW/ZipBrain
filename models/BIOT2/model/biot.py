@@ -95,6 +95,7 @@ class BIOTEncoder(nn.Module):
             linear=kwargs.get('linear', False),
             flash=kwargs.get('flash', False),
             rtl_tome = kwargs.get('rtl_tome', False),
+            n_channels=n_channels,
         )
         self.positional_encoding = PositionalEncoding(emb_size)
 
