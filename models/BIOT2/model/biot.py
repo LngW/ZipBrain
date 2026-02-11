@@ -90,12 +90,9 @@ class BIOTEncoder(nn.Module):
             max_seq_len=1024,
             attn_layer_dropout=0.2,  # dropout right after self-attention layer
             attn_dropout=0.2,  # dropout post-attention
-            tome_r=kwargs.get('tome_r', []),
-            top_k=kwargs.get('top_k', 0),
-            linear=kwargs.get('linear', False),
-            flash=kwargs.get('flash', False),
-            rtl_tome = kwargs.get('rtl_tome', False),
+            ffn_dropout=0.8, # dropout in forward network
             n_channels=n_channels,
+            **kwargs,
         )
         self.positional_encoding = PositionalEncoding(emb_size)
 

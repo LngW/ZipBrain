@@ -1,9 +1,9 @@
 #!/bin/bash
-workspace='test_rtl_tome'
+workspace='test_ffn_dropout'
 workspace="workspace/${workspace}"
 common_args=(
     --epochs 2
-    --dataset RANDOM
+    --dataset TUAB
     --in_channels 16
     --sampling_rate 200
     --token_size 200
@@ -12,7 +12,7 @@ common_args=(
     --batch_size 64
     --model BIOT
     --num_workers 2
-    --subset 10
+    --subset 100
     --workspace $workspace
 )
 
@@ -28,12 +28,16 @@ common_args="${common_args[@]}"
 export CUDA_VISIBLE_DEVICES=0
 
 for seed in $seeds; do
-    # python run_binary_supervised.py $common_args --seed $seed --log_dir baseline_lin --linear
-    # python run_binary_supervised.py $common_args --seed $seed --log_dir baseline_std
-    # python run_binary_supervised.py $common_args --seed $seed --log_dir baseline_std_flash --flash
+    python run_binary_supervised.py $common_args --seed $seed --log_dir baseline_lin --linear
+    python run_binary_supervised.py $common_args --seed $seed --log_dir baseline_std
+    python run_binary_supervised.py $common_args --seed $seed --log_dir baseline_std_flash --flash
     for r in 38 19; do
         python run_binary_supervised.py $common_args --seed $seed --tome_r $r --log_dir tome_${r}_lin --linear
         python run_binary_supervised.py $common_args --seed $seed --tome_r $r --log_dir tome_${r}_std
         python run_binary_supervised.py $common_args --seed $seed --tome_r $r --log_dir tome_${r}_std_flash --flash
     done
+    # for r in "2" "3 3 2 2"; do
+    #     python run_binary_supervised.py $common_args --seed $seed --tome_r $r --log_dir rtl_tome_${r// /_}_std_flash --flash --rtl_tome
+    #     python run_binary_supervised.py $common_args --seed $seed --tome_r $r --log_dir rtl_tome_${r// /_}_std_flash --flash --rtl_tome
+    # done
 done

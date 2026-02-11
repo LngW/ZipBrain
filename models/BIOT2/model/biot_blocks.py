@@ -11,15 +11,13 @@ def create_biot_encoder_block(
     attn_layer_dropout, 
     attn_dropout, 
     *,
-    tome_r=0,
+    ffn_dropout,
+    tome_r,
     top_k=0,
     linear=False,
-    flash=False,
-    rtl_tome=False,
-    n_channels=None,
     **kwargs):
 
-    if linear and tome_r == 0 and top_k == 0:
+    if linear and top_k == 0 and (len(tome_r) == 0 or all([it == 0 for it in tome_r])):
         from linear_attention_transformer import LinearAttentionTransformer
         return LinearAttentionTransformer(
             dim = dim,
@@ -28,11 +26,22 @@ def create_biot_encoder_block(
             max_seq_len = max_seq_len,
             attn_layer_dropout = attn_layer_dropout,
             attn_dropout = attn_dropout,
+            ff_dropout=ffn_dropout,
         )
     else:
         if linear and top_k != 0:
             raise UserWarning("top_k is set with linear, but top_k is not available in linear attention")
-        return Encoder(dim, heads, depth, attn_layer_dropout, linear, top_k, tome_r, flash, rtl_tome, n_channels)
+        return Encoder(
+            depth, 
+            tome_r,
+            dim = dim, 
+            heads = heads, 
+            attn_dropout = attn_dropout, 
+            linear = linear,
+            top_k = top_k,
+            ffn_dropout = ffn_dropout,
+            **kwargs
+        )
 
 def ToMeBlock(r = 0, *args, **kwargs):
     from .tome.merge import bipartite_soft_matching, merge_wavg_sum
@@ -103,7 +112,7 @@ def RunTimeLengthToMeBlock(r = 0, n_channels=None, emb_dim = 256, *args, **kwarg
 
 class Attention(nn.Module):
     def __init__(self, dim, heads, dropout, linear = False, top_k = 0, flash = False, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__()
         self.qkv_proj = nn.Linear(dim, 3 * dim)
         self.out_proj = nn.Linear(dim, dim)
 
@@ -170,14 +179,15 @@ class Attention(nn.Module):
         return out, k
 
 class Block(nn.Module):
-    def __init__(self, dim, heads, dropout, linear = False, top_k = 0, tome_r = 0, flash = False, rtl_tome=False, n_channels=None, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, dim, heads, attn_dropout, ffn_dropout, linear, top_k, tome_r, flash, rtl_tome, n_channels, *args, **kwargs):
+        super().__init__()
         self.norm1 = nn.LayerNorm(dim)
-        self.attn = Attention(dim, heads, dropout, linear = linear, top_k = top_k, flash=flash)
+        self.attn = Attention(dim, heads, attn_dropout, linear = linear, top_k = top_k, flash=flash)
         self.norm2 = nn.LayerNorm(dim)
         self.ffn = nn.Sequential(
             nn.Linear(dim, 4 * dim),
             nn.GELU(),
+            nn.Dropout(ffn_dropout),
             nn.Linear(4 * dim, dim)
         )
 
@@ -200,8 +210,8 @@ class Block(nn.Module):
         return x, size
 
 class Encoder(nn.Module):
-    def __init__(self, dim, heads, depth, dropout, linear = False, top_k = 0, tome_r = [], flash=False, rtl_tome=False, n_channels=None, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, depth, tome_r, /, **kwargs):
+        super().__init__()
         layers = nn.ModuleList()
 
         if len(tome_r) == 0:
@@ -215,7 +225,7 @@ class Encoder(nn.Module):
                 tome_r = tome_r + [0] * comple
 
         for idx in range(depth):
-            layers.append(Block(dim, heads, dropout, linear = linear, top_k=top_k, tome_r=tome_r[idx], flash=flash, rtl_tome=rtl_tome, n_channels=n_channels))
+            layers.append(Block(tome_r=tome_r[idx], **kwargs))
         
         self.layers = layers
 
