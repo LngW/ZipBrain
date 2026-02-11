@@ -83,15 +83,17 @@ class BIOTEncoder(nn.Module):
         self.patch_embedding = PatchFrequencyEmbedding(
             emb_size=emb_size, n_freq=self.n_fft // 2 + 1
         )
+        self.tome_container = {}
         self.transformer = create_biot_encoder_block(
             dim=emb_size,
             heads=heads,
             depth=depth,
             max_seq_len=1024,
             attn_layer_dropout=0.2,  # dropout right after self-attention layer
-            attn_dropout=0.2,  # dropout post-attention
-            ffn_dropout=0.8, # dropout in forward network
+            attn_dropout=0.9,  # dropout post-attention
+            ffn_dropout=0.9, # dropout in forward network
             n_channels=n_channels,
+            tome_container=self.tome_container,
             **kwargs,
         )
         self.positional_encoding = PositionalEncoding(emb_size)
@@ -124,6 +126,9 @@ class BIOTEncoder(nn.Module):
             channel_spec_emb = self.stft(x.flatten(0, 1))
             channel_spec_emb = self.patch_embedding(channel_spec_emb)
             _, ts, emb_size = channel_spec_emb.shape
+
+            self.tome_container['shape'] = [batch_size, channels, ts, emb_size]
+
             channel_spec_emb = channel_spec_emb.reshape(batch_size, channels, ts, emb_size)
             channel_token_emb = (
                 self.channel_tokens(self.index[n_channel_offset:n_channel_offset + channels])

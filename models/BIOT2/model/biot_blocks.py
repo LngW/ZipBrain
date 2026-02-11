@@ -13,8 +13,9 @@ def create_biot_encoder_block(
     *,
     ffn_dropout,
     tome_r,
-    top_k=0,
-    linear=False,
+    top_k,
+    linear,
+    tome_container,
     **kwargs):
 
     if linear and top_k == 0 and (len(tome_r) == 0 or all([it == 0 for it in tome_r])):
@@ -40,15 +41,16 @@ def create_biot_encoder_block(
             linear = linear,
             top_k = top_k,
             ffn_dropout = ffn_dropout,
+            tome_container = tome_container,
             **kwargs
         )
 
-def ToMeBlock(r = 0, *args, **kwargs):
+def ToMeBlock(tome_container, r, dim):
     from .tome.merge import bipartite_soft_matching, merge_wavg_sum
 
     class ToMeBlock(nn.Module):
-        def __init__(self, r = 2, *args, **kwargs):
-            super().__init__(*args, **kwargs)
+        def __init__(self):
+            super().__init__()
             self.r = r
 
         def forward(self, x, k, size_old):
@@ -62,16 +64,47 @@ def ToMeBlock(r = 0, *args, **kwargs):
 
             return x, size
         
-    return ToMeBlock(r = r, *args, **kwargs)
+    return ToMeBlock()
 
-def RunTimeLengthToMeBlock(r = 0, n_channels=None, emb_dim = 256, *args, **kwargs):
+def ChannelToMeBlock(tome_container, r, dim):
+    from .tome.merge import bipartite_soft_matching, merge_wavg_sum
+    class ChannelToMeBlock(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.tome_container = tome_container
+            self.r = r
+
+        def forward(self, x, k, size_old):
+            bsz, chs, seq, dim = self.tome_container['shape']
+
+            assert chs * seq == x.shape[1]
+
+            k = k.transpose(1, 2).reshape(bsz, chs, seq, dim).transpose(1, 2).flatten(0, 1)
+            x = x.reshape(bsz, chs, seq, dim).transpose(1, 2).flatten(0, 1)
+            # now x and k are all size of (bsz * seq, chs, dim)
+
+            # process it with original tome logic
+            _, merge_add, _ = bipartite_soft_matching(k, self.r)
+
+            x, size = merge_wavg_sum(merge_add, x, size_old)
+
+            chs = x.shape[1]
+            x = x.reshape(bsz, seq, chs, dim).transpose(1, 2).flatten(1, 2)
+            self.tome_container['shape'] = [bsz, chs, seq, dim]
+
+            return x, size
+        
+    return ChannelToMeBlock()
+
+
+def RunTimeLengthToMeBlock(tome_container, r, dim):
 
     class RTLToMeBlock(nn.Module):
-        def __init__(self, r, n_channels, emb_dim, *args, **kwargs):
-            super().__init__(*args, **kwargs)
+        def __init__(self):
+            super().__init__()
             self.r = r
-            self.chs = n_channels
-            self.consec = nn.Embedding(1024, emb_dim)
+            self.tome_container = tome_container
+            self.consec = nn.Embedding(1024, dim)
 
         def forward(self, x : torch.Tensor, k, size_old):
             bsz, c_s, dim = x.shape
@@ -108,7 +141,7 @@ def RunTimeLengthToMeBlock(r = 0, n_channels=None, emb_dim = 256, *args, **kwarg
             y = torch.baddbmm(m0, m1, m2)
             return y.view(bsz, channels * seq_new, dim), None
 
-    return RTLToMeBlock(r, n_channels, emb_dim)
+    return RTLToMeBlock()
 
 class Attention(nn.Module):
     def __init__(self, dim, heads, dropout, linear = False, top_k = 0, flash = False, *args, **kwargs):
@@ -179,7 +212,7 @@ class Attention(nn.Module):
         return out, k
 
 class Block(nn.Module):
-    def __init__(self, dim, heads, attn_dropout, ffn_dropout, linear, top_k, tome_r, flash, rtl_tome, n_channels, *args, **kwargs):
+    def __init__(self, dim, heads, attn_dropout, ffn_dropout, linear, top_k, flash, tome_variant, tome_r, tome_container, *args, **kwargs):
         super().__init__()
         self.norm1 = nn.LayerNorm(dim)
         self.attn = Attention(dim, heads, attn_dropout, linear = linear, top_k = top_k, flash=flash)
@@ -191,10 +224,14 @@ class Block(nn.Module):
             nn.Linear(4 * dim, dim)
         )
 
-        if rtl_tome:
-            self.tome = RunTimeLengthToMeBlock(tome_r, n_channels, dim)
+        if tome_variant == 'tome':
+            self.tome = ToMeBlock(tome_container, tome_r, dim)
+        elif tome_variant == 'channel':
+            self.tome = ChannelToMeBlock(tome_container, tome_r, dim)
+        elif tome_variant == 'rtl':
+            self.tome = RunTimeLengthToMeBlock(tome_container, tome_r, dim)
         else:
-            self.tome = ToMeBlock(tome_r)
+            self.tome = lambda x, k, size: (x, size)
 
         print(type(self.tome))
     
