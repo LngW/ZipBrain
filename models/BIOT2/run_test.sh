@@ -28,7 +28,7 @@ common_args="${common_args[@]}"
 export CUDA_VISIBLE_DEVICES=0
 
 filename="run_binary_supervised.py"
-filename="-m debugpy --listen :6678 --wait-for-client $filename"
+# filename="-m debugpy --listen :6678 --wait-for-client $filename"
 
 for seed in $seeds; do
     python $filename $common_args --seed $seed --log_dir baseline_lin --linear

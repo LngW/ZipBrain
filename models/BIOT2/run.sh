@@ -1,5 +1,5 @@
 #!/bin/bash
-workspace=''
+workspace='ch_tome_ffn90_adamw_sbz100'
 workspace="workspace/${workspace}"
 common_args=(
     # --epochs 2
@@ -12,7 +12,7 @@ common_args=(
     --batch_size 256
     --model BIOT
     --num_workers 8
-    --subset 200
+    --subset 100
     --workspace $workspace
 )
 
