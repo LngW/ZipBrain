@@ -386,6 +386,7 @@ def supervised(args):
                 tome_r = args.tome_r,
                 flash=args.flash,
                 tome_variant=args.tome_variant,
+                cls_token = args.cls_token,
             )
             if args.pretrain_model_path and (args.sampling_rate == 200):
                 model.biot.load_state_dict(torch.load(args.pretrain_model_path))
@@ -400,6 +401,8 @@ def supervised(args):
         lightning_model = LitModel_finetune.load_from_checkpoint(args.load_from_checkpoint, args=args, model = model)
     else:
         lightning_model = LitModel_finetune(args, model)
+
+    print(model)
 
     # logger and callbacks
     # version = f"{args.dataset}-{args.model}-{args.lr}-{args.batch_size}-{args.sampling_rate}-{args.token_size}-{args.hop_length}"
@@ -509,6 +512,7 @@ if __name__ == "__main__":
     parser.add_argument("--workspace", type=str, required=True)
     # parser.add_argument("--rtl_tome", action='store_true', default=False)
     parser.add_argument("--tome_variant", type=str, default="")
+    parser.add_argument("--cls_token", action='store_true', default=False)
     # end of modification
 
     args = parser.parse_args()

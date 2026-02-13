@@ -1,5 +1,5 @@
 #!/bin/bash
-workspace='ch_tome_ffn90_adamw_sbz100'
+workspace='ch_tome_ffn90_adamw_sbz100_cls_token'
 workspace="workspace/${workspace}"
 common_args=(
     # --epochs 2
@@ -14,6 +14,7 @@ common_args=(
     --num_workers 8
     --subset 100
     --workspace $workspace
+    --cls_token
 )
 
 if [ -d $workspace ]; then
