@@ -1,5 +1,5 @@
 #!/bin/bash
-workspace='ch_tome_ffn90_adamw_sbz100_cls_token'
+workspace='ch_tome_ffn90_adamw_sbz100_cls_token_norm'
 workspace="workspace/${workspace}"
 common_args=(
     # --epochs 2

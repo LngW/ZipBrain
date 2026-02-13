@@ -52,7 +52,8 @@ def create_biot_encoder_block(
             def __init__(self):
                 super().__init__()
                 self.transformer = transformer
-                self.register_buffer('cls_token', torch.zeros(dim, dtype=torch.float, requires_grad=True).view(1, 1, dim))
+                with torch.random.fork_rng():
+                    self.register_buffer('cls_token', torch.randn(dim, dtype=torch.float, requires_grad=True).view(1, 1, dim))
             
             def forward(self, x):
                 emb = self.transformer(x)
