@@ -364,7 +364,7 @@ class Block(nn.Module):
             self.tome = ToMeBlock(tome_container, tome_r, dim)
         elif tome_variant == 'channel':
             self.tome = ChannelToMeBlock(tome_container, tome_r, dim)
-        elif tome_variant == 'timestep':
+        elif tome_variant == 'time':
             self.tome = TimestepToMeBlock(tome_container, tome_r, dim)
         elif tome_variant == 'rtl':
             self.tome = RunTimeLengthToMeBlock(tome_container, tome_r, dim)
