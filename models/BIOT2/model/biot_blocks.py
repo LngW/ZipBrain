@@ -118,6 +118,46 @@ def ChannelToMeBlock(tome_container, r, dim):
         
     return ChannelToMeBlock()
 
+def DoubleChannelToMeBlock(tome_container, r, dim):
+    from .tome.merge import bipartite_soft_matching, merge_wavg_sum
+    class DoubleChannelToMeBlock(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.tome_container = tome_container
+            self.r = r
+
+        def forward(self, x, k, size_old):
+            bsz, chs, seq, dim = self.tome_container['shape']
+
+            assert chs * seq == x.shape[1]
+
+            k = k.transpose(1, 2).reshape(bsz, chs, seq, dim).transpose(1, 2).flatten(0, 1)
+            x = x.reshape(bsz, chs, seq, dim).transpose(1, 2).flatten(0, 1)
+            if size_old is not None:
+                size_old = rearrange(size_old, "b (c s) d -> (b s) c d", c=chs, s=seq)
+            # now x and k are all size of (bsz * seq, chs, dim)
+
+            # process it with original tome logic
+            _, merge_add, _ = bipartite_soft_matching(k, self.r)
+
+            x, size = merge_wavg_sum(merge_add, x, size_old)
+            k, _ = merge_wavg_sum(merge_add, k, size_old)
+
+            size_old = size
+
+            _, merge_add, _ = bipartite_soft_matching(k, self.r // 2)
+            x, size = merge_wavg_sum(merge_add, x, size_old)
+
+            chs = x.shape[1]
+            x = x.reshape(bsz, seq, chs, dim).transpose(1, 2).flatten(1, 2)
+            size = rearrange(size, "(b s) c d -> b (c s) d", c=chs, s=seq)
+
+            self.tome_container['shape'] = [bsz, chs, seq, dim]
+
+            return x, size
+        
+    return DoubleChannelToMeBlock()
+
 def TimestepToMeBlock(tome_container, r, dim):
     from .tome.merge import bipartite_soft_matching, merge_wavg_sum
     class TimestepToMeBlock(nn.Module):
@@ -133,9 +173,9 @@ def TimestepToMeBlock(tome_container, r, dim):
 
             # the shape of k is (bsz, n_head, chs*seq, dim_head)
             k = rearrange(k, "b h (c s) d -> (b c) s (h d)", c=chs, s=seq)
-            # k = k.transpose(1, 2).reshape(bsz, chs, seq, dim).flatten(0, 1)
             x = rearrange(x, "b (c s) d -> (b c) s d", c=chs, s=seq)
-            # x = x.reshape(bsz, chs, seq, dim).flatten(0, 1)
+            if size_old is not None:
+                size_old = rearrange(size_old, "b (c s) d -> (b c) s d", c=chs, s=seq)
             # now x and k are all size of (bsz * chs, seq, dim)
 
             # process it with original tome logic
@@ -147,10 +187,50 @@ def TimestepToMeBlock(tome_container, r, dim):
             self.tome_container['shape'] = [bsz, chs, seq, dim]
 
             x = rearrange(x, "(b c) s d -> b (c s) d", c = chs, s = seq)
+            size = rearrange(size, "(b c) s d -> b (c s) d", c = chs, s = seq)
             # x = x.reshape(bsz, chs, seq, dim).flatten(1, 2)
             return x, size
         
     return TimestepToMeBlock()
+
+def DoubleTimestepToMeBlock(tome_container, r, dim):
+    from .tome.merge import bipartite_soft_matching, merge_wavg_sum
+    class DoubleTimestepToMeBlock(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.tome_container = tome_container
+            self.r = r
+
+        def forward(self, x, k, size_old):
+            bsz, chs, seq, dim = self.tome_container['shape']
+
+            assert chs * seq == x.shape[1]
+
+            # the shape of k is (bsz, n_head, chs*seq, dim_head)
+            k = rearrange(k, "b h (c s) d -> (b c) s (h d)", c=chs, s=seq)
+            x = rearrange(x, "b (c s) d -> (b c) s d", c=chs, s=seq)
+            if size_old is not None:
+                size_old = rearrange(size_old, "b (c s) d -> (b c) s d", c=chs, s=seq)
+            # now x and k are all size of (bsz * chs, seq, dim)
+
+            # process it with original tome logic
+            _, merge_add, _ = bipartite_soft_matching(k, self.r)
+
+            x, size = merge_wavg_sum(merge_add, x, size_old)
+            k, _ = merge_wavg_sum(merge_add, k, size_old)
+            
+            size_old = size
+            _, merge_add, _ = bipartite_soft_matching(k, self.r // 2)
+            x, size = merge_wavg_sum(merge_add, x, size_old)
+
+            seq = x.shape[1]
+            self.tome_container['shape'] = [bsz, chs, seq, dim]
+
+            x = rearrange(x, "(b c) s d -> b (c s) d", c = chs, s = seq)
+            size = rearrange(size, "(b c) s d -> b (c s) d", c = chs, s = seq)
+            return x, size
+        
+    return DoubleTimestepToMeBlock()
 
 def RunTimeLengthToMeBlock(tome_container, r, dim):
 
@@ -197,6 +277,7 @@ def RunTimeLengthToMeBlock(tome_container, r, dim):
             return y.view(bsz, channels * seq_new, dim), None
 
     return RTLToMeBlock()
+
 
 class Attention(nn.Module):
     def __init__(self, dim, heads, dropout, linear = False, top_k = 0, flash = False, *args, **kwargs):
@@ -287,6 +368,10 @@ class Block(nn.Module):
             self.tome = TimestepToMeBlock(tome_container, tome_r, dim)
         elif tome_variant == 'rtl':
             self.tome = RunTimeLengthToMeBlock(tome_container, tome_r, dim)
+        elif tome_variant == 'w_channel':
+            self.tome = DoubleChannelToMeBlock(tome_container, tome_r, dim)
+        elif tome_variant == 'w_time':
+            self.tome = DoubleTimestepToMeBlock(tome_container, tome_r, dim)
         else:
             self.tome = lambda x, k, size: (x, size)
 
@@ -304,7 +389,7 @@ class Block(nn.Module):
         return x, size
 
 class Encoder(nn.Module):
-    def __init__(self, depth, tome_r, /, **kwargs):
+    def __init__(self, depth, tome_r, tome_variant, **kwargs):
         super().__init__()
         layers = nn.ModuleList()
 
@@ -313,13 +398,21 @@ class Encoder(nn.Module):
         elif len(tome_r) == 1:
             tome_r = tome_r * depth
         elif len(tome_r) != depth:
-            # raise UserWarning("len(tome_r) is {}, but expected {}".format(len(tome_r), depth))
             comple = depth - len(tome_r)
             if comple > 0:
                 tome_r = tome_r + [0] * comple
 
+        if len(tome_variant) == 0:
+            tome_variant = [''] * depth
+        elif len(tome_variant) == 1:
+            tome_variant = tome_variant * depth
+        elif len(tome_variant) != depth:
+            comple = depth - len(tome_variant)
+            if comple > 0:
+                tome_variant = tome_variant + [''] * depth
+
         for idx in range(depth):
-            layers.append(Block(tome_r=tome_r[idx], **kwargs))
+            layers.append(Block(tome_r=tome_r[idx], tome_variant=tome_variant[idx], **kwargs))
         
         self.layers = layers
 

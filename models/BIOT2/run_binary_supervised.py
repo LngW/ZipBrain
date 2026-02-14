@@ -511,7 +511,7 @@ if __name__ == "__main__":
     parser.add_argument("--profile", action='store_true', default=False)
     parser.add_argument("--workspace", type=str, required=True)
     # parser.add_argument("--rtl_tome", action='store_true', default=False)
-    parser.add_argument("--tome_variant", type=str, default="")
+    parser.add_argument("--tome_variant", type=str, nargs='+', default=[])
     parser.add_argument("--cls_token", action='store_true', default=False)
     # end of modification
 
