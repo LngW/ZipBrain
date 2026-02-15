@@ -1,5 +1,5 @@
 #!/bin/bash
-workspace='test_tome_variants'
+workspace='test_flash_soundness'
 workspace="workspace/${workspace}"
 common_args=(
     --epochs 2

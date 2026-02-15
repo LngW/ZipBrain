@@ -299,16 +299,17 @@ class Attention(nn.Module):
         else:
             B, N, D = x.shape
             H, HD = self.n_heads, self.d_heads
-            scores = q @ k.transpose(-1, -2)
-            scores = scores / np.sqrt(HD)
+            scores = (q * (HD ** -0.5)) @ k.transpose(-1, -2)
+            # scores = scores / np.sqrt(HD)
 
-            if self.top_k > 0 and self.top_k < N:
-                topk, _ = torch.topk(scores, self.top_k, dim=-1)
-                scores[scores < topk[..., -1:]] = -torch.inf
+            # if self.top_k > 0 and self.top_k < N:
+            #     topk, _ = torch.topk(scores, self.top_k, dim=-1)
+            #     scores[scores < topk[..., -1:]] = -torch.inf
 
-            scores = scores - scores.amax(-1, True)
+            # scores = scores - scores.amax(-1, True)
             weights = torch.softmax(scores, dim = -1)
-            weights = torch.dropout(weights, self.dropout_p, self.training)
+            if self.dropout_p > 0:
+                weights = torch.dropout(weights, self.dropout_p, self.training)
             out = weights @ v
 
         out = rearrange(out, "b h n d->b n (h d)")
