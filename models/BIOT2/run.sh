@@ -1,5 +1,5 @@
 #!/bin/bash
-workspace='fixed_metrics_tome_vanilla_2'
+workspace='fixed_metrics_tome_vanilla_3'
 workspace="workspace/${workspace}"
 common_args=(
     # --epochs 2
@@ -49,13 +49,13 @@ for seed in "${seeds[@]}"; do
     # python $filename $common_args --seed $seed --tome_variant tome --tome_r 38 --log_dir tome_2222_std
     # python $filename $common_args --seed $seed --tome_variant tome --tome_r 38 --log_dir tome_2222_std_flash --flash
     # 16 -> 8
-    python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 --log_dir tome_8000_lin --linear
-    python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 --log_dir tome_8000_std
-    python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 --log_dir tome_8000_std_flash --flash
+    python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 0 --log_dir tome_8000_lin --linear
+    python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 0 --log_dir tome_8000_std
+    python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 0 --log_dir tome_8000_std_flash --flash
     # 16 -> 4
-    python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 76 --log_dir tome_8400_lin --linear
-    python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 76 --log_dir tome_8400_std
-    python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 76 --log_dir tome_8400_std_flash --flash
+    # python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 76 --log_dir tome_8400_lin --linear
+    # python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 76 --log_dir tome_8400_std
+    # python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 76 --log_dir tome_8400_std_flash --flash
     # 16 -> 2
     # python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 76 38 --log_dir tome_8420_lin --linear
     # python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 76 38 --log_dir tome_8420_std
