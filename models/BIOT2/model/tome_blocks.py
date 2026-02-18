@@ -5,12 +5,16 @@ from einops import rearrange
 def create_tome_block(variant, container, r, dim):
     if variant == 'tome':
         return ToMeBlock(container, r, dim)
-    elif variant == 'tome_f':
-        return ToMeFullBlock(container, r, dim)
+    elif variant == 'f_tome':
+        return FullToMeBlock(container, r, dim)
     elif variant == 'l_tome':
         return LearnableToMeBlock(container, r, dim)
+    elif variant == 'lq_tome':
+        return LearnableQToMeBlock(container, r, dim)
     elif variant == 'l_channel':
         return LearnableChannel(container, r, dim)
+    elif variant == 'l_time':
+        return LearnableTimestep(container, r, dim)
     elif variant == 'channel':
         return ChannelToMeBlock(container, r, dim)
     elif variant == 'time':
@@ -22,7 +26,7 @@ def create_tome_block(variant, container, r, dim):
     elif variant == 'w_time':
         return DoubleTimestepToMeBlock(container, r, dim)
     elif variant == 'l_ctime':
-        return LearnableTimestepToMeBlock(container, r, dim)
+        return LearnableConsectiveTimestepToMeBlock(container, r, dim)
     else:
         return lambda x, k, size: (x, size)
 
@@ -47,47 +51,17 @@ def ToMeBlock(tome_container, r, dim):
         
     return ToMeBlock()
 
-def ToMeFullBlock(tome_container, r, dim):
+def FullToMeBlock(tome_container, r, dim):
     class ToMeBlock(nn.Module):
         def __init__(self):
             super().__init__()
             self.r = r
 
-        def _compute(self, x, k, size_old):
-            bsz, seq, dim = x.shape
-            r = min(max(self.r, 0), seq - 1) # keep at least one token
-
-            # q = q / q.norm(dim=-1, keepdim=True)
-            k = k - k.mean(dim=-2, keepdim=True)
-            k = k / k.norm(dim=-1, keepdim=True)
-
-            similarity : torch.Tensor = k @ k.transpose(-1, -2)
-            similarity_ : torch.Tensor = torch.exp(similarity)
-            importance = similarity_.sum(-1) - torch.diagonal(similarity_, 0, -2, -1)
-            # importance = torch.diagonal_scatter(similarity, torch.zeros_like(similarity[..., 0]), 0, -2, -1).sum(-1)
-            top_v, top_idx = torch.topk(importance, seq - r)
-
-            matrix = similarity.gather(-2, top_idx[..., None].expand(-1, -1, seq))
-            matrix = (matrix + 1) / 2
-            matrix.scatter_(-1, top_idx[..., None], 1)
-
-            matrix_ = torch.zeros_like(matrix)
-            matrix_.scatter_(-2, matrix.argmax(-2, True), 1)
-
-            matrix = matrix * matrix_
-            matrix = matrix / matrix.sum(-1, True)
-
-            return matrix @ x, matrix_ @ size_old
-
         def forward(self, x, k, size_old):
             if size_old is None:
                 size_old = torch.ones_like(x[..., 0:1])
-            return self._compute(
-                x,
-                # rearrange(k, "b h s d -> b s (h d)"),
-                x.detach(),
-                size_old,
-            )
+            k_ = rearrange(k.detach(), "b h s d -> b s (h d)")
+            return _qk_merge(self.r, x, k_, k_, size_old)
         
     return ToMeBlock()
 
@@ -107,7 +81,10 @@ def ChannelToMeBlock(tome_container, r, dim):
             k = k.transpose(1, 2).reshape(bsz, chs, seq, dim).transpose(1, 2).flatten(0, 1)
             x = x.reshape(bsz, chs, seq, dim).transpose(1, 2).flatten(0, 1)
             # now x and k are all size of (bsz * seq, chs, dim)
-            size_old = rearrange(size_old, "b (c s) d -> (b s) c d", c=chs, s=seq)
+            if size_old is None:
+                size_old = torch.ones_like(x[..., 0:1])
+            else:
+                size_old = rearrange(size_old, "b (c s) d -> (b s) c d", c=chs, s=seq)
 
             # process it with original tome logic
             _, merge_add, _ = bipartite_soft_matching(k, self.r)
@@ -283,6 +260,32 @@ def RunTimeLengthToMeBlock(tome_container, r, dim):
 
     return RTLToMeBlock()
 
+def _qk_merge(r, x, q, k, size):
+    bsz, seq, dim = x.shape
+    r = min(max(r, 0), seq - 1) # keep at least one token
+
+    q = q / q.norm(dim=-1, keepdim=True)
+    k = k / k.norm(dim=-1, keepdim=True)
+
+    similarity : torch.Tensor = q @ k.transpose(-1, -2)
+    similarity_ : torch.Tensor = torch.exp(similarity)
+    importance = similarity_.sum(-1) - torch.diagonal(similarity_, 0, -2, -1) # so similarity to itself do not affect
+    # importance = torch.diagonal_scatter(similarity, torch.zeros_like(similarity[..., 0]), 0, -2, -1).sum(-1)
+    top_v, top_idx = torch.topk(importance, seq - r)
+
+    matrix = similarity.gather(-2, top_idx[..., None].expand(-1, -1, seq))
+    matrix = (matrix + 1) / 2
+    matrix.scatter_(-1, top_idx[..., None], 1)
+
+    matrix_ = torch.zeros_like(matrix)
+    matrix_.scatter_(-2, matrix.argmax(-2, True), 1) # merge to its most similar one
+
+    matrix = matrix * matrix_
+    matrix = matrix / matrix.sum(-1, True)
+
+    return matrix @ x, matrix_ @ size
+
+
 def LearnableToMeBlock(tome_container, r, dim):
     class Learnable(nn.Module):
         def __init__(self):
@@ -291,25 +294,45 @@ def LearnableToMeBlock(tome_container, r, dim):
             self.r = r
             self.tome_container = tome_container
         
-        def _compute(self, x, q, k, size):
+        def forward(self, x, k, size):
+            if self.r <= 0:
+                return x, size
+            
+            if size is None:
+                size = torch.ones_like(x[..., 0:1])
+
+            q_, k_ = rearrange(self.proj(x), "b s (i d) -> i b s d", i=2)
+            x_, size_ = _qk_merge(self.r, x, q_, k_, size)
+
+            return x_, size_
+
+    return Learnable()
+
+def LearnableQToMeBlock(tome_container, r, dim):
+    class LearnableQ(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.proj = nn.Linear(dim, dim & -2)
+            self.r = r
+            self.tome_container = tome_container
+        
+        def _compute(self, x, q, size):
             bsz, seq, dim = x.shape
             r = min(max(self.r, 0), seq - 1) # keep at least one token
 
             q = q / q.norm(dim=-1, keepdim=True)
-            k = k / k.norm(dim=-1, keepdim=True)
 
-            similarity : torch.Tensor = q @ k.transpose(-1, -2)
-            similarity_ : torch.Tensor = torch.exp(similarity)
-            importance = similarity_.sum(-1) - torch.diagonal(similarity_, 0, -2, -1)
+            similarity : torch.Tensor = q @ q.transpose(-1, -2)
+            importance = torch.exp(similarity).sum(-1)
             # importance = torch.diagonal_scatter(similarity, torch.zeros_like(similarity[..., 0]), 0, -2, -1).sum(-1)
             top_v, top_idx = torch.topk(importance, seq - r)
 
             matrix = similarity.gather(-2, top_idx[..., None].expand(-1, -1, seq))
             matrix = (matrix + 1) / 2
-            matrix.scatter_(-1, top_idx[..., None], 1)
+            # matrix.scatter_(-1, top_idx[..., None], 1)
 
             matrix_ = torch.zeros_like(matrix)
-            matrix_.scatter_(-2, matrix.argmax(-2, True), 1)
+            matrix_.scatter_(-2, matrix.argmax(-2, True), 1) # merge to its most similar one
 
             matrix = matrix * matrix_
             matrix = matrix / matrix.sum(-1, True)
@@ -323,45 +346,20 @@ def LearnableToMeBlock(tome_container, r, dim):
             if size is None:
                 size = torch.ones_like(x[..., 0:1])
 
-            q_, k_ = rearrange(self.proj(x), "b s (i d) -> i b s d", i=2)
-            x_, size_ = self._compute(x, q_, k_, size)
+            q_ = self.proj(x)
+            x_, size_ = self._compute(x, q_, size)
 
             return x_, size_
 
-    return Learnable()
+    return LearnableQ()
 
 def LearnableChannel(tome_container, r, dim):
-    class LearnableChannelToMe(nn.Module):
+    class LearnableCH(nn.Module):
         def __init__(self):
             super().__init__()
             self.tome_container = tome_container
             self.r = r
             self.proj = nn.Linear(dim, dim & -2)
-        
-        def _compute(self, x, q, k, size):
-            bsz, seq, dim = x.shape
-            r = min(max(self.r, 0), seq - 1) # keep at least one token
-
-            q = q / q.norm(dim=-1, keepdim=True)
-            k = k / k.norm(dim=-1, keepdim=True)
-
-            similarity : torch.Tensor = q @ k.transpose(-1, -2)
-            similarity_ : torch.Tensor = torch.exp(similarity)
-            importance = similarity_.sum(-1) - torch.diagonal(similarity_, 0, -2, -1)
-            # importance = torch.diagonal_scatter(similarity, torch.zeros_like(similarity[..., 0]), 0, -2, -1).sum(-1)
-            top_v, top_idx = torch.topk(importance, seq - r)
-
-            matrix = similarity.gather(-2, top_idx[..., None].expand(-1, -1, seq))
-            matrix = (matrix + 1) / 2
-            matrix.scatter_(-1, top_idx[..., None], 1)
-
-            matrix_ = torch.zeros_like(matrix)
-            matrix_.scatter_(-2, matrix.argmax(-2, True), 1)
-
-            matrix = matrix * matrix_
-            matrix = matrix / matrix.sum(-1, True)
-
-            return matrix @ x, matrix_ @ size
         
         def forward(self, x, k, size):
             if self.r <= 0:
@@ -374,11 +372,9 @@ def LearnableChannel(tome_container, r, dim):
 
             x_ = rearrange(x, "b (c s) d -> (b s) c d", c=chs, s=seq)
             q_, k_ = rearrange(self.proj(x_), "b s (i d) -> i b s d", i=2)
-            # q_ = rearrange(q_, "b (c s) d -> (b s) c d", c=chs, s=seq)
-            # k_ = rearrange(k_, "b (c s) d -> (b s) c d", c=chs, s=seq)
             size_ = rearrange(size, "b (c s) d -> (b s) c d", c=chs, s=seq)
 
-            x_, size_ = self._compute(x_, q_, k_, size_)
+            x_, size_ = _qk_merge(self.r, x_, q_, k_, size_)
             chs = x_.shape[1]
 
             self.tome_container['shape'] = bsz, chs, seq, dim
@@ -387,9 +383,41 @@ def LearnableChannel(tome_container, r, dim):
 
             return x_, size_
     
-    return LearnableChannelToMe()
+    return LearnableCH()
 
-def LearnableTimestepToMeBlock(tome_container, r, dim):
+def LearnableTimestep(tome_container, r, dim):
+    class LearnableTS(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.tome_container = tome_container
+            self.r = r
+            self.proj = nn.Linear(dim, dim & -2)
+        
+        def forward(self, x, k, size):
+            if self.r <= 0:
+                return x, size
+
+            if size is None:
+                size = torch.ones_like(x[..., 0:1])
+            
+            bsz, chs, seq, dim = self.tome_container['shape']
+
+            x_ = rearrange(x, "b (c s) d -> (b c) s d", c=chs, s=seq)
+            q_, k_ = rearrange(self.proj(x_), "b s (i d) -> i b s d", i=2)
+            size_ = rearrange(size, "b (c s) d -> (b c) s d", c=chs, s=seq)
+
+            x_, size_ = _qk_merge(self.r, x_, q_, k_, size_)
+            seq = x_.shape[1]
+
+            self.tome_container['shape'] = bsz, chs, seq, dim
+            x_ = rearrange(x_, "(b c) s d -> b (c s) d", c=chs, s=seq)
+            size_ = rearrange(size_, "(b c) s d -> b (c s) d", c=chs, s=seq)
+
+            return x_, size_
+    
+    return LearnableTS()
+
+def LearnableConsectiveTimestepToMeBlock(tome_container, r, dim):
     class Block(nn.Module):
         def __init__(self):
             super().__init__()
