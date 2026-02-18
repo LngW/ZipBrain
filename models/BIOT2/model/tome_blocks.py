@@ -5,6 +5,8 @@ from einops import rearrange
 def create_tome_block(variant, container, r, dim):
     if variant == 'tome':
         return ToMeBlock(container, r, dim)
+    elif variant == 'tome_f':
+        return ToMeFullBlock(container, r, dim)
     elif variant == 'l_tome':
         return LearnableToMeBlock(container, r, dim)
     elif variant == 'l_channel':
@@ -42,6 +44,50 @@ def ToMeBlock(tome_container, r, dim):
             x, size = merge_wavg_sum(merge, x, size_old)
 
             return x, size
+        
+    return ToMeBlock()
+
+def ToMeFullBlock(tome_container, r, dim):
+    class ToMeBlock(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.r = r
+
+        def _compute(self, x, k, size_old):
+            bsz, seq, dim = x.shape
+            r = min(max(self.r, 0), seq - 1) # keep at least one token
+
+            # q = q / q.norm(dim=-1, keepdim=True)
+            k = k - k.mean(dim=-2, keepdim=True)
+            k = k / k.norm(dim=-1, keepdim=True)
+
+            similarity : torch.Tensor = k @ k.transpose(-1, -2)
+            similarity_ : torch.Tensor = torch.exp(similarity)
+            importance = similarity_.sum(-1) - torch.diagonal(similarity_, 0, -2, -1)
+            # importance = torch.diagonal_scatter(similarity, torch.zeros_like(similarity[..., 0]), 0, -2, -1).sum(-1)
+            top_v, top_idx = torch.topk(importance, seq - r)
+
+            matrix = similarity.gather(-2, top_idx[..., None].expand(-1, -1, seq))
+            matrix = (matrix + 1) / 2
+            matrix.scatter_(-1, top_idx[..., None], 1)
+
+            matrix_ = torch.zeros_like(matrix)
+            matrix_.scatter_(-2, matrix.argmax(-2, True), 1)
+
+            matrix = matrix * matrix_
+            matrix = matrix / matrix.sum(-1, True)
+
+            return matrix @ x, matrix_ @ size_old
+
+        def forward(self, x, k, size_old):
+            if size_old is None:
+                size_old = torch.ones_like(x[..., 0:1])
+            return self._compute(
+                x,
+                # rearrange(k, "b h s d -> b s (h d)"),
+                x.detach(),
+                size_old,
+            )
         
     return ToMeBlock()
 
