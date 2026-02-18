@@ -39,6 +39,9 @@ class LitModel_finetune(pl.LightningModule):
         X, y = batch
         prob = self.model(X)
         loss = BCE(prob, y)  # focal_loss(prob, y)
+        for module in self.model.modules():
+            if hasattr(module, 'compression_loss'):
+                loss = loss + module.compression_loss
         self.log("Train/train_loss", loss)
         self.log("Mem/AllocMax", torch.cuda.max_memory_allocated() / 1024 / 1024)
         self.log("Mem/ReservMax", torch.cuda.max_memory_reserved() / 1024 / 1024)

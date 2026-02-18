@@ -1,5 +1,5 @@
 #!/bin/bash
-workspace='ts_tome_ffn90_adamw_sbz100'
+workspace='fixed_metrics_tome_vanilla_2'
 workspace="workspace/${workspace}"
 common_args=(
     # --epochs 2
@@ -23,6 +23,7 @@ if [ -d $workspace ]; then
     exit
 fi
 mkdir -p $workspace
+cp $0 $workspace/$0
 
 common_args="${common_args[@]}"
 . ../../seeds
@@ -35,44 +36,70 @@ filename="run_binary_supervised.py"
 for seed in "${seeds[@]}"; do
     # baseline
     # python $filename $common_args --seed $seed --log_dir baseline_lin --linear
-    python $filename $common_args --seed $seed --log_dir baseline_std
+    # python $filename $common_args --seed $seed --log_dir baseline_std
     # python $filename $common_args --seed $seed --log_dir baseline_std_flash --flash
 
-    # channel
-    for r in "8 4 2 1" "8 4 2"; do
-        # python $filename $common_args --seed $seed --tome_variant channel --tome_r $r --log_dir ch_tome_${r// /}_lin --linear
-        python $filename $common_args --seed $seed --tome_variant channel --tome_r $r --log_dir ch_tome_${r// /}_std
-        # python $filename $common_args --seed $seed --tome_variant channel --tome_r $r --log_dir ch_tome_${r// /}_std_flash --flash
-    done
+    # vanilla baseline
+    # 16 -> 12
+    # python $filename $common_args --seed $seed --tome_variant tome --tome_r 19 --log_dir tome_1111_lin --linear
+    # python $filename $common_args --seed $seed --tome_variant tome --tome_r 19 --log_dir tome_1111_std
+    # python $filename $common_args --seed $seed --tome_variant tome --tome_r 19 --log_dir tome_1111_std_flash --flash
+    # 16 -> 8
+    # python $filename $common_args --seed $seed --tome_variant tome --tome_r 38 --log_dir tome_2222_lin --linear
+    # python $filename $common_args --seed $seed --tome_variant tome --tome_r 38 --log_dir tome_2222_std
+    # python $filename $common_args --seed $seed --tome_variant tome --tome_r 38 --log_dir tome_2222_std_flash --flash
+    # 16 -> 8
+    python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 --log_dir tome_8000_lin --linear
+    python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 --log_dir tome_8000_std
+    python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 --log_dir tome_8000_std_flash --flash
+    # 16 -> 4
+    python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 76 --log_dir tome_8400_lin --linear
+    python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 76 --log_dir tome_8400_std
+    python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 76 --log_dir tome_8400_std_flash --flash
+    # 16 -> 2
+    # python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 76 38 --log_dir tome_8420_lin --linear
+    # python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 76 38 --log_dir tome_8420_std
+    # python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 76 38 --log_dir tome_8420_std_flash --flash
+    # 16 -> 1
+    # python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 76 38 19 --log_dir tome_8421_lin --linear
+    # python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 76 38 19 --log_dir tome_8421_std
+    # python $filename $common_args --seed $seed --tome_variant tome --tome_r 152 76 38 19 --log_dir tome_8421_std_flash --flash
 
-    # # wch
+    # channel
+    # for r in "8 4 2 1" "8 4 2 0" "8 4 0 0" "8 0 0 0"; do
+    #     python $filename $common_args --seed $seed --tome_variant channel --tome_r $r --log_dir ch_tome_${r// /}_lin --linear
+    #     python $filename $common_args --seed $seed --tome_variant channel --tome_r $r --log_dir ch_tome_${r// /}_std
+    #     python $filename $common_args --seed $seed --tome_variant channel --tome_r $r --log_dir ch_tome_${r// /}_std_flash --flash
+    # done
+
+    # wch
     # python $filename $common_args --seed $seed --tome_variant w_channel w_channel --tome_r 8 2 --log_dir wch_tome_82_lin --linear
-    python $filename $common_args --seed $seed --tome_variant w_channel w_channel --tome_r 8 2 --log_dir wch_tome_82_std
+    # python $filename $common_args --seed $seed --tome_variant w_channel w_channel --tome_r 8 2 --log_dir wch_tome_82_std
     # python $filename $common_args --seed $seed --tome_variant w_channel w_channel --tome_r 8 2 --log_dir wch_tome_82_std_flash --flash
 
     # timestep
-    for r in "9 5 2 1" "9 5 2 0" "9 5 0 0"; do
-        # python $filename $common_args --seed $seed --tome_variant time --tome_r $r --log_dir ts_tome_${r// /}_lin --linear
-        python $filename $common_args --seed $seed --tome_variant time --tome_r $r --log_dir ts_tome_${r// /}_std
-        # python $filename $common_args --seed $seed --tome_variant time --tome_r $r --log_dir ts_tome_${r// /}_std_flash --flash
-    done
+    # for r in "9 5 2 1" "9 5 2 0" "9 5 0 0" "9 0 0 0"; do
+    #     python $filename $common_args --seed $seed --tome_variant time --tome_r $r --log_dir ts_tome_${r// /}_lin --linear
+    #     python $filename $common_args --seed $seed --tome_variant time --tome_r $r --log_dir ts_tome_${r// /}_std
+    #     python $filename $common_args --seed $seed --tome_variant time --tome_r $r --log_dir ts_tome_${r// /}_std_flash --flash
+    # done
 
-    # # wts
+    # wts
     # python $filename $common_args --seed $seed --tome_variant w_time w_time --tome_r 10 2 --log_dir wts_tome_1002_lin --linear
-    python $filename $common_args --seed $seed --tome_variant w_time w_time --tome_r 10 2 --log_dir wts_tome_1002_std
+    # python $filename $common_args --seed $seed --tome_variant w_time w_time --tome_r 10 2 --log_dir wts_tome_1002_std
     # python $filename $common_args --seed $seed --tome_variant w_time w_time --tome_r 10 2 --log_dir wts_tome_1002_std_flash --flash
 
-    # # wch_wts
+    # wch_wts
     # python $filename $common_args --seed $seed --tome_variant w_channel w_channel w_time w_time --tome_r 8 2 10 2 --log_dir wch_wts_821002_lin --linear
-    python $filename $common_args --seed $seed --tome_variant w_channel w_channel w_time w_time --tome_r 8 2 10 2 --log_dir wch_wts_821002_std
+    # python $filename $common_args --seed $seed --tome_variant w_channel w_channel w_time w_time --tome_r 8 2 10 2 --log_dir wch_wts_821002_std
     # python $filename $common_args --seed $seed --tome_variant w_channel w_channel w_time w_time --tome_r 8 2 10 2 --log_dir wch_wts_821002_std_flash --flash
 
-    # # wts_wch
+    # wts_wch
     # python $filename $common_args --seed $seed --tome_variant w_time w_time w_channel w_channel --tome_r 10 2 8 2 --log_dir wts_wch_100282_lin --linear
-    python $filename $common_args --seed $seed --tome_variant w_time w_time w_channel w_channel --tome_r 10 2 8 2 --log_dir wts_wch_100282_std
+    # python $filename $common_args --seed $seed --tome_variant w_time w_time w_channel w_channel --tome_r 10 2 8 2 --log_dir wts_wch_100282_std
     # python $filename $common_args --seed $seed --tome_variant w_time w_time w_channel w_channel --tome_r 10 2 8 2 --log_dir wts_wch_100282_std_flash --flash
 
-    # # wch wch ts ts
+    # wch wch ts ts
     # python $filename $common_args --seed $seed --tome_variant w_channel w_channel time time --tome_r 8 2 9 5 --log_dir wts_wch_ts_ts_8295_lin --linear
     # python $filename $common_args --seed $seed --tome_variant w_channel w_channel time time --tome_r 8 2 9 5 --log_dir wch_wch_ts_ts_8295_std
     # python $filename $common_args --seed $seed --tome_variant w_channel w_channel time time --tome_r 8 2 9 5 --log_dir wts_wch_ts_ts_8295_std_flash --flash
