@@ -1,5 +1,5 @@
 #!/bin/bash
-workspace='comprehensive_variants_lq'
+workspace='comprehensive_variants_lch'
 workspace="workspace/${workspace}"
 common_args=(
     # --epochs 2
@@ -28,7 +28,7 @@ cp $0 $workspace/$0
 common_args="${common_args[@]}"
 . ../../seeds
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 filename="run_binary_supervised.py"
 # filename="-m debugpy --listen :6678 --wait-for-client $filename"
@@ -82,13 +82,23 @@ for seed in "${seeds[@]}"; do
     # done
 
     # learnable tome query only 
-    for r in "285 0 0 0" "266 0 0 0" "228 0 0 0" "152 0 0 0" "152 76 0 0" "152 76 38 0" "152 76 38 19"; do
-        t=($r)
-        t=($(for i in ${t[@]}; do echo $((i / 19)); done))
-        t="${t[*]}"
-        t=${t// /}
+    # for r in "285 0 0 0" "266 0 0 0" "228 0 0 0" "152 0 0 0" "152 76 0 0" "152 76 38 0" "152 76 38 19"; do
+    #     t=($r)
+    #     t=($(for i in ${t[@]}; do echo $((i / 19)); done))
+    #     t="${t[*]}"
+    #     t=${t// /}
 
-        variant=lq_tome
+    #     variant=lq_tome
+
+    #     python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
+    #     python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
+    #     python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
+    # done
+
+    # learnabel ch tome
+    for r in "12 3 0 0" "15 0 0 0" "8 0 0 0" "8 4 0 0" "8 4 2 0" "8 4 2 1"; do
+        t=${r// /}
+        variant=l_channel
 
         python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
         python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
