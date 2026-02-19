@@ -1,5 +1,5 @@
 #!/bin/bash
-workspace='comprehensive_variants_lch'
+workspace='comprehensive_lin_lr_10-4'
 workspace="workspace/${workspace}"
 common_args=(
     # --epochs 2
@@ -10,7 +10,7 @@ common_args=(
     --hop_length 100
     --sample_length 10
     --batch_size 256
-    # --lr 1e-4
+    --lr 1e-4
     --model BIOT
     --num_workers 8
     --subset 100
@@ -35,65 +35,65 @@ filename="run_binary_supervised.py"
 
 for seed in "${seeds[@]}"; do
     # baseline
-    # python $filename $common_args --seed $seed --log_dir baseline_lin --linear
+    python $filename $common_args --seed $seed --log_dir baseline_lin --linear
     # python $filename $common_args --seed $seed --log_dir baseline_std
     # python $filename $common_args --seed $seed --log_dir baseline_std_flash --flash
 
-    # vanilla baseline
-    # for r in "19 19 19 19" "38 38 38 38" "152 0 0 0" "152 76 0 0" "152 76 38 0" "152 76 38 19"; do
-    #     t=($r)
-    #     t=($(for i in ${t[@]}; do echo $((i / 19)); done))
-    #     t="${t[*]}"
-    #     t=${t// /}
+    # vanilla tome
+    for r in "152 0 0 0" "152 76 0 0" "152 76 38 0" "152 76 38 19"; do
+        t=($r)
+        t=($(for i in ${t[@]}; do echo $((i / 19)); done))
+        t="${t[*]}"
+        t=${t// /}
 
-    #     variant=tome
+        variant=tome
 
-    #     python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
-    #     python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
-    #     python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
-    # done
+        python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
+        # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
+        # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
+    done
 
     # full tome
-    # for r in "285 0 0 0" "266 0 0 0" "228 0 0 0" "152 0 0 0" "152 76 0 0" "152 76 38 0" "152 76 38 19"; do
-    #     t=($r)
-    #     t=($(for i in ${t[@]}; do echo $((i / 19)); done))
-    #     t="${t[*]}"
-    #     t=${t// /}
+    for r in "285 0 0 0" "266 0 0 0" "228 0 0 0" "152 0 0 0" "152 76 0 0" "152 76 38 0" "152 76 38 19"; do
+        t=($r)
+        t=($(for i in ${t[@]}; do echo $((i / 19)); done))
+        t="${t[*]}"
+        t=${t// /}
 
-    #     variant=f_tome
+        variant=f_tome
 
-    #     python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
-    #     python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
-    #     python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
-    # done
+        python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
+        # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
+        # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
+    done
 
     # learnable tome
-    # for r in "285 0 0 0" "266 0 0 0" "228 0 0 0" "152 0 0 0" "152 76 0 0" "152 76 38 0" "152 76 38 19"; do
-    #     t=($r)
-    #     t=($(for i in ${t[@]}; do echo $((i / 19)); done))
-    #     t="${t[*]}"
-    #     t=${t// /}
+    for r in "285 0 0 0" "266 0 0 0" "228 0 0 0" "152 0 0 0" "152 76 0 0" "152 76 38 0" "152 76 38 19"; do
+        t=($r)
+        t=($(for i in ${t[@]}; do echo $((i / 19)); done))
+        t="${t[*]}"
+        t=${t// /}
 
-    #     variant=l_tome
+        variant=l_tome
 
-    #     python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
-    #     python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
-    #     python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
-    # done
+        python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
+        # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
+        # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
+    done
 
     # learnable tome query only 
-    # for r in "285 0 0 0" "266 0 0 0" "228 0 0 0" "152 0 0 0" "152 76 0 0" "152 76 38 0" "152 76 38 19"; do
-    #     t=($r)
-    #     t=($(for i in ${t[@]}; do echo $((i / 19)); done))
-    #     t="${t[*]}"
-    #     t=${t// /}
+    for r in "285 0 0 0" "266 0 0 0" "228 0 0 0" "152 0 0 0" "152 76 0 0" "152 76 38 0" "152 76 38 19"; do
+        t=($r)
+        t=($(for i in ${t[@]}; do echo $((i / 19)); done))
+        t="${t[*]}"
+        t=${t// /}
 
-    #     variant=lq_tome
+        variant=lq_tome
 
-    #     python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
-    #     python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
-    #     python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
-    # done
+        python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
+        # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
+        # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
+    done
 
     # learnabel ch tome
     for r in "12 3 0 0" "15 0 0 0" "8 0 0 0" "8 4 0 0" "8 4 2 0" "8 4 2 1"; do
@@ -101,23 +101,23 @@ for seed in "${seeds[@]}"; do
         variant=l_channel
 
         python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
-        python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
-        python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
+        # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
+        # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
     done
 
     # channel
-    # for r in "2 2 2 2" "3 3 3 3" "8 0 0 0" "8 4 0 0" "8 4 2 0" "8 4 2 1"; do
-    #     python $filename $common_args --seed $seed --tome_variant channel --tome_r $r --log_dir ch_tome_${r// /}_lin --linear
-    #     python $filename $common_args --seed $seed --tome_variant channel --tome_r $r --log_dir ch_tome_${r// /}_std
-    #     python $filename $common_args --seed $seed --tome_variant channel --tome_r $r --log_dir ch_tome_${r// /}_std_flash --flash
-    # done
+    for r in "8 0 0 0" "8 4 0 0" "8 4 2 0" "8 4 2 1"; do
+        python $filename $common_args --seed $seed --tome_variant channel --tome_r $r --log_dir ch_tome_${r// /}_lin --linear
+        # python $filename $common_args --seed $seed --tome_variant channel --tome_r $r --log_dir ch_tome_${r// /}_std
+        # python $filename $common_args --seed $seed --tome_variant channel --tome_r $r --log_dir ch_tome_${r// /}_std_flash --flash
+    done
 
     # timestep
-    # for r in "9 0 0 0" "9 5 0 0" "9 5 2 0" "9 5 2 1"; do
-    #     python $filename $common_args --seed $seed --tome_variant time --tome_r $r --log_dir ts_tome_${r// /}_lin --linear
-    #     python $filename $common_args --seed $seed --tome_variant time --tome_r $r --log_dir ts_tome_${r// /}_std
-    #     python $filename $common_args --seed $seed --tome_variant time --tome_r $r --log_dir ts_tome_${r// /}_std_flash --flash
-    # done
+    for r in "9 0 0 0" "9 5 0 0" "9 5 2 0" "9 5 2 1"; do
+        python $filename $common_args --seed $seed --tome_variant time --tome_r $r --log_dir ts_tome_${r// /}_lin --linear
+        # python $filename $common_args --seed $seed --tome_variant time --tome_r $r --log_dir ts_tome_${r// /}_std
+        # python $filename $common_args --seed $seed --tome_variant time --tome_r $r --log_dir ts_tome_${r// /}_std_flash --flash
+    done
 
     # wch
     # python $filename $common_args --seed $seed --tome_variant w_channel w_channel --tome_r 8 2 --log_dir wch_tome_82_lin --linear
