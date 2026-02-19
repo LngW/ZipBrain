@@ -91,7 +91,7 @@ class BIOTEncoder(nn.Module):
             max_seq_len=1024,
             attn_layer_dropout=0.0,  # dropout right after self-attention layer
             attn_dropout=0.0,  # dropout post-attention
-            ffn_dropout=0.9, # dropout in forward network
+            ffn_dropout=0.5, # dropout in forward network
             n_channels=n_channels,
             tome_container=self.tome_container,
             **kwargs,
