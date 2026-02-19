@@ -1,3 +1,4 @@
+from functools import partial
 import torch
 from torch import nn
 from einops import rearrange
@@ -7,6 +8,10 @@ def create_tome_block(variant, container, r, dim):
         return ToMeBlock(container, r, dim)
     elif variant == 'f_tome':
         return FullToMeBlock(container, r, dim)
+    elif variant == 'fch_tome':
+        return FullChannelToMeBlock(container, r, dim)
+    elif variant == 'fts_tome':
+        return FullTimestepToMeBlock(container, r, dim)
     elif variant == 'l_tome':
         return LearnableToMeBlock(container, r, dim)
     elif variant == 'lq_tome':
@@ -63,6 +68,62 @@ def FullToMeBlock(tome_container, r, dim):
             k_ = rearrange(k.detach(), "b h s d -> b s (h d)")
             return _qk_merge(self.r, x, k_, k_, size_old)
         
+    return ToMeBlock()
+
+def FullChannelToMeBlock(tome_container, r, dim):
+    class ToMeBlock(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.r = r
+            self.tome_container = tome_container
+        
+        def forward(self, x, k, size_old):
+            bsz, chs, seq, dim = self.tome_container['shape']
+            wrap = partial(rearrange, pattern="b (c s) d -> (b s) c d", s=seq)
+            unwrap = partial(rearrange, pattern="(b s) c d -> b (c s) d", s=seq)
+
+            k_ = rearrange(k.detach(), "b h (c s) d -> (b s) c (h d)", c=chs, s=seq)
+
+            x = wrap(x)
+            size_old = wrap(size_old) if size_old is not None else torch.ones_like(x[..., 0:1])
+
+            x_, size_ = _qk_merge(self.r, x, k_, k_, size_old)
+
+            chs = x_.shape[1]
+            self.tome_container['shape'] = bsz, chs, seq, dim
+            # x_ = rearrange(x_, "(b s) c d -> b (c s) d", c=chs, s=seq)
+            # size_ = rearrange(size_, "(b s) c d -> b (c s) d", c=chs, s=seq)
+
+            return unwrap(x_), unwrap(size_)
+
+    return ToMeBlock()
+
+def FullTimestepToMeBlock(tome_container, r, dim):
+    class ToMeBlock(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.r = r
+            self.tome_container = tome_container
+        
+        def forward(self, x, k, size_old):
+            bsz, chs, seq, dim = self.tome_container['shape']
+            wrap = partial(rearrange, pattern="b (c s) d -> (b c) s d", c=chs)
+            unwrap = partial(rearrange, pattern="(b c) s d -> b (c s) d", c=chs)
+
+            k_ = rearrange(k.detach(), "b h (c s) d -> (b c) s (h d)", c=chs, s=seq)
+
+            x = wrap(x)
+            size_old = wrap(size_old) if size_old is not None else torch.ones_like(x[..., 0:1])
+
+            x_, size_ = _qk_merge(self.r, x, k_, k_, size_old)
+
+            seq = x_.shape[1]
+            self.tome_container['shape'] = bsz, chs, seq, dim
+            # x_ = rearrange(x_, "(b s) c d -> b (c s) d", c=chs, s=seq)
+            # size_ = rearrange(size_, "(b s) c d -> b (c s) d", c=chs, s=seq)
+
+            return unwrap(x_), unwrap(size_)
+
     return ToMeBlock()
 
 def ChannelToMeBlock(tome_container, r, dim):
@@ -315,30 +376,7 @@ def LearnableQToMeBlock(tome_container, r, dim):
             self.proj = nn.Linear(dim, dim & -2)
             self.r = r
             self.tome_container = tome_container
-        
-        def _compute(self, x, q, size):
-            bsz, seq, dim = x.shape
-            r = min(max(self.r, 0), seq - 1) # keep at least one token
-
-            q = q / q.norm(dim=-1, keepdim=True)
-
-            similarity : torch.Tensor = q @ q.transpose(-1, -2)
-            importance = torch.exp(similarity).sum(-1)
-            # importance = torch.diagonal_scatter(similarity, torch.zeros_like(similarity[..., 0]), 0, -2, -1).sum(-1)
-            top_v, top_idx = torch.topk(importance, seq - r)
-
-            matrix = similarity.gather(-2, top_idx[..., None].expand(-1, -1, seq))
-            matrix = (matrix + 1) / 2
-            # matrix.scatter_(-1, top_idx[..., None], 1)
-
-            matrix_ = torch.zeros_like(matrix)
-            matrix_.scatter_(-2, matrix.argmax(-2, True), 1) # merge to its most similar one
-
-            matrix = matrix * matrix_
-            matrix = matrix / matrix.sum(-1, True)
-
-            return matrix @ x, matrix_ @ size
-        
+                
         def forward(self, x, k, size):
             if self.r <= 0:
                 return x, size
@@ -347,9 +385,7 @@ def LearnableQToMeBlock(tome_container, r, dim):
                 size = torch.ones_like(x[..., 0:1])
 
             q_ = self.proj(x)
-            x_, size_ = self._compute(x, q_, size)
-
-            return x_, size_
+            return _qk_merge(self.r, x, q_, q_, size)
 
     return LearnableQ()
 
