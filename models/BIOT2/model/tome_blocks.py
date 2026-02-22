@@ -5,13 +5,25 @@ from einops import rearrange
 
 def create_tome_block(variant, container, r, dim):
     if variant == 'tome':
-        return ToMeBlock(container, r, dim)
+        return ToMeBlock(container, r, dim, use_x=False)
+    elif variant == 'tomex':
+        return ToMeBlock(container, r, dim, use_x=True)
+    elif variant == 'channel':
+        return ChannelToMeBlock(container, r, dim)
+    elif variant == 'time':
+        return TimestepToMeBlock(container, r, dim)
     elif variant == 'f_tome':
-        return FullToMeBlock(container, r, dim)
+        return FullToMeBlock(container, r, dim, use_x=False)
+    elif variant == 'fx_tome':
+        return FullToMeBlock(container, r, dim, use_x=True)
     elif variant == 'fch_tome':
-        return FullChannelToMeBlock(container, r, dim)
+        return FullChannelToMeBlock(container, r, dim, use_x=False)
+    elif variant == 'fxch_tome':
+        return FullChannelToMeBlock(container, r, dim, use_x=True)
     elif variant == 'fts_tome':
-        return FullTimestepToMeBlock(container, r, dim)
+        return FullTimestepToMeBlock(container, r, dim, use_x=False)
+    elif variant == 'fxts_tome':
+        return FullTimestepToMeBlock(container, r, dim, use_x=True)
     elif variant == 'l_tome':
         return LearnableToMeBlock(container, r, dim)
     elif variant == 'lq_tome':
@@ -20,10 +32,6 @@ def create_tome_block(variant, container, r, dim):
         return LearnableChannel(container, r, dim)
     elif variant == 'l_time':
         return LearnableTimestep(container, r, dim)
-    elif variant == 'channel':
-        return ChannelToMeBlock(container, r, dim)
-    elif variant == 'time':
-        return TimestepToMeBlock(container, r, dim)
     elif variant == 'rtl':
         return RunTimeLengthToMeBlock(container, r, dim)
     elif variant == 'w_channel':
@@ -35,18 +43,90 @@ def create_tome_block(variant, container, r, dim):
     else:
         return lambda x, k, size: (x, size)
 
-def ToMeBlock(tome_container, r, dim):
+class __GlobalBlock():
+    def __init__(self, tome_container, r, dim):
+        self.tome_container = tome_container
+        self.r = r
+        self.dim = dim
+    
+    def _resizer(self):
+        return lambda x : x, lambda x : x
+    
+    def _update_shape(self, x):
+        pass
+
+    def _real_forward(self, x, k, size):
+        raise NotImplementedError()
+
+    def forward(self, x, k, size):
+        if self.r <= 0:
+            return x, size
+        
+        if k is not None:
+            k = rearrange(k, "b h s d -> b s (h d)")
+
+        resize_to, resize_back = self._resizer()
+        x = resize_to(x)
+        k = resize_to(k)
+
+        if size is None:
+            size = torch.ones_like(x[..., 0:1])
+        else:
+            size = resize_to(size)
+        
+        x, size = self._real_forward(x, k, size)
+
+        self._update_shape(x)
+        x = resize_back(x)
+        size = resize_back(size)
+
+        return x, size
+
+class __ChannelBlock(__GlobalBlock):
+    def __init__(self, tome_container, r, dim):
+        super().__init__(tome_container, r, dim)
+
+    def _resizer(self):
+        bsz, chs, seq, dim = self.tome_container['shape']
+        resize = partial(rearrange, s=seq)
+        return partial(resize, "b (c s) d -> (b s) c d"), partial(resize, "(b s) c d -> b (c s) d")
+
+    def _update_shape(self, x):
+        bsz, chs, seq, dim = self.tome_container['shape']
+        self.tome_container['shape'] = bsz, x.shape[1], seq, dim
+
+class __ChannelBlock(__GlobalBlock):
+    def __init__(self, tome_container, r, dim):
+        super().__init__(tome_container, r, dim)
+
+    def _resizer(self):
+        bsz, chs, seq, dim = self.tome_container['shape']
+        resize = partial(rearrange, c=chs)
+        return partial(resize, "b (c s) d -> (b c) s d"), partial(resize, "(b c) s d -> b (c s) d")
+
+    def _update_shape(self, x):
+        bsz, chs, seq, dim = self.tome_container['shape']
+        self.tome_container['shape'] = bsz, chs, x.shape[1], dim
+
+def ToMeBlock(tome_container, r, dim, use_x=False):
     from .tome.merge import bipartite_soft_matching, merge_wavg_sum
 
     class ToMeBlock(nn.Module):
         def __init__(self):
             super().__init__()
             self.r = r
+            self.use_x = use_x
 
         def forward(self, x, k, size_old):
-            bsz, hd, seq, _ = k.shape
+            # bsz, hd, seq, _ = k.shape
+            if self.use_x:
+                k_ = x.detach()
+            else:
+                k_ = rearrange(k.detach(), "b h s d -> b s (h d)")
+
             _, merge, _ = bipartite_soft_matching(
-                k.transpose(1,2).reshape(bsz, seq, -1),
+                # k.transpose(1,2).reshape(bsz, seq, -1),
+                k_,
                 self.r
             )
 
@@ -56,36 +136,45 @@ def ToMeBlock(tome_container, r, dim):
         
     return ToMeBlock()
 
-def FullToMeBlock(tome_container, r, dim):
+def FullToMeBlock(tome_container, r, dim, use_x=False):
     class ToMeBlock(nn.Module):
         def __init__(self):
             super().__init__()
             self.r = r
+            self.use_x = use_x
 
         def forward(self, x, k, size_old):
             if size_old is None:
                 size_old = torch.ones_like(x[..., 0:1])
-            k_ = rearrange(k.detach(), "b h s d -> b s (h d)")
+            
+            if self.use_x:
+                k_ = x.detach()
+            else:
+                k_ = rearrange(k.detach(), "b h s d -> b s (h d)")
             return _qk_merge(self.r, x, k_, k_, size_old)
         
     return ToMeBlock()
 
-def FullChannelToMeBlock(tome_container, r, dim):
+def FullChannelToMeBlock(tome_container, r, dim, use_x=False):
     class ToMeBlock(nn.Module):
         def __init__(self):
             super().__init__()
             self.r = r
             self.tome_container = tome_container
+            self.use_x = use_x
         
         def forward(self, x, k, size_old):
             bsz, chs, seq, dim = self.tome_container['shape']
             wrap = partial(rearrange, pattern="b (c s) d -> (b s) c d", s=seq)
             unwrap = partial(rearrange, pattern="(b s) c d -> b (c s) d", s=seq)
 
-            k_ = rearrange(k.detach(), "b h (c s) d -> (b s) c (h d)", c=chs, s=seq)
-
             x = wrap(x)
             size_old = wrap(size_old) if size_old is not None else torch.ones_like(x[..., 0:1])
+
+            if self.use_x:
+                k_ = x.detach()
+            else:
+                k_ = rearrange(k.detach(), "b h (c s) d -> (b s) c (h d)", c=chs, s=seq)
 
             x_, size_ = _qk_merge(self.r, x, k_, k_, size_old)
 
@@ -98,22 +187,26 @@ def FullChannelToMeBlock(tome_container, r, dim):
 
     return ToMeBlock()
 
-def FullTimestepToMeBlock(tome_container, r, dim):
+def FullTimestepToMeBlock(tome_container, r, dim, use_x=False):
     class ToMeBlock(nn.Module):
         def __init__(self):
             super().__init__()
             self.r = r
             self.tome_container = tome_container
+            self.use_x = use_x
         
         def forward(self, x, k, size_old):
             bsz, chs, seq, dim = self.tome_container['shape']
             wrap = partial(rearrange, pattern="b (c s) d -> (b c) s d", c=chs)
             unwrap = partial(rearrange, pattern="(b c) s d -> b (c s) d", c=chs)
 
-            k_ = rearrange(k.detach(), "b h (c s) d -> (b c) s (h d)", c=chs, s=seq)
-
             x = wrap(x)
             size_old = wrap(size_old) if size_old is not None else torch.ones_like(x[..., 0:1])
+
+            if self.use_x:
+                k_ = x.detach()
+            else:
+                k_ = rearrange(k.detach(), "b h (c s) d -> (b c) s (h d)", c=chs, s=seq)
 
             x_, size_ = _qk_merge(self.r, x, k_, k_, size_old)
 
@@ -325,6 +418,9 @@ def _qk_merge(r, x, q, k, size):
     bsz, seq, dim = x.shape
     r = min(max(r, 0), seq - 1) # keep at least one token
 
+    if r == 0:
+        return x, size
+
     q = q / q.norm(dim=-1, keepdim=True)
     k = k / k.norm(dim=-1, keepdim=True)
 
@@ -333,6 +429,48 @@ def _qk_merge(r, x, q, k, size):
     importance = similarity_.sum(-1) - torch.diagonal(similarity_, 0, -2, -1) # so similarity to itself do not affect
     # importance = torch.diagonal_scatter(similarity, torch.zeros_like(similarity[..., 0]), 0, -2, -1).sum(-1)
     top_v, top_idx = torch.topk(importance, seq - r)
+
+    matrix = similarity.gather(-2, top_idx[..., None].expand(-1, -1, seq))
+    matrix = (matrix + 1) / 2
+    matrix.scatter_(-1, top_idx[..., None], 1)
+
+    matrix_ = torch.zeros_like(matrix)
+    matrix_.scatter_(-2, matrix.argmax(-2, True), 1) # merge to its most similar one
+
+    matrix = matrix * matrix_
+    matrix = matrix / matrix.sum(-1, True)
+
+    return matrix @ x, matrix_ @ size
+
+# TODO: Uncompleted method
+def _qk_consective_merge(r, x, q, k, size):
+    bsz, seq, dim = x.shape
+    r = min(max(r, 0), seq - 1)
+    l = seq - r
+
+    if l == 1:
+        # in this case, at least one token should be reserved, and the first token is designed to be reserved
+        # so we can use a lighter algorithm
+        weights = q[..., 0:1, :] @ k.transpose(-1, -2)
+        weights[..., 0] = 1
+        weights = (weights + 1) / 2
+        return weights @ x, size.sum(-2, True)
+    q = q / q.norm(dim=-1, keepdim=True)
+    k = k / k.norm(dim=-1, keepdim=True)
+
+    similarity : torch.Tensor = q @ k.transpose(-1, -2)
+    similarity_ = similarity.diagonal_scatter(torch.ones_like(similarity[..., 0]), 0, -2, -1)
+
+
+
+    similarity_ : torch.Tensor = torch.exp(similarity)
+    importance = similarity_.sum(-1) - torch.diagonal(similarity_, 0, -2, -1) # so similarity to itself do not affect
+    # importance = torch.diagonal_scatter(similarity, torch.zeros_like(similarity[..., 0]), 0, -2, -1).sum(-1)
+    top_v, top_idx = torch.topk(importance, k = l, largest=False, sorted=False)
+
+    matrix = torch.zeros_like(importance[..., 0:1])
+    matrix.scatter_(-1, top_idx, 1)
+
 
     matrix = similarity.gather(-2, top_idx[..., None].expand(-1, -1, seq))
     matrix = (matrix + 1) / 2
