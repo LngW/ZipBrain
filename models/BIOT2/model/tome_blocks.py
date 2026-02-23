@@ -25,13 +25,17 @@ def create_tome_block(variant, container, r, dim):
     elif variant == 'fxts_tome':
         return FullTimestepToMeBlock(container, r, dim, use_x=True)
     elif variant == 'l_tome':
-        return LearnableToMeBlock(container, r, dim)
+        return LearnableToMeBlock(container, r, dim, q_only=False)
     elif variant == 'lq_tome':
-        return LearnableQToMeBlock(container, r, dim)
+        return LearnableToMeBlock(container, r, dim, q_only=True)
     elif variant == 'l_channel':
-        return LearnableChannel(container, r, dim)
+        return LearnableChannel(container, r, dim, q_only=False)
+    elif variant == 'lq_channel':
+        return LearnableChannel(container, r, dim, q_only=True)
     elif variant == 'l_time':
-        return LearnableTimestep(container, r, dim)
+        return LearnableTimestep(container, r, dim, q_only=False)
+    elif variant == 'lq_time':
+        return LearnableTimestep(container, r, dim, q_only=True)
     elif variant == 'rtl':
         return RunTimeLengthToMeBlock(container, r, dim)
     elif variant == 'w_channel':
@@ -421,8 +425,12 @@ def _qk_merge(r, x, q, k, size):
     if r == 0:
         return x, size
 
-    q = q / q.norm(dim=-1, keepdim=True)
-    k = k / k.norm(dim=-1, keepdim=True)
+    if q is k:
+        q = q / q.norm(dim=-1, keepdim=True)
+        k = q
+    else:
+        q = q / q.norm(dim=-1, keepdim=True)
+        k = k / k.norm(dim=-1, keepdim=True)
 
     similarity : torch.Tensor = q @ k.transpose(-1, -2)
     similarity_ : torch.Tensor = torch.exp(similarity)
@@ -485,13 +493,14 @@ def _qk_consective_merge(r, x, q, k, size):
     return matrix @ x, matrix_ @ size
 
 
-def LearnableToMeBlock(tome_container, r, dim):
+def LearnableToMeBlock(tome_container, r, dim, q_only = False):
     class Learnable(nn.Module):
         def __init__(self):
             super().__init__()
             self.proj = nn.Linear(dim, dim & -2)
             self.r = r
             self.tome_container = tome_container
+            self.q_only = q_only
         
         def forward(self, x, k, size):
             if self.r <= 0:
@@ -500,40 +509,24 @@ def LearnableToMeBlock(tome_container, r, dim):
             if size is None:
                 size = torch.ones_like(x[..., 0:1])
 
-            q_, k_ = rearrange(self.proj(x), "b s (i d) -> i b s d", i=2)
+            if q_only:
+                q_ = k_ = self.proj(x)
+            else:
+                q_, k_ = rearrange(self.proj(x), "b s (i d) -> i b s d", i=2)
             x_, size_ = _qk_merge(self.r, x, q_, k_, size)
 
             return x_, size_
 
     return Learnable()
 
-def LearnableQToMeBlock(tome_container, r, dim):
-    class LearnableQ(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.proj = nn.Linear(dim, dim & -2)
-            self.r = r
-            self.tome_container = tome_container
-                
-        def forward(self, x, k, size):
-            if self.r <= 0:
-                return x, size
-            
-            if size is None:
-                size = torch.ones_like(x[..., 0:1])
-
-            q_ = self.proj(x)
-            return _qk_merge(self.r, x, q_, q_, size)
-
-    return LearnableQ()
-
-def LearnableChannel(tome_container, r, dim):
+def LearnableChannel(tome_container, r, dim, q_only = False):
     class LearnableCH(nn.Module):
         def __init__(self):
             super().__init__()
             self.tome_container = tome_container
             self.r = r
             self.proj = nn.Linear(dim, dim & -2)
+            self.q_only = q_only
         
         def forward(self, x, k, size):
             if self.r <= 0:
@@ -545,7 +538,10 @@ def LearnableChannel(tome_container, r, dim):
             bsz, chs, seq, dim = self.tome_container['shape']
 
             x_ = rearrange(x, "b (c s) d -> (b s) c d", c=chs, s=seq)
-            q_, k_ = rearrange(self.proj(x_), "b s (i d) -> i b s d", i=2)
+            if self.q_only:
+                q_ = k_ = self.proj(x_)
+            else:
+                q_, k_ = rearrange(self.proj(x_), "b s (i d) -> i b s d", i=2)
             size_ = rearrange(size, "b (c s) d -> (b s) c d", c=chs, s=seq)
 
             x_, size_ = _qk_merge(self.r, x_, q_, k_, size_)
@@ -559,13 +555,14 @@ def LearnableChannel(tome_container, r, dim):
     
     return LearnableCH()
 
-def LearnableTimestep(tome_container, r, dim):
+def LearnableTimestep(tome_container, r, dim, q_only = False):
     class LearnableTS(nn.Module):
         def __init__(self):
             super().__init__()
             self.tome_container = tome_container
             self.r = r
             self.proj = nn.Linear(dim, dim & -2)
+            self.q_only = q_only
         
         def forward(self, x, k, size):
             if self.r <= 0:
@@ -577,7 +574,10 @@ def LearnableTimestep(tome_container, r, dim):
             bsz, chs, seq, dim = self.tome_container['shape']
 
             x_ = rearrange(x, "b (c s) d -> (b c) s d", c=chs, s=seq)
-            q_, k_ = rearrange(self.proj(x_), "b s (i d) -> i b s d", i=2)
+            if self.q_only:
+                q_ = k_ = self.proj(x_)
+            else:
+                q_, k_ = rearrange(self.proj(x_), "b s (i d) -> i b s d", i=2)
             size_ = rearrange(size, "b (c s) d -> (b c) s d", c=chs, s=seq)
 
             x_, size_ = _qk_merge(self.r, x_, q_, k_, size_)
