@@ -1,5 +1,5 @@
 #!/bin/bash
-workspace='comprehensive_lin_896_5e-10_dropout5_chs'
+workspace='comprehensive_lin_896_5e-10_dropout5_l'
 workspace="workspace/${workspace}"
 common_args=(
     # --epochs 2
@@ -71,21 +71,23 @@ for seed in "${seeds[@]}"; do
     # full (it has no qk version, only q version)
     # learnable (only x version, no k version)
     # for variant in "f_tome" "fx_tome" "l_tome" "lq_tome"; do
-    #     for r in "19 19 19 19" "38 38 38 38" "285 0 0 0" "266 0 0 0" "228 0 0 0" "152 0 0 0" "152 76 0 0" "152 76 38 0" "152 76 38 19"; do
-    #         t=($r)
-    #         t=($(for i in ${t[@]}; do echo $((i / 19)); done))
-    #         t="${t[*]}"
-    #         t=${t// /}
+    for variant in "l_tome"; do
+        for r in "19 19 19 19" "38 38 38 38" "285 0 0 0" "266 0 0 0" "228 0 0 0" "152 0 0 0" "152 76 0 0" "152 76 38 0" "152 76 38 19"; do
+            t=($r)
+            t=($(for i in ${t[@]}; do echo $((i / 19)); done))
+            t="${t[*]}"
+            t=${t// /}
 
-    #         python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
-    #         # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
-    #         # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
-    #     done
-    # done
+            python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
+            # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
+            # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
+        done
+    done
 
     # full ch (on k only)
     # learnable ch (on x only, )
-    for variant in "fch_tome" "fxch_tome" "l_channel" "lq_channel"; do
+    # for variant in "fch_tome" "fxch_tome" "l_channel" "lq_channel"; do
+    for variant in "l_channel"; do
         for r in "2 2 2 2" "1 1 1 1" "15 0 0 0" "14 0 0 0" "12 0 0 0" "8 0 0 0" "8 4 0 0" "8 4 2 0" "8 4 2 1"; do
             t=${r// /}
 

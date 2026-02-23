@@ -418,23 +418,24 @@ def RunTimeLengthToMeBlock(tome_container, r, dim):
 
     return RTLToMeBlock()
 
-def _qk_merge(r, x, q, k, size):
+def _qk_merge0(r, x, q, k, size):
     bsz, seq, dim = x.shape
     r = min(max(r, 0), seq - 1) # keep at least one token
 
     if r == 0:
         return x, size
-
-    if q is k:
+    q_only = (q is k) or (k is None)
+    if q_only:
         q = q / q.norm(dim=-1, keepdim=True)
-        k = q
+        similarity : torch.Tensor = q @ q.transpose(-1, -2)
+        importance = torch.exp(similarity).sum(-1)
     else:
         q = q / q.norm(dim=-1, keepdim=True)
         k = k / k.norm(dim=-1, keepdim=True)
+        similarity : torch.Tensor = q @ k.transpose(-1, -2)
+        similarity_ : torch.Tensor = torch.exp(similarity)
+        importance = similarity_.sum(-1) - torch.diagonal(similarity_, 0, -2, -1) # so similarity to itself do not affect
 
-    similarity : torch.Tensor = q @ k.transpose(-1, -2)
-    similarity_ : torch.Tensor = torch.exp(similarity)
-    importance = similarity_.sum(-1) - torch.diagonal(similarity_, 0, -2, -1) # so similarity to itself do not affect
     # importance = torch.diagonal_scatter(similarity, torch.zeros_like(similarity[..., 0]), 0, -2, -1).sum(-1)
     top_v, top_idx = torch.topk(importance, seq - r)
 
@@ -448,7 +449,16 @@ def _qk_merge(r, x, q, k, size):
     matrix = matrix * matrix_
     matrix = matrix / matrix.sum(-1, True)
 
-    return matrix @ x, matrix_ @ size
+    return matrix @ x, matrix_ @ size, similarity
+
+def _qk_merge(r, x, q, k, size):
+    x, size, _ = _qk_merge0(r, x, q, k, size)
+    return x, size
+
+def _qk_merge_grad(r, x, q, k, size):
+    x, size, similarity = _qk_merge0(r, x, q, k, size)
+    loss = torch.square(1 - torch.diagonal(similarity, 0, -2, -1)).mean()
+    return x, size, loss
 
 # TODO: Uncompleted method
 def _qk_consective_merge(r, x, q, k, size):
@@ -513,7 +523,9 @@ def LearnableToMeBlock(tome_container, r, dim, q_only = False):
                 q_ = k_ = self.proj(x)
             else:
                 q_, k_ = rearrange(self.proj(x), "b s (i d) -> i b s d", i=2)
-            x_, size_ = _qk_merge(self.r, x, q_, k_, size)
+
+            x_, size_, loss = _qk_merge_grad(self.r, x, q_, k_, size)
+            self.compression_loss = loss
 
             return x_, size_
 
@@ -544,7 +556,9 @@ def LearnableChannel(tome_container, r, dim, q_only = False):
                 q_, k_ = rearrange(self.proj(x_), "b s (i d) -> i b s d", i=2)
             size_ = rearrange(size, "b (c s) d -> (b s) c d", c=chs, s=seq)
 
-            x_, size_ = _qk_merge(self.r, x_, q_, k_, size_)
+            # x_, size_ = _qk_merge(self.r, x_, q_, k_, size_)
+            x_, size_, loss = _qk_merge_grad(self.r, x_, q_, k_, size_)
+            self.compression_loss = loss
             chs = x_.shape[1]
 
             self.tome_container['shape'] = bsz, chs, seq, dim
@@ -580,7 +594,9 @@ def LearnableTimestep(tome_container, r, dim, q_only = False):
                 q_, k_ = rearrange(self.proj(x_), "b s (i d) -> i b s d", i=2)
             size_ = rearrange(size, "b (c s) d -> (b c) s d", c=chs, s=seq)
 
-            x_, size_ = _qk_merge(self.r, x_, q_, k_, size_)
+            # x_, size_ = _qk_merge(self.r, x_, q_, k_, size_)
+            x_, size_, loss = _qk_merge_grad(self.r, x_, q_, k_, size_)
+            self.compression_loss = loss
             seq = x_.shape[1]
 
             self.tome_container['shape'] = bsz, chs, seq, dim
