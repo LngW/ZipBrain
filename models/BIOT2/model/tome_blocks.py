@@ -1,4 +1,5 @@
 from functools import partial
+import math
 import torch
 from torch import nn
 from einops import rearrange
@@ -44,8 +45,21 @@ def create_tome_block(variant, container, r, dim):
         return DoubleTimestepToMeBlock(container, r, dim)
     elif variant == 'l_ctime':
         return LearnableConsectiveTimestepToMeBlock(container, r, dim)
+    elif variant == 'layernorm':
+        return NormOnly(dim)
     else:
         return lambda x, k, size: (x, size)
+
+def NormOnly(dim):
+    class NormOnly(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.norm = nn.LayerNorm(dim)
+        
+        def forward(self, x, k, size):
+            return self.norm(x), size
+    
+    return NormOnly()
 
 class __GlobalBlock():
     def __init__(self, tome_container, r, dim):
@@ -460,6 +474,20 @@ def _qk_merge_grad(r, x, q, k, size):
     loss = torch.square(1 - torch.diagonal(similarity, 0, -2, -1)).mean()
     return x, size, loss
 
+def _qk_merge_grad1(r, x, q, k, size):
+    bsz, seq, dim = x.shape
+    x, size, similarity = _qk_merge0(r, x, q, k, size)
+    # loss = torch.square(1 - torch.diagonal(similarity, 0, -2, -1)).mean()
+    # thre_base = math.sqrt(8 / q.size(-1) * math.log(10))
+    # thre_scaled = thre_base #* seq / ((-torch.diagonal(similarity, 0, -2, -1) + 1) / 2).sum(-1).mean()
+    # similarity_ = _sst(similarity, thre_scaled, 4 / thre_base)
+
+    loss0 = torch.square(1 - torch.diagonal(similarity, 0, -2, -1)).mean()
+    loss1 = torch.square(similarity).sum((-2, -1)) - torch.square(torch.diagonal(similarity, 0, -2, -1)).sum(-1)
+    loss1 = (loss1 / seq / (seq - 1)).mean() * 0.01
+    # loss1 = torch.square((similarity_.sum((-2, -1)) - seq * 2) / seq / seq).mean()
+    return x, size, loss0  + loss1
+
 # TODO: Uncompleted method
 def _qk_consective_merge(r, x, q, k, size):
     bsz, seq, dim = x.shape
@@ -519,12 +547,15 @@ def LearnableToMeBlock(tome_container, r, dim, q_only = False):
             if size is None:
                 size = torch.ones_like(x[..., 0:1])
 
+            q_ = self.proj(x.detach())
+            # q_ = self.proj(x)
+            # q_ = torch.dropout(q_, 0.5, self.training)
             if q_only:
-                q_ = k_ = self.proj(x)
+                k_ = q_
             else:
-                q_, k_ = rearrange(self.proj(x), "b s (i d) -> i b s d", i=2)
+                q_, k_ = rearrange(q_, "b s (i d) -> i b s d", i=2)
 
-            x_, size_, loss = _qk_merge_grad(self.r, x, q_, k_, size)
+            x_, size_, loss = _qk_merge_grad1(self.r, x, q_, k_, size)
             self.compression_loss = loss
 
             return x_, size_

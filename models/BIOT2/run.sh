@@ -1,5 +1,5 @@
 #!/bin/bash
-workspace='comprehensive_lin_896_5e-10_dropout5_l'
+workspace='comprehensive_lin_896_5e-10_dropout5_loss3'
 workspace="workspace/${workspace}"
 common_args=(
     # --epochs 2
@@ -32,6 +32,31 @@ export CUDA_VISIBLE_DEVICES=1
 
 filename="run_binary_supervised.py"
 # filename="-m debugpy --listen :6678 --wait-for-client $filename"
+
+run_seed()
+{
+    variant=$1
+    r=$2
+    divider=$3
+
+    t=($r)
+    t=($(for i in ${t[@]}; do echo $((i / divider)); done))
+    t="${t[*]}"
+    t=${t// /}
+    for seed in "${seeds[@]}"; do
+        # echo $variant $r $t $seed
+        python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
+        # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
+        # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
+    done
+}
+
+for variant in "l_tome"; do
+    for r in "285 0 0 0" "266 0 0 0" "228 0 0 0" "152 0 0 0" "76 0 0 0" "38 0 0 0" "19 0 0 0"; do
+        run_seed $variant "$r" 19
+    done
+done
+exit
 
 for seed in "${seeds[@]}"; do
     # baseline
