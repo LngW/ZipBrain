@@ -1,15 +1,11 @@
 import os
 import argparse
-import pickle
-import time
-from collections import deque
-from queue import Queue
-import threading
+from pathlib import Path
 
 import torch
-from tqdm import tqdm
+# from tqdm import tqdm
 import numpy as np
-import torch.nn as nn
+# import torch.nn as nn
 
 # import pytorch_lightning as pl
 # from pytorch_lightning.loggers import TensorBoardLogger
@@ -33,12 +29,14 @@ from utils import TUABLoader, CHBMITLoader, PTBLoader, focal_loss, BCE
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 
-from torch.profiler import profile, ProfilerActivity, record_function
+from torch.profiler import profile, ProfilerActivity, record_function, _ExperimentalConfig
+from engine import create_global_context, train_loop
 
 def set_seeds(args):
     pass
 
 def prepare_dataloader(args):
+    # from utils import TUABLoader, CHBMITLoader, PTBLoader
     dataset = args.dataset
     subset = args.subset
     seed = args.seed
@@ -124,7 +122,9 @@ def prepare_model(args) -> torch.nn.Module:
 
         else:
             raise NotImplementedError
-        
+    
+
+
     return model
 
 def calculate_metrics(y_hat, y_ground):
@@ -150,106 +150,6 @@ def calculate_metrics(y_hat, y_ground):
         }
     return result, threshold
 
-# class LitModel_finetune(pl.LightningModule):
-#     def __init__(self, args, model):
-#         super().__init__()
-#         self.model = model
-#         self.threshold = 0.5
-#         self.args = args
-
-#     def training_step(self, batch, batch_idx):
-#         X, y = batch
-#         prob = self.model(X)
-#         loss = BCE(prob, y)  # focal_loss(prob, y)
-#         self.log("Train/train_loss", loss)
-#         self.log("Mem/AllocMax", torch.cuda.max_memory_allocated() / 1024 / 1024)
-#         self.log("Mem/ReservMax", torch.cuda.max_memory_reserved() / 1024 / 1024)
-#         return loss
-
-#     def validation_step(self, batch, batch_idx):
-#         X, y = batch
-#         with torch.no_grad():
-#             prob = self.model(X)
-#             step_result = torch.sigmoid(prob).cpu().numpy()
-#             step_gt = y.cpu().numpy()
-#         return step_result, step_gt
-
-#     def validation_epoch_end(self, val_step_outputs):
-#         result = np.array([])
-#         gt = np.array([])
-#         for out in val_step_outputs:
-#             result = np.append(result, out[0])
-#             gt = np.append(gt, out[1])
-
-#         if (
-#             sum(gt) * (len(gt) - sum(gt)) != 0
-#         ):  # to prevent all 0 or all 1 and raise the AUROC error
-#             self.threshold = np.sort(result)[-int(np.sum(gt))]
-#             result = binary_metrics_fn(
-#                 gt,
-#                 result,
-#                 metrics=["pr_auc", "roc_auc", "accuracy", "balanced_accuracy"],
-#                 threshold=self.threshold,
-#             )
-#         else:
-#             result = {
-#                 "accuracy": 0.0,
-#                 "balanced_accuracy": 0.0,
-#                 "pr_auc": 0.0,
-#                 "roc_auc": 0.0,
-#             }
-#         self.log("val_acc", result["accuracy"], sync_dist=True)
-#         self.log("val_bacc", result["balanced_accuracy"], sync_dist=True)
-#         self.log("val_pr_auc", result["pr_auc"], sync_dist=True)
-#         self.log("val_auroc", result["roc_auc"], sync_dist=True)
-#         print(result)
-
-#     def test_step(self, batch, batch_idx):
-#         X, y = batch
-#         with torch.no_grad():
-#             convScore = self.model(X)
-#             step_result = torch.sigmoid(convScore).cpu().numpy()
-#             step_gt = y.cpu().numpy()
-#         return step_result, step_gt
-
-#     def test_epoch_end(self, test_step_outputs):
-#         result = np.array([])
-#         gt = np.array([])
-#         for out in test_step_outputs:
-#             result = np.append(result, out[0])
-#             gt = np.append(gt, out[1])
-#         if (
-#             sum(gt) * (len(gt) - sum(gt)) != 0
-#         ):  # to prevent all 0 or all 1 and raise the AUROC error
-#             result = binary_metrics_fn(
-#                 gt,
-#                 result,
-#                 metrics=["pr_auc", "roc_auc", "accuracy", "balanced_accuracy"],
-#                 threshold=self.threshold,
-#             )
-#         else:
-#             result = {
-#                 "accuracy": 0.0,
-#                 "balanced_accuracy": 0.0,
-#                 "pr_auc": 0.0,
-#                 "roc_auc": 0.0,
-#             }
-#         self.log("test_acc", result["accuracy"], sync_dist=True)
-#         self.log("test_bacc", result["balanced_accuracy"], sync_dist=True)
-#         self.log("test_pr_auc", result["pr_auc"], sync_dist=True)
-#         self.log("test_auroc", result["roc_auc"], sync_dist=True)
-
-#         return result
-
-#     def configure_optimizers(self):
-#         optimizer = torch.optim.Adam(
-#             self.model.parameters(),
-#             lr=self.args.lr,
-#             weight_decay=self.args.weight_decay,
-#         )
-
-#         return [optimizer]  # , [scheduler]
-
 
 def prepare_TUAB_dataloader(args):
     # set random seed
@@ -258,6 +158,12 @@ def prepare_TUAB_dataloader(args):
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    torch.backends.cudnn.benchmark=False
+    torch.backends.cudnn.deterministic=True
+    torch.use_deterministic_algorithms(True)
+
+    # torch.default_generator
 
     root = "/srv/local/data/TUH/tuh3/tuh_eeg_abnormal/v3.0.0/edf/processed"
     root = './datasets/TUAB/processed_' + args.subset
@@ -278,23 +184,25 @@ def prepare_TUAB_dataloader(args):
         shuffle=True,
         drop_last=True,
         num_workers=args.num_workers,
-        persistent_workers=True,
+        persistent_workers=args.num_workers > 0,
         pin_memory=True,
     )
     test_loader = torch.utils.data.DataLoader(
         TUABLoader(os.path.join(root, "test"), test_files, args.sampling_rate),
-        batch_size=args.batch_size,
+        batch_size=args.batch_size * 2,
         shuffle=False,
         num_workers=args.num_workers,
-        persistent_workers=True,
+        persistent_workers=args.num_workers > 0,
+        # persistent_workers=True,
         pin_memory=True,
     )
     val_loader = torch.utils.data.DataLoader(
         TUABLoader(os.path.join(root, "val"), val_files, args.sampling_rate),
-        batch_size=args.batch_size,
+        batch_size=args.batch_size * 2,
         shuffle=False,
         num_workers=args.num_workers,
-        persistent_workers=True,
+        persistent_workers=args.num_workers > 0,
+        # persistent_workers=True,
         pin_memory=True,
     )
     print(len(train_loader), len(val_loader), len(test_loader))
@@ -418,308 +326,37 @@ def prepare_RND_dataloader(args):
         train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
     )
     val_loader = torch.utils.data.DataLoader(
-        val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
+        val_dataset, batch_size=args.batch_size * 2, shuffle=False, num_workers=args.num_workers
     )
     test_loader = torch.utils.data.DataLoader(
-        test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
+        test_dataset, batch_size=args.batch_size * 2, shuffle=False, num_workers=args.num_workers
     )
 
     return train_loader, test_loader, val_loader
 
-class Context:
-    epoch: int
-    batch_count_train: int
-    batch_count_eval : int
-    losses: torch.Tensor
-    preds:  torch.Tensor = None
-    labels: torch.Tensor = None
-
-    events_train: deque[tuple[int, torch.cuda.Event]]
-    events_eval: deque[torch.cuda.Event]
-    
-    def __init__(self, epoch, bhs_train, bhs_eval):
-        self.epoch = epoch
-        self.batch_count_train = bhs_train
-        self.batch_count_eval  = bhs_eval
-
-        self.losses = torch.empty(bhs_train, dtype=torch.float, device='cpu', pin_memory=True, requires_grad=False)
-        self.events_train = deque(maxlen=bhs_train)
-        self.events_eval  = deque(maxlen=bhs_eval )
-
-
-def train_loop_one_epoch(
-        context : Context,
-        model, loss_fn, optimizer, scheduler, train_dataloader : DataLoader, 
-        stream_comp : torch.cuda.Stream, stream_cpin : torch.cuda.Stream, stream_cpout : torch.cuda.Stream, 
-        **kwargs
-        ):
-
-    losses = context.losses
-    events_train = context.events_train
-
-    model.train()
-    itor = iter(enumerate(train_dataloader))
-    try:
-        idx, (sample, label) = next(itor)
-        with torch.cuda.stream(stream_cpin):
-            sample = sample.to(stream_cpin.device, non_blocking=True)
-            label = label.to(stream_cpin.device, non_blocking=True)
-        stream_comp.wait_stream(stream_cpin)
-
-        while True:
-            with torch.cuda.stream(stream_comp):
-                pred = model(sample)
-                loss : torch.Tensor = loss_fn(pred, label)
-
-            # transfer and log losses async
-            stream_cpout.wait_stream(stream_comp)
-            with torch.cuda.stream(stream_cpout):
-                losses[idx].copy_(loss.detach(), non_blocking=True)
-            events_train.append((idx, stream_cpout.record_event()))
-
-            with torch.cuda.stream(stream_comp):
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-            
-            try:
-                sample_ : torch.Tensor
-                label_  : torch.Tensor
-                idx_, (sample_, label_) = next(itor)
-                with torch.cuda.stream(stream_cpin):
-                    sample_ = sample_.to(stream_cpin.device, non_blocking=True)
-                    label_ = label_.to(stream_cpin.device, non_blocking=True)
-                stream_comp.wait_stream(stream_cpin)
-
-                idx, sample, label = idx_, sample_, label_
-            except StopIteration:
-                break
-    except StopIteration:
-        pass
-    # for idx, (sample, label) in enumerate(train_dataloader):
-        
-    #     # copy data in dedicated stream
-    #     with torch.cuda.stream(stream_cpin):
-    #         sample = sample.to(stream_cpin.device, non_blocking=True)
-    #         label = label.to(stream_cpin.device, non_blocking=True)
-
-    #     # wait data to be copied
-    #     stream_cpin.record_event().wait(stream_comp)
-
-    #     # train the model
-    #     with torch.cuda.stream(stream_comp):
-    #         pred = model(sample)
-    #         loss : torch.Tensor = loss_fn(pred, label)
-
-    #     # transfer and log losses async
-    #     stream_cpin.wait_stream(stream_comp)
-    #     with torch.cuda.stream(stream_cpin):
-    #         losses[idx].copy_(loss.detach(), non_blocking=True)
-    #     events_train.append((idx, stream_cpin.record_event()))
-
-    #     with torch.cuda.stream(stream_comp):
-    #         optimizer.zero_grad()
-    #         loss.backward()
-    #         optimizer.step()
-
-
-
-def eval_loop_one_epoch(
-        context : Context, 
-        model, val_dataloader, eval_collate_fn, 
-        stream_comp : torch.cuda.Stream, stream_cpin : torch.cuda.Stream, stream_cpout : torch.cuda.Stream, 
-        **kwargs
-        ):
-
-    events_eval = context.events_eval
-    eval_labels = context.labels
-    eval_preds  = context.preds
-
-    model.eval()
-    with torch.no_grad():
-        bsz = val_dataloader.batch_size
-        itor = iter(enumerate(val_dataloader))
-        try:
-            idx, (sample, label) = next(itor)
-            with torch.cuda.stream(stream_cpin):
-                sample = sample.to(stream_cpin.device, non_blocking=True)
-
-            stream_comp.wait_stream(stream_cpin)
-
-            while True:
-                with torch.cuda.stream(stream_comp):
-                    pred : torch.Tensor = model(sample)
-                    pred, label = eval_collate_fn(pred, label)
-
-                if eval_preds is None:
-                    eval_preds = torch.empty(len(val_dataloader.dataset), *pred.shape[1:], pin_memory=True, dtype=pred.dtype)
-                if eval_labels is None:
-                    eval_labels = torch.empty(len(val_dataloader.dataset), *label.shape[1:], pin_memory=True, dtype=label.dtype)
-
-                event = stream_comp.record_event()
-                events_eval.append(event)
-
-                stream_cpout.wait_event(event)
-                with torch.cuda.stream(stream_cpout):
-                    eval_preds[idx * bsz : idx * bsz + pred.size(0)].copy_(pred, non_blocking=True)
-                eval_labels[idx * bsz : idx * bsz + label.size(0)].copy_(label, False)
-
-                try:
-                    idx_, (sample_, label_) = next(itor)
-
-                    with torch.cuda.stream(stream_cpin):
-                        sample_ = sample_.to(stream_cpin.device, non_blocking=True)
-                        stream_comp.wait_stream(stream_cpin)
-                    
-                    idx, sample, label = idx_, sample_, label_
-                except StopIteration:
-                    break
-        except StopIteration:
-            pass
-
-    context.preds  = eval_preds
-    context.labels = eval_labels
-
-def train_loop(epochs, train_dataloader, val_dataloader, logger, stream_comp, stream_cpin, stream_cpout, **kwargs):
-    bhs_train = len(train_dataloader)
-    bhs_eval = len(val_dataloader)
-
-    for epoch in range(epochs):
-        context = Context(epoch, bhs_train, bhs_eval)
-        pbar = tqdm(total=bhs_train+bhs_eval)
-
-        events_timeit = [torch.cuda.Event(True) for _ in range(3)]
-        finished = [threading.Event() for _ in range(2)]
-
-        def monitor_loop():
-            losses = context.losses
-            events_train = context.events_train
-            events_eval = context.events_eval
-
-            while True:
-                if len(events_train) > 0:
-                    idx, event = events_train[0]
-                    if event.query():
-                        events_train.popleft()
-                        loss = losses[idx].item()
-                        logger.add_scalar('train/loss', loss, epoch * bhs_train + idx)
-                        pbar.set_description(f"Epoch {epoch}/Train", False)
-                        pbar.set_postfix({'loss': loss}, False)
-                        pbar.update()
-
-                if not finished[0].is_set():
-                    time.sleep(0.005)
-                    continue
-
-                if len(events_eval) > 0:
-                    event = events_eval[0]
-                    if event.query():
-                        events_eval.popleft()
-                        pbar.set_description("Epoch {}/Eval".format(epoch), False)
-                        pbar.update()
-
-                if not finished[1].is_set():
-                    time.sleep(0.005)
-                    continue
-
-                break
-
-        monitor = threading.Thread(target=monitor_loop, name='cuda_event_monitor')
-        monitor.start()
-
-        try:
-            events_timeit[0].record(stream_comp)
-            train_loop_one_epoch(epoch = epoch, context=context, train_dataloader=train_dataloader, stream_comp=stream_comp, stream_cpin=stream_cpin, stream_cpout=stream_cpout, **kwargs)
-            events_timeit[1].record(stream_comp)
-            finished[0].set()
-            eval_loop_one_epoch(epoch = epoch, context=context, val_dataloader=val_dataloader, stream_comp=stream_comp, stream_cpin=stream_cpin, stream_cpout=stream_cpout, **kwargs)
-            events_timeit[2].record(stream_comp)
-
-            events_timeit[1].synchronize()
-            logger.add_scalar('train/elapse', events_timeit[0].elapsed_time(events_timeit[1]) / 1000, epoch)
-
-            events_timeit[2].synchronize()
-            logger.add_scalar('eval/elapse',  events_timeit[1].elapsed_time(events_timeit[2]) / 1000, epoch)
-            logger.add_scalar('train/mem', torch.cuda.max_memory_allocated(), epoch)
-
-            metrics, threshold = calculate_metrics(context.preds.numpy(), context.labels.numpy())
-            for key, value in metrics.items():
-                logger.add_scalar(f'eval/{key}', value, epoch)
-
-            metrics2 = metrics.copy()
-            metrics2['loss'] = context.losses.mean().item()
-        finally:
-            finished[0].set()
-            finished[1].set()
-            monitor.join()
-
-        pbar.set_postfix(metrics2)
-        pbar.close()
-    logger.flush()
-
-def test_loop(model, test_dataloader, test_collate_fn, stream_comp, stream_copy, logger, **kwargs):
-    bhs_eval = len(test_dataloader)
-
-    context = Context(0, 0, bhs_eval)
-    pbar = tqdm(total=bhs_eval, desc="Test")
-
-    events_timeit = [torch.cuda.Event(True) for _ in range(2)]
-    finished = threading.Event()
-
-    def monitor_loop():
-        events = context.events_eval
-        while True:
-            while len(events) > 0:
-                event = events[0]
-                if event.query():
-                    events.popleft()
-                    pbar.update()
-
-            if not finished.is_set():
-                time.sleep(0.005)
-                continue
-
-            break
-
-    monitor = threading.Thread(target=monitor_loop, name='cuda_event_monitor')
-    monitor.start()
-
-    try:
-        events_timeit[0].record(stream_comp)
-        eval_loop_one_epoch(context=context, model=model, val_dataloader=test_dataloader, eval_collate_fn=test_collate_fn, stream_comp=stream_comp, stream_cpin=stream_copy, **kwargs)
-        events_timeit[1].record(stream_comp)
-
-        events_timeit[1].synchronize()
-        logger.add_scalar('test/elapse',  events_timeit[1].elapsed_time(events_timeit[0]) / 1000, 0)
-        logger.add_scalar('test/mem', torch.cuda.max_memory_allocated(), 0)
-
-        metrics = calculate_metrics(context.preds.numpy(), context.labels.numpy())
-        for key, value in metrics.items():
-            logger.add_scalar(f'test/{key}', value, 0)
-
-        metrics2 = metrics.copy()
-    finally:
-        finished.set()
-        monitor.join()
-
-    pbar.set_postfix(metrics2)
-    pbar.close()
-    logger.flush()
-
 def supervised(args):
+
+    version = f"{args.dataset}-{args.model}-{args.lr}-{args.batch_size}-{args.sampling_rate}-{args.token_size}-{args.hop_length}-{args.seed}"
+    workspace = Path('.', 'workspace', args.workspace)
+    log_dir = workspace / 'logs' / args.log_dir / version
+    cp_dir = workspace / 'checkpoints' / args.log_dir / version
+
+    if log_dir.exists() or cp_dir.exists():
+        print("workspace {}/{} exists, skipping".format(args.log_dir, version))
+        exit()
+
+    print("running {}/{}".format(args.log_dir, version))
+    print(args)
+
     # get data loaders
     device = torch.device('cuda:0')
 
-    # define streams
-    stream_cpin = torch.cuda.Stream(device)
-    stream_cpout = torch.cuda.Stream(device)
-    stream_comp = torch.cuda.Stream(device)
-
+    # prepare dataloaders
     train_loader, test_loader, val_loader = prepare_dataloader(args)
 
     # define the model
     model = prepare_model(args)
-    model.to(device)
+    model = model.to(device)
 
     # define optimizer and scheduler
     optimizer = torch.optim.AdamW(
@@ -728,31 +365,67 @@ def supervised(args):
         weight_decay=args.weight_decay,
     )
 
-    loss_fn = BCE
-    def eval_collate_fn(pred, label):
+    def infer_post_fn(pred, label):
         pred = torch.sigmoid(pred)#.flatten(-2, -1)
         return pred, label
+    
+    class FastStop:
+        tolerance: int
+        # cool_down: int
+        count_down: int
+        def __init__(self, t):
+            self.tolerance = t
+            # self.cool_down = cd
+            self.count_down = t
+        
+        def update(self, improved):
+            if improved:
+                self.count_down = self.tolerance
+            else:
+                self.count_down -= 1
+            
+            return self.count_down <= 0
 
-    version = f"{args.dataset}-{args.model}-{args.lr}-{args.batch_size}-{args.sampling_rate}-{args.token_size}-{args.hop_length}-{args.seed}"
-    logger = SummaryWriter(
-        log_dir=f"{args.workspace}/logs/{args.log_dir}/{version}"
-    )
+    fast_stop = FastStop(5)
+    def compare_metrics(best, current):
+        # if best is None:
+        #     return True, False
+
+        improved = best is None or current['roc_auc'] > best['roc_auc']
+
+        return improved, fast_stop.update(improved)
+
+
+    # log_dir = log_dir / version
+    # cp_dir = cp_dir / version
+
+    ctx = create_global_context(device, log_dir, cp_dir)
+
+    def loss_fn(model, preds, labels):
+        loss = BCE(preds, labels)
+        for module in model.modules():
+            if hasattr(module, 'compression_loss'):
+                loss = loss + module.compression_loss
+
+        return loss
 
     if not args.no_train:
-        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], with_stack=True) as prof:
-            train_loop(args.epochs, 
+        with profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU]) as perf:
+            train_loop(
+                    ctx_global=ctx,
+                    epochs=args.epochs, 
                     model = model, 
                     optimizer = optimizer,
-                    loss_fn = loss_fn,
-                    eval_collate_fn = eval_collate_fn,
+                    scheduler = None,
                     train_dataloader = train_loader, 
                     val_dataloader = val_loader, 
-                    logger = logger, 
-                    stream_comp = stream_comp,
-                    stream_cpin = stream_cpin,
-                    stream_cpout = stream_cpout,
-                    scheduler = None,
-                    )
+                    loss_fn = loss_fn,
+                    metric_fn = calculate_metrics,
+                    metric_comp_fn = compare_metrics,
+                    infer_post_fn = infer_post_fn,
+                )
+        perf.export_chrome_trace("engine_profile")
+    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -800,7 +473,7 @@ if __name__ == "__main__":
     parser.add_argument("--linear", action='store_true', default=False)
     parser.add_argument("--flash", action='store_true', default=False)
 
-    parser.add_argument("--load_from_checkpoint", type=str, default=None)
+    # parser.add_argument("--load_from_checkpoint", type=str, default=None)
     parser.add_argument("--no_train", action='store_true', default=False)
     parser.add_argument("--test", action='store_true', default=False)
     parser.add_argument("--profile", action='store_true', default=False)
@@ -811,6 +484,5 @@ if __name__ == "__main__":
     # end of modification
 
     args = parser.parse_args()
-    print(args)
 
     supervised(args)

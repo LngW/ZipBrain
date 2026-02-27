@@ -1,26 +1,28 @@
 #!/bin/bash
-workspace='test_local'
+workspace='test_consistance0'
 workspace="workspace/${workspace}"
 common_args=(
-    --epochs 1
-    --dataset RANDOM
+    --epochs 2
+    --dataset TUAB
     --in_channels 16
     --sampling_rate 200
     --token_size 200
     --hop_length 100
     --sample_length 10
-    --batch_size 64
-    # --lr 1e-4
+    --batch_size 128
+    --lr 1e-4
     # --weight_decay 1e-4
     --model BIOT
     --num_workers 2
     --subset 10
     --workspace $workspace
     # --cls_token
+    --profile
 )
 
 if [ -d $workspace ]; then
-    echo "workspace \"${workspace}\" exist, overwriting in debug mode"
+    echo "workspace \"${workspace}\" exist, overwriting or appending in debug mode"
+    # exit
     rm -r $workspace
 fi
 mkdir -p $workspace
@@ -34,11 +36,56 @@ export CUDA_VISIBLE_DEVICES=0
 filename="run_binary_supervised.py"
 # filename="-m debugpy --listen 6789 --wait-for-client $filename"
 
-for seed in "${seeds[0]}"; do
+run_seed()
+{
+    variant=$1
+    r=$2
+    divider=$3
+
+    t=($r)
+    t=($(for i in ${t[@]}; do echo $((i / divider)); done))
+    t="${t[*]}"
+    t=${t// /}
+    for seed in "${seeds[@]}"; do
+        # echo $variant $t $r $seed
+        python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
+        # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
+        # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
+    done
+}
+
+run_seed "l_tome" "285 0 0 0" 19
+exit
+
+for variant in "l_tome"; do
+    for r in "285 0 0 0" "266 0 0 0" "228 0 0 0" "152 0 0 0" "152 76 0 0" "152 76 38 0" "152 76 38 19"; do
+        run_seed $variant "$r" 19
+    done
+done
+exit
+
+for seed in "${seeds[@]}"; do
     # baseline
     # python $filename $common_args --seed $seed --log_dir baseline_lin --linear
     # python $filename $common_args --seed $seed --log_dir baseline_std
     # python $filename $common_args --seed $seed --log_dir baseline_std_flash --flash
+
+    # for variant in "l_tome"; do
+    for variant in "lq_tome"; do
+        # for r in "38 38 38 38" "152 0 0 0" "152 76 38 19"; do
+        for r in "152 0 0 0"; do
+            run_seed $variant "$r" 19
+            # t=($r)
+            # t=($(for i in ${t[@]}; do echo $((i / 19)); done))
+            # t="${t[*]}"
+            # t=${t// /}
+
+            # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
+            # # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
+            # # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
+        done
+    done
+    exit
 
     # vanilla tome
     # for variant in "tome"; do
@@ -72,29 +119,31 @@ for seed in "${seeds[0]}"; do
     # full (it has no qk version, only q version)
     # learnable (only x version, no k version)
     # for variant in "f_tome" "fx_tome" "l_tome" "lq_tome"; do
-    #     for r in "19 19 19 19" "38 38 38 38" "285 0 0 0" "266 0 0 0" "228 0 0 0" "152 0 0 0" "152 76 0 0" "152 76 38 0" "152 76 38 19"; do
-    #         t=($r)
-    #         t=($(for i in ${t[@]}; do echo $((i / 19)); done))
-    #         t="${t[*]}"
-    #         t=${t// /}
-
-    #         python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
-    #         # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
-    #         # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
-    #     done
-    # done
-
-    # full ch (on k only)
-    # learnable ch (on x only, )
-    for variant in "fch_tome" "fxch_tome" "l_channel" "lq_channel"; do
-        for r in "2 2 2 2" "1 1 1 1" "15 0 0 0" "14 0 0 0" "12 0 0 0" "8 0 0 0" "8 4 0 0" "8 4 2 0" "8 4 2 1"; do
-            t=${r// /}
+    for variant in "l_tome"; do
+        for r in "19 19 19 19" "38 38 38 38" "285 0 0 0" "266 0 0 0" "228 0 0 0" "152 0 0 0" "152 76 0 0" "152 76 38 0" "152 76 38 19"; do
+            t=($r)
+            t=($(for i in ${t[@]}; do echo $((i / 19)); done))
+            t="${t[*]}"
+            t=${t// /}
 
             python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
             # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
             # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
         done
     done
+
+    # full ch (on k only)
+    # learnable ch (on x only, )
+    # for variant in "fch_tome" "fxch_tome" "l_channel" "lq_channel"; do
+    # for variant in "l_channel"; do
+    #     for r in "2 2 2 2" "1 1 1 1" "15 0 0 0" "14 0 0 0" "12 0 0 0" "8 0 0 0" "8 4 0 0" "8 4 2 0" "8 4 2 1"; do
+    #         t=${r// /}
+
+    #         python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_lin --linear
+    #         # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std
+    #         # python $filename $common_args --seed $seed --tome_variant ${variant} --tome_r $r --log_dir ${variant}_${t}_std_flash --flash
+    #     done
+    # done
 
     # learnabel ch tome
     # for r in "12 3 0 0" "15 0 0 0" "8 0 0 0" "8 4 0 0" "8 4 2 0" "8 4 2 1"; do

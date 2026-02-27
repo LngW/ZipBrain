@@ -153,7 +153,7 @@ class Block(nn.Module):
 
         self.tome = create_tome_block(tome_variant, tome_container, tome_r, dim)
 
-        print(type(self.tome))
+        # print(type(self.tome))
     
     def forward(self, x, size):
         dx, k = self.attn(self.norm1(x))
