@@ -162,7 +162,7 @@ def __monitor_log_test_batch(ctx : _EpochContext):
     pbar.update()
 
 def __train_loop(
-        model, loss_fn, optimizer : torch.optim.Optimizer, scheduler, dataloader : DataLoader, 
+        model : torch.nn.Module, loss_fn, optimizer : torch.optim.Optimizer, scheduler, dataloader : DataLoader, 
         ctx_global: __GlobalContext, ctx_epoch : _EpochContext, slots : _Slots,
         **kwargs
         ):
@@ -422,7 +422,7 @@ def train_loop(
 
         metrics2 = metrics.copy()
         metrics2['loss'] = loss
-        pbar.write("Epoch\t{}:\t   ".format(context.epoch) + ", ".join(f"{k}: {v:.4f}" for k,v in metrics2.items()))
+        pbar.write("Epoch{:>4}:\t".format(context.epoch) + (" " * 4).join(f"{k}={v:.6f}" for k,v in metrics2.items()))
         pbar.close()
 
         state_dict = {
@@ -450,14 +450,14 @@ def test_loop(
         test_dataloader, 
         infer_post_fn, 
         metric_fn, 
-        logger, 
         **kwargs):
 
     bhs_eval = len(test_dataloader)
     device, s_cmpt, s_cin, s_cout, queue = ctx_global
 
-    pbar = tqdm(total=bhs_eval, desc="Test")
-    ctx_epoch = _EpochContext(0, pbar, logger, 0)
+    pbar = tqdm(total=bhs_eval, desc="Test", leave=False)
+    ctx_epoch = _EpochContext(0, pbar)
+    slots = _Slots(2)
 
     events_timeit = [torch.cuda.Event(True) for _ in range(2)]
 
@@ -465,22 +465,25 @@ def test_loop(
     preds, labels = __inference_loop(
         ctx_global=ctx_global, ctx_epoch=ctx_epoch, 
         model=model, dataloader=test_dataloader, infer_post_fn=infer_post_fn, 
+        slots=slots, test_stage=True,
         **kwargs)
     events_timeit[1].record(s_cmpt)
 
     events_timeit[1].synchronize()
-    logger.add_scalar('test/elapse',  events_timeit[1].elapsed_time(events_timeit[0]) / 1000, 0)
-    logger.add_scalar('test/mem', torch.cuda.max_memory_allocated() / 1024 / 1024, 0)
+    ctx_global.log_epoch('test/elapse',  events_timeit[1].elapsed_time(events_timeit[0]) / 1000, 0)
+    ctx_global.log_epoch('test/mem', torch.cuda.max_memory_allocated() / 1024 / 1024, 0)
 
-    metrics = metric_fn(ctx_epoch.preds.numpy(), ctx_epoch.labels.numpy())
+    metrics, _ = metric_fn(preds.numpy(), labels.numpy())
     for key, value in metrics.items():
-        logger.add_scalar(f'test/{key}', value, 0)
+        ctx_global.log_epoch(f'test/{key}', value, 0)
 
     metrics2 = metrics.copy()
 
-    pbar.set_postfix(metrics2)
+    pbar.write("Test:\t\t" + (" " * 4).join(f"{k}={v:.6f}" for k,v in metrics2.items()))
+    # pbar.set_postfix(metrics2)
     pbar.close()
-    logger.flush()
+    ctx_global.logger.flush()
+    # logger.flush()
 
 
 # def train(

@@ -30,7 +30,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 
 from torch.profiler import profile, ProfilerActivity, record_function, _ExperimentalConfig
-from engine import create_global_context, train_loop
+from engine import create_global_context, train_loop, test_loop
 
 def set_seeds(args):
     pass
@@ -337,11 +337,13 @@ def prepare_RND_dataloader(args):
 def supervised(args):
 
     version = f"{args.dataset}-{args.model}-{args.lr}-{args.batch_size}-{args.sampling_rate}-{args.token_size}-{args.hop_length}-{args.seed}"
+    logdir : str = args.log_dir
     workspace = Path('.', 'workspace', args.workspace)
-    log_dir = workspace / 'logs' / args.log_dir / version
-    cp_dir = workspace / 'checkpoints' / args.log_dir / version
+    log_dir = workspace / 'logs' / logdir / version
+    cp_dir = workspace / 'checkpoints' / logdir / version
+    prof_dir = workspace / 'profiles' / logdir / version
 
-    if log_dir.exists() or cp_dir.exists():
+    if log_dir.exists() or cp_dir.exists() or prof_dir.exists():
         print("workspace {}/{} exists, skipping".format(args.log_dir, version))
         exit()
 
@@ -408,9 +410,9 @@ def supervised(args):
                 loss = loss + module.compression_loss
 
         return loss
-
-    if not args.no_train:
-        with profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU]) as perf:
+    
+    def _train_fn():
+        if not args.no_train:
             train_loop(
                     ctx_global=ctx,
                     epochs=args.epochs, 
@@ -424,7 +426,31 @@ def supervised(args):
                     metric_comp_fn = compare_metrics,
                     infer_post_fn = infer_post_fn,
                 )
-        perf.export_chrome_trace("engine_profile")
+        if args.test:
+            test_loop(
+                ctx_global=ctx,
+                model=model,
+                test_dataloader=test_loader,
+                infer_post_fn=infer_post_fn,
+                metric_fn=calculate_metrics,
+                
+            )
+
+    if args.profile:
+        torch.cuda.memory._record_memory_history()
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], with_stack=True) as prof:
+            _train_fn()
+        
+        prof.export_chrome_trace(str(prof_dir / "profile.json"))
+        torch.cuda.memory._dump_snapshot(str(prof_dir / "memory.pickle"))
+    else:
+        _train_fn()
+
+        # torch.cuda.memory._record_memory_history()
+        # with profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU]) as perf:
+        # if True:
+        # perf.export_chrome_trace("engine_profile")
+        # torch.cuda.memory._dump_snapshot()
     
 
 if __name__ == "__main__":
@@ -479,7 +505,7 @@ if __name__ == "__main__":
     parser.add_argument("--profile", action='store_true', default=False)
     parser.add_argument("--workspace", type=str, required=True)
     # parser.add_argument("--rtl_tome", action='store_true', default=False)
-    parser.add_argument("--tome_variant", type=str, default="")
+    parser.add_argument("--tome_variant", type=str, nargs='+', default=[])
     parser.add_argument("--cls_token", action='store_true', default=False)
     # end of modification
 
