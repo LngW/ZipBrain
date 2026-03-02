@@ -31,15 +31,18 @@ def create_tome_block(variant : str, container, r, dim):
         gct = 'global'
         merge = 0
         loss = 0
+        attached = True
         if len(configs) > 1:
             gct = configs[1]
         if len(configs) > 2:
             merge = int(configs[2])
         if len(configs) > 3:
             loss = int(configs[3])
+        if len(configs) > 4:
+            attached = configs[4] != "d"
 
         if gct == 'tome' or gct == 'global':
-            return LearnableToMeBlock(container, r, dim, q_only, merge, loss)
+            return LearnableToMeBlock(container, r, dim, q_only, merge, loss, attached)
         elif variant == 'channel':
             return LearnableChannel(container, r, dim, q_only)
         elif variant == 'time':
@@ -659,7 +662,7 @@ def _qk_consective_merge(r, x, q, k, size):
     return matrix @ x, matrix_ @ size
 
 
-def LearnableToMeBlock(tome_container, r, dim, q_only = False, learnable_merge = 0, learnable_loss = 0):
+def LearnableToMeBlock(tome_container, r, dim, q_only = False, learnable_merge = 0, learnable_loss = 0, attached = True):
     class Learnable(nn.Module):
         def __init__(self):
             super().__init__()
@@ -675,7 +678,7 @@ def LearnableToMeBlock(tome_container, r, dim, q_only = False, learnable_merge =
             if size is None:
                 size = torch.ones_like(x[..., 0:1])
 
-            q_ = self.proj(x.detach())
+            q_ = self.proj(x if attached else x.detach())
             # q_ = self.proj(x)
             # q_ = torch.dropout(q_, 0.5, self.training)
             if q_only:

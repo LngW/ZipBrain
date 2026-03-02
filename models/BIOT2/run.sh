@@ -1,5 +1,5 @@
 #!/bin/bash
-workspace='learnable_baseline_lin_896_5e-10_dropout5'
+workspace='learnable_baseline_lin_896_5e-10_dropout5_attached'
 workspace="workspace/${workspace}"
 common_args=(
     # --epochs 2
