@@ -83,7 +83,9 @@ class LitModel_finetune(pl.LightningModule):
         self.log("val_bacc", result["balanced_accuracy"], sync_dist=True)
         self.log("val_pr_auc", result["pr_auc"], sync_dist=True)
         self.log("val_auroc", result["roc_auc"], sync_dist=True)
-        print(result)
+
+        result_ = 'Epoch {:>3d}:\t'.format(self.current_epoch) + (' ' * 4).join(['{}={:.6f}'.format(k, v) for k,v in result.items()])
+        self.print(result_)
 
     def test_step(self, batch, batch_idx):
         X, y = batch
@@ -123,13 +125,27 @@ class LitModel_finetune(pl.LightningModule):
         return result
 
     def configure_optimizers(self):
+        assert isinstance(self.model, torch.nn.Module)
+        params = self.model.named_parameters()
+        base_biot = [p for name, p in params if 'transformer' not in name]
+        transformers = [p for name, p in params if 'transformer' in name]
+        groups = [
+            {'params': base_biot},
+            # {'params': transformers, 'lr': self.args.lr * 0.2},
+        ]
         optimizer = torch.optim.AdamW(
             self.model.parameters(),
+            # groups,
             lr=self.args.lr,
             weight_decay=self.args.weight_decay,
         )
 
-        return [optimizer]  # , [scheduler]
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [5, 10, 20, 40], gamma=1/1.41)
+
+        return [optimizer]  #, [scheduler]
+    
+    def lr_scheduler_step(self, scheduler, optimizer_idx, metric):
+        scheduler.step(self.current_epoch)
 
 
 def prepare_TUAB_dataloader(args):
@@ -324,60 +340,60 @@ def supervised(args):
 
     # define the model
     with torch.random.fork_rng():
-        if args.model == "SPaRCNet":
-            model = SPaRCNet(
-                in_channels=args.in_channels,
-                sample_length=int(args.sampling_rate * args.sample_length),
-                n_classes=args.n_classes,
-                block_layers=4,
-                growth_rate=16,
-                bn_size=16,
-                drop_rate=0.5,
-                conv_bias=True,
-                batch_norm=True,
-            )
+        # if args.model == "SPaRCNet":
+        #     model = SPaRCNet(
+        #         in_channels=args.in_channels,
+        #         sample_length=int(args.sampling_rate * args.sample_length),
+        #         n_classes=args.n_classes,
+        #         block_layers=4,
+        #         growth_rate=16,
+        #         bn_size=16,
+        #         drop_rate=0.5,
+        #         conv_bias=True,
+        #         batch_norm=True,
+        #     )
 
-        elif args.model == "ContraWR":
-            model = ContraWR(
-                in_channels=args.in_channels,
-                n_classes=args.n_classes,
-                fft=args.token_size,
-                steps=args.hop_length // 5,
-            )
+        # elif args.model == "ContraWR":
+        #     model = ContraWR(
+        #         in_channels=args.in_channels,
+        #         n_classes=args.n_classes,
+        #         fft=args.token_size,
+        #         steps=args.hop_length // 5,
+        #     )
 
-        elif args.model == "CNNTransformer":
-            model = CNNTransformer(
-                in_channels=args.in_channels,
-                n_classes=args.n_classes,
-                fft=args.sampling_rate,
-                steps=args.hop_length // 5,
-                dropout=0.2,
-                nhead=4,
-                emb_size=256,
-            )
+        # elif args.model == "CNNTransformer":
+        #     model = CNNTransformer(
+        #         in_channels=args.in_channels,
+        #         n_classes=args.n_classes,
+        #         fft=args.sampling_rate,
+        #         steps=args.hop_length // 5,
+        #         dropout=0.2,
+        #         nhead=4,
+        #         emb_size=256,
+        #     )
 
-        elif args.model == "FFCL":
-            model = FFCL(
-                in_channels=args.in_channels,
-                n_classes=args.n_classes,
-                fft=args.token_size,
-                steps=args.hop_length // 5,
-                sample_length=int(args.sampling_rate * args.sample_length),
-                shrink_steps=20,
-            )
+        # elif args.model == "FFCL":
+        #     model = FFCL(
+        #         in_channels=args.in_channels,
+        #         n_classes=args.n_classes,
+        #         fft=args.token_size,
+        #         steps=args.hop_length // 5,
+        #         sample_length=int(args.sampling_rate * args.sample_length),
+        #         shrink_steps=20,
+        #     )
 
-        elif args.model == "STTransformer":
-            model = STTransformer(
-                emb_size=256,
-                depth=4,
-                n_classes=args.n_classes,
-                channel_legnth=int(
-                    args.sampling_rate * args.sample_length
-                ),  # (sampling_rate * duration)
-                n_channels=args.in_channels,
-            )
+        # elif args.model == "STTransformer":
+        #     model = STTransformer(
+        #         emb_size=256,
+        #         depth=4,
+        #         n_classes=args.n_classes,
+        #         channel_legnth=int(
+        #             args.sampling_rate * args.sample_length
+        #         ),  # (sampling_rate * duration)
+        #         n_channels=args.in_channels,
+        #     )
 
-        elif args.model == "BIOT":
+        if args.model == "BIOT":
             model = BIOTClassifier(
                 n_classes=args.n_classes,
                 # set the n_channels according to the pretrained model if necessary
@@ -405,7 +421,7 @@ def supervised(args):
     else:
         lightning_model = LitModel_finetune(args, model)
 
-    print(model)
+    # print(model)
 
     # logger and callbacks
     # version = f"{args.dataset}-{args.model}-{args.lr}-{args.batch_size}-{args.sampling_rate}-{args.token_size}-{args.hop_length}"

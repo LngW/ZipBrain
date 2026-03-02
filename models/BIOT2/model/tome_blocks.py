@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from einops import rearrange
 
-def create_tome_block(variant, container, r, dim):
+def create_tome_block(variant : str, container, r, dim):
     if variant == 'tome':
         return ToMeBlock(container, r, dim, use_x=False)
     elif variant == 'tomex':
@@ -25,18 +25,25 @@ def create_tome_block(variant, container, r, dim):
         return FullTimestepToMeBlock(container, r, dim, use_x=False)
     elif variant == 'fxts_tome':
         return FullTimestepToMeBlock(container, r, dim, use_x=True)
-    elif variant == 'l_tome':
-        return LearnableToMeBlock(container, r, dim, q_only=False)
-    elif variant == 'lq_tome':
-        return LearnableToMeBlock(container, r, dim, q_only=True)
-    elif variant == 'l_channel':
-        return LearnableChannel(container, r, dim, q_only=False)
-    elif variant == 'lq_channel':
-        return LearnableChannel(container, r, dim, q_only=True)
-    elif variant == 'l_time':
-        return LearnableTimestep(container, r, dim, q_only=False)
-    elif variant == 'lq_time':
-        return LearnableTimestep(container, r, dim, q_only=True)
+    elif variant.startswith('l_') or variant.startswith('lq_'):
+        q_only = variant.startswith('lq_')
+        configs = variant.split('_')
+        gct = 'global'
+        merge = 0
+        loss = 0
+        if len(configs) > 1:
+            gct = configs[1]
+        if len(configs) > 2:
+            merge = int(configs[2])
+        if len(configs) > 3:
+            loss = int(configs[3])
+
+        if gct == 'tome' or gct == 'global':
+            return LearnableToMeBlock(container, r, dim, q_only, merge, loss)
+        elif variant == 'channel':
+            return LearnableChannel(container, r, dim, q_only)
+        elif variant == 'time':
+            return LearnableTimestep(container, r, dim, q_only)
     elif variant == 'rtl':
         return RunTimeLengthToMeBlock(container, r, dim)
     elif variant == 'w_channel':
@@ -47,8 +54,9 @@ def create_tome_block(variant, container, r, dim):
         return LearnableConsectiveTimestepToMeBlock(container, r, dim)
     elif variant == 'layernorm':
         return NormOnly(dim)
-    else:
-        return lambda x, k, size: (x, size)
+    
+
+    return lambda x, k, size: (x, size)
 
 def NormOnly(dim):
     class NormOnly(nn.Module):
@@ -458,12 +466,106 @@ def _qk_merge0(r, x, q, k, size):
     matrix.scatter_(-1, top_idx[..., None], 1)
 
     matrix_ = torch.zeros_like(matrix)
-    matrix_.scatter_(-2, matrix.argmax(-2, True), 1) # merge to its most similar one
+    matrix_.scatter_(-2, matrix.argmax(-2, True), 0.9) # merge to its most similar one
+    matrix_ = matrix_ + (0.1 / (seq - r))
 
     matrix = matrix * matrix_
+    # matrix = matrix + (1 - matrix.sum(-2, True)) / (seq - r)
+    # matrix = 
     matrix = matrix / matrix.sum(-1, True)
 
     return matrix @ x, matrix_ @ size, similarity
+
+def _qk_merge1(r, x, q, k, size):
+    bsz, seq, dim = x.shape
+    r = min(max(r, 0), seq - 1) # keep at least one token
+
+    if r == 0:
+        return x, size
+    q_only = (q is k) or (k is None)
+    if q_only:
+        q = q / q.norm(dim=-1, keepdim=True)
+        similarity : torch.Tensor = q @ q.transpose(-1, -2)
+        importance = torch.exp(similarity).sum(-1)
+    else:
+        q = q / q.norm(dim=-1, keepdim=True)
+        k = k / k.norm(dim=-1, keepdim=True)
+        similarity : torch.Tensor = q @ k.transpose(-1, -2)
+        similarity_ : torch.Tensor = torch.exp(similarity)
+        importance = similarity_.sum(-1) - torch.diagonal(similarity_, 0, -2, -1) # so similarity to itself do not affect
+
+    # importance = torch.diagonal_scatter(similarity, torch.zeros_like(similarity[..., 0]), 0, -2, -1).sum(-1)
+    top_v, top_idx = torch.topk(importance, seq - r)
+
+    matrix = similarity.gather(-2, top_idx[..., None].expand(-1, -1, seq))
+    matrix = (matrix + 1) / 2
+    matrix.scatter_(-1, top_idx[..., None], 1)
+
+    matrix_ = torch.zeros_like(matrix)
+    matrix_.scatter_(-2, matrix.argmax(-2, True), 0.9) # merge to its most similar one
+    matrix_ = matrix_ + (0.1 / (seq - r))
+
+    matrix = matrix * matrix_
+    # matrix = matrix + (1 - matrix.sum(-2, True)) / (seq - r)
+    # matrix = 
+    matrix = matrix / matrix.sum(-1, True)
+
+    return matrix @ x, matrix_ @ size, similarity
+
+def _sst(input, thre, factor):
+    # input = input
+    output = torch.sigmoid(input * factor)
+    o1 = torch.zeros_like(output, requires_grad=False)
+    torch.where(input > thre, (1 - output).detach(), o1, out=o1)
+    torch.where(input < -thre, -output.detach(), o1, out=o1)
+    
+    output = output + o1.detach()
+    # torch
+    # output[input < -thre] = (0-output)[input < -thre]
+    return output
+
+def _qk_merge2(r, x, q, k, size):
+    bsz, seq, dim = x.shape
+    r = min(max(r, 0), seq - 1) # keep at least one token
+
+    if r == 0:
+        return x, size
+    q_only = (q is k) or (k is None)
+    if q_only:
+        q = q / q.norm(dim=-1, keepdim=True)
+        similarity : torch.Tensor = q @ q.transpose(-1, -2)
+    else:
+        q = q / q.norm(dim=-1, keepdim=True)
+        k = k / k.norm(dim=-1, keepdim=True)
+        similarity : torch.Tensor = q @ k.transpose(-1, -2)
+
+    base_thre = math.sqrt(8 / seq * math.log(10))
+    similarity_ = _sst(similarity, base_thre, 4 / base_thre)
+    importance = similarity_.sum(-1) - torch.diagonal(similarity_, 0, -2, -1)
+
+    # importance = torch.diagonal_scatter(similarity, torch.zeros_like(similarity[..., 0]), 0, -2, -1).sum(-1)
+    top_v, top_idx = torch.topk(importance, seq - r)
+
+    matrix = similarity_.gather(-2, top_idx[..., None].expand(-1, -1, seq))
+    matrix = (matrix + 1) / 2
+    matrix.scatter_(-1, top_idx[..., None], 1)
+
+    matrix_ = torch.zeros_like(matrix)
+    matrix_.scatter_(-2, matrix.argmax(-2, True), 1) # merge to its most similar one
+
+    matrix = matrix * matrix_
+    matrix = matrix / (matrix.sum(-1, True) + 1e-8)
+
+    return matrix @ x, matrix_ @ size, similarity
+
+def _qk_merge_loss0(similarity):
+    return torch.square(1 - torch.diagonal(similarity, 0, -2, -1)).mean()
+
+def _qk_merge_loss1(similarity):
+    bsz, seq, _ = similarity.shape
+    loss = torch.square(similarity).sum((-2, -1)) - torch.square(torch.diagonal(similarity, 0, -2, -1)).sum(-1)
+    return (seq / loss).mean()
+    # return loss.mean()
 
 def _qk_merge(r, x, q, k, size):
     x, size, _ = _qk_merge0(r, x, q, k, size)
@@ -476,17 +578,43 @@ def _qk_merge_grad(r, x, q, k, size):
 
 def _qk_merge_grad1(r, x, q, k, size):
     bsz, seq, dim = x.shape
-    x, size, similarity = _qk_merge0(r, x, q, k, size)
+    x, size, similarity = _qk_merge1(r, x, q, k, size)
     # loss = torch.square(1 - torch.diagonal(similarity, 0, -2, -1)).mean()
     # thre_base = math.sqrt(8 / q.size(-1) * math.log(10))
     # thre_scaled = thre_base #* seq / ((-torch.diagonal(similarity, 0, -2, -1) + 1) / 2).sum(-1).mean()
     # similarity_ = _sst(similarity, thre_scaled, 4 / thre_base)
 
     loss0 = torch.square(1 - torch.diagonal(similarity, 0, -2, -1)).mean()
-    loss1 = torch.square(similarity).sum((-2, -1)) - torch.square(torch.diagonal(similarity, 0, -2, -1)).sum(-1)
-    loss1 = (loss1 / seq / (seq - 1)).mean() * 0.01
+    # loss1 = torch.square(similarity).sum((-2, -1)) - torch.square(torch.diagonal(similarity, 0, -2, -1)).sum(-1)
+    # loss1 = (loss1 / seq / (seq - 1)).mean() * 0.01
     # loss1 = torch.square((similarity_.sum((-2, -1)) - seq * 2) / seq / seq).mean()
-    return x, size, loss0  + loss1
+    return x, size, loss0 # + loss1
+
+def _merge_grad(train, r, x, q, k, size, merge, loss):
+    # bsz, seq, dim = x.shape
+    merge_fn = globals().get('_qk_merge{}'.format(merge))
+    if merge_fn is None:
+        return x, size, 0
+
+    # print("found merge func {}".format(merge))
+
+    x_, size_, similarity_ = merge_fn(r, x, q, k, size)
+
+    loss_ = 0
+    if train:
+        loss_c = loss
+        i = 0
+        while loss_c > 0:
+            if loss_c & 1:
+                fn = globals().get('_qk_merge_loss{}'.format(i))
+                if fn is not None:
+                    # print("found loss func {}".format(i))
+                    loss_ = loss_ + fn(similarity_)
+
+            loss_c >>= 1
+            i += 1
+
+    return x_, size_, loss_
 
 # TODO: Uncompleted method
 def _qk_consective_merge(r, x, q, k, size):
@@ -531,7 +659,7 @@ def _qk_consective_merge(r, x, q, k, size):
     return matrix @ x, matrix_ @ size
 
 
-def LearnableToMeBlock(tome_container, r, dim, q_only = False):
+def LearnableToMeBlock(tome_container, r, dim, q_only = False, learnable_merge = 0, learnable_loss = 0):
     class Learnable(nn.Module):
         def __init__(self):
             super().__init__()
@@ -555,7 +683,7 @@ def LearnableToMeBlock(tome_container, r, dim, q_only = False):
             else:
                 q_, k_ = rearrange(q_, "b s (i d) -> i b s d", i=2)
 
-            x_, size_, loss = _qk_merge_grad1(self.r, x, q_, k_, size)
+            x_, size_, loss = _merge_grad(self.training, self.r, x, q_, k_, size, learnable_merge, learnable_loss)
             self.compression_loss = loss
 
             return x_, size_
