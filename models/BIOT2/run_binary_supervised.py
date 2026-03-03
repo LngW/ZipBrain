@@ -31,7 +31,7 @@ from torch.profiler import profile, ProfilerActivity, record_function
 class LitModel_finetune(pl.LightningModule):
     def __init__(self, args, model):
         super().__init__()
-        self.model = model
+        self.model : torch.nn.Module = model
         self.threshold = 0.5
         self.args = args
 
@@ -125,14 +125,14 @@ class LitModel_finetune(pl.LightningModule):
         return result
 
     def configure_optimizers(self):
-        assert isinstance(self.model, torch.nn.Module)
-        params = self.model.named_parameters()
-        base_biot = [p for name, p in params if 'transformer' not in name]
-        transformers = [p for name, p in params if 'transformer' in name]
-        groups = [
-            {'params': base_biot},
-            # {'params': transformers, 'lr': self.args.lr * 0.2},
-        ]
+        # assert isinstance(self.model, torch.nn.Module)
+        # params = self.model.named_parameters()
+        # base_biot = [p for name, p in params if 'transformer' not in name]
+        # transformers = [p for name, p in params if 'transformer' in name]
+        # groups = [
+        #     {'params': base_biot},
+        #     # {'params': transformers, 'lr': self.args.lr * 0.2},
+        # ]
         optimizer = torch.optim.AdamW(
             self.model.parameters(),
             # groups,
@@ -140,7 +140,7 @@ class LitModel_finetune(pl.LightningModule):
             weight_decay=self.args.weight_decay,
         )
 
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [5, 10, 20, 40], gamma=1/1.41)
+        # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [5, 10, 20, 40], gamma=1/1.41)
 
         return [optimizer]  #, [scheduler]
     
@@ -468,11 +468,13 @@ def supervised(args):
 
     if args.profile:
         # prof_dir = f'./{args.workspace}/profiles'
+        torch.cuda.memory._record_memory_history()
         with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], with_stack=True) as prof:
             profiling_func()
 
         prof_dir.mkdir(exist_ok=True)
         prof.export_chrome_trace(str(prof_dir / f'{args.log_dir}_{time.time_ns() % (10 ** 8)}.json'))
+        torch.cuda.memory._dump_snapshot(str(prof_dir / "dump_snapshot.pickle"))
     else:
         profiling_func()
     logger.finalize('')

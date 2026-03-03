@@ -127,11 +127,12 @@ def prepare_model(args) -> torch.nn.Module:
 
     return model
 
-def calculate_metrics(y_hat, y_ground):
+def calculate_metrics(y_hat, y_ground, threshold = None):
     if (
         sum(y_ground) * (len(y_ground) - sum(y_ground)) != 0
     ):  # to prevent all 0 or all 1 and raise the AUROC error
-        threshold = np.sort(y_hat)[-int(np.sum(y_ground))]
+        if threshold is None:
+            threshold = np.sort(y_hat)[-int(np.sum(y_ground))]
         y_pred = np.empty_like(y_hat)
         y_pred[y_hat >= threshold] = 1
         y_pred[y_hat < threshold] = 0

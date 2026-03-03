@@ -1,5 +1,5 @@
 #!/bin/bash
-workspace='learnable_baseline_lin_896_5e-10_dropout5_attached'
+workspace='learnable_merge0_lin_896_5e-10_dropout5_attached'
 workspace="workspace/${workspace}"
 common_args=(
     # --epochs 2
@@ -51,7 +51,7 @@ run_seed()
     done
 }
 
-for r in "285 0 0 0" "266 0 0 0" "228 0 0 0" "152 0 0 0" "76 0 0 0" "38 0 0 0" "19 0 0 0"; do
+for r in "285 0 0 0" "266 0 0 0" "228 0 0 0" "152 0 0 0" "152 76 0 0" "152 76 38 0" "152 76 38 19"; do
     for variant in "l_tome_0_0" "l_tome_0_1" "l_tome_0_2" "l_tome_0_3" ; do
         run_seed $variant "$r" 19
     done

@@ -443,6 +443,7 @@ def RunTimeLengthToMeBlock(tome_container, r, dim):
 
     return RTLToMeBlock()
 
+# The original version
 def _qk_merge0(r, x, q, k, size):
     bsz, seq, dim = x.shape
     r = min(max(r, 0), seq - 1) # keep at least one token
@@ -461,7 +462,6 @@ def _qk_merge0(r, x, q, k, size):
         similarity_ : torch.Tensor = torch.exp(similarity)
         importance = similarity_.sum(-1) - torch.diagonal(similarity_, 0, -2, -1) # so similarity to itself do not affect
 
-    # importance = torch.diagonal_scatter(similarity, torch.zeros_like(similarity[..., 0]), 0, -2, -1).sum(-1)
     top_v, top_idx = torch.topk(importance, seq - r)
 
     matrix = similarity.gather(-2, top_idx[..., None].expand(-1, -1, seq))
@@ -469,16 +469,14 @@ def _qk_merge0(r, x, q, k, size):
     matrix.scatter_(-1, top_idx[..., None], 1)
 
     matrix_ = torch.zeros_like(matrix)
-    matrix_.scatter_(-2, matrix.argmax(-2, True), 0.9) # merge to its most similar one
-    matrix_ = matrix_ + (0.1 / (seq - r))
+    matrix_.scatter_(-2, matrix.argmax(-2, True), 1) # merge to its most similar one
 
     matrix = matrix * matrix_
-    # matrix = matrix + (1 - matrix.sum(-2, True)) / (seq - r)
-    # matrix = 
     matrix = matrix / matrix.sum(-1, True)
 
     return matrix @ x, matrix_ @ size, similarity
 
+# The soft-label version
 def _qk_merge1(r, x, q, k, size):
     bsz, seq, dim = x.shape
     r = min(max(r, 0), seq - 1) # keep at least one token
@@ -497,7 +495,6 @@ def _qk_merge1(r, x, q, k, size):
         similarity_ : torch.Tensor = torch.exp(similarity)
         importance = similarity_.sum(-1) - torch.diagonal(similarity_, 0, -2, -1) # so similarity to itself do not affect
 
-    # importance = torch.diagonal_scatter(similarity, torch.zeros_like(similarity[..., 0]), 0, -2, -1).sum(-1)
     top_v, top_idx = torch.topk(importance, seq - r)
 
     matrix = similarity.gather(-2, top_idx[..., None].expand(-1, -1, seq))
@@ -505,12 +502,10 @@ def _qk_merge1(r, x, q, k, size):
     matrix.scatter_(-1, top_idx[..., None], 1)
 
     matrix_ = torch.zeros_like(matrix)
-    matrix_.scatter_(-2, matrix.argmax(-2, True), 0.9) # merge to its most similar one
+    matrix_.scatter_(-2, matrix.argmax(-2, True), 0.9) # soft-labeled, we assign 0.9 to the max one, and 0.1 / (seq - r) is evenly assigned to all
     matrix_ = matrix_ + (0.1 / (seq - r))
 
     matrix = matrix * matrix_
-    # matrix = matrix + (1 - matrix.sum(-2, True)) / (seq - r)
-    # matrix = 
     matrix = matrix / matrix.sum(-1, True)
 
     return matrix @ x, matrix_ @ size, similarity
