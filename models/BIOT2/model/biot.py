@@ -179,6 +179,8 @@ class BIOTEncoder(nn.Module):
         # (batch_size, emb)
         with record_function('biot_transformer'):
             emb = self.transformer(emb).mean(dim=1)
+        
+        self.tome_container['size'] = None
         return emb
 
 

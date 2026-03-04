@@ -82,6 +82,14 @@ class Attention(nn.Module):
         self.linear = linear
         self.top_k = top_k
         self.flash = not linear and top_k == 0 and flash
+        self.merge = kwargs.get('merge', False)
+
+        if self.merge:
+            self.tome = create_tome_block(
+                kwargs['tome_variant'], kwargs['tome_container'], kwargs['tome_r'], dim
+            )
+        else:
+            self.tome = lambda x, k: x
 
     def __sa_attn(self, x, q, k, v):
         if self.flash:
@@ -128,10 +136,14 @@ class Attention(nn.Module):
         qkv = self.qkv_proj(x)
         q, k, v = rearrange(qkv, "b n (p h d) -> p b h n d", p=3, h=H, d=HD) #.permute(2, 0, 3, 1, 4)
 
+        q_ = rearrange(q, "b h s d -> (b h) s d")
+        q_ = self.tome(q_, q_)
+        q_ = rearrange(q_, "(b h) s d -> b h s d", h=H)
+
         if self.linear:
-            out = self.__li_attn(x, q, k, v)
+            out = self.__li_attn(x, q_, k, v)
         else:
-            out = self.__sa_attn(x, q, k, v)
+            out = self.__sa_attn(x, q_, k, v)
 
         # out = self.out_proj(out)
         # out = self.dropout(out)
@@ -142,7 +154,18 @@ class Block(nn.Module):
     def __init__(self, dim, heads, attn_dropout, ffn_dropout, linear, top_k, flash, tome_variant, tome_r, tome_container, *args, **kwargs):
         super().__init__()
         self.norm1 = nn.LayerNorm(dim)
-        self.attn = Attention(dim, heads, attn_dropout, linear = linear, top_k = top_k, flash=flash)
+        self.attn = Attention(
+            dim, 
+            heads, 
+            attn_dropout, 
+            linear = linear, 
+            top_k = top_k, 
+            flash=flash,
+            merge=kwargs.get('merge_in_attn', False),
+            tome_variant=tome_variant,
+            tome_container=tome_container,
+            tome_r = tome_r
+            )
         self.norm2 = nn.LayerNorm(dim)
         self.ffn = nn.Sequential(
             nn.Linear(dim, 4 * dim),
@@ -150,21 +173,27 @@ class Block(nn.Module):
             nn.Dropout(ffn_dropout),
             nn.Linear(4 * dim, dim)
         )
-
-        self.tome = create_tome_block(tome_variant, tome_container, tome_r, dim)
+        self.merge_in_attn = kwargs.get('merge_in_attn', False)
+        if not self.merge_in_attn:
+            self.tome = create_tome_block(tome_variant, tome_container, tome_r, dim)
+        else:
+            self.tome = lambda x, k: x
 
         # print(type(self.tome))
     
-    def forward(self, x, size):
+    def forward(self, x):
         dx, k = self.attn(self.norm1(x))
-        x = x + dx
+        if self.merge_in_attn:
+            x = dx
+        else:
+            x = x + dx
 
         # if self.tome_r > 0 and self.tome_r < x.shape[1]:
-        x, size = self.tome(x, k.detach(), size)
+        x = self.tome(x, k.detach())
 
         x = x + self.ffn(self.norm2(x))
 
-        return x, size
+        return x
 
 class Encoder(nn.Module):
     def __init__(self, depth, tome_r, tome_variant, **kwargs):
@@ -195,7 +224,6 @@ class Encoder(nn.Module):
         self.layers = layers
 
     def forward(self, x):
-        size = None
         for layer in self.layers:
-            x, size = layer(x, size)
+            x = layer(x)
         return x

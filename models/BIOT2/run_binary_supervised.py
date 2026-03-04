@@ -406,6 +406,7 @@ def supervised(args):
                 flash=args.flash,
                 tome_variant=args.tome_variant,
                 cls_token = args.cls_token,
+                merge_in_attn=args.merge_in_attn,
             )
             if args.pretrain_model_path and (args.sampling_rate == 200):
                 model.biot.load_state_dict(torch.load(args.pretrain_model_path))
@@ -534,6 +535,7 @@ if __name__ == "__main__":
     # parser.add_argument("--rtl_tome", action='store_true', default=False)
     parser.add_argument("--tome_variant", type=str, nargs='+', default=[])
     parser.add_argument("--cls_token", action='store_true', default=False)
+    parser.add_argument("--merge_in_attn", action='store_true', default=False)
     # end of modification
 
     args = parser.parse_args()

@@ -5,8 +5,8 @@ from torch import nn
 from einops import rearrange
 
 def create_tome_block(variant : str, container, r, dim):
-    if variant == 'random':
-        return RandomBlock(container, r, dim)
+    # if variant == 'random':
+    #     return RandomBlock(container, r, dim)
     if variant == 'tome':
         return ToMeBlock(container, r, dim, use_x=False)
     elif variant == 'tomex':
@@ -60,8 +60,7 @@ def create_tome_block(variant : str, container, r, dim):
     elif variant == 'layernorm':
         return NormOnly(dim)
     
-
-    return lambda x, k, size: (x, size)
+    return lambda x, k: x
 
 def softsort(x : torch.Tensor, metric : torch.Tensor, tau : float, descending : bool):
     val, idx = torch.sort(metric, dim=-2, descending=False)
@@ -81,31 +80,31 @@ def NormOnly(dim):
             super().__init__()
             self.norm = nn.LayerNorm(dim)
         
-        def forward(self, x, k, size):
-            return self.norm(x), size
+        def forward(self, x, k):
+            return self.norm(x)
     
     return NormOnly()
 
-def RandomBlock(tome_container, r, dim):
-    class RandomBlock(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.tome_container = tome_container
-            self.r = r
-            self.dim = dim
+# def RandomBlock(tome_container, r, dim):
+#     class RandomBlock(nn.Module):
+#         def __init__(self):
+#             super().__init__()
+#             self.tome_container = tome_container
+#             self.r = r
+#             self.dim = dim
         
-        def forward(self, x, k, size_old):
-            bsz, seq, dim = x.shape
-            with torch.random.fork_rng(x.device):
-                tmp = torch.randperm(seq)
-                src_idx = tmp[:r].view(1, -1, 1).expand(bsz, -1, dim)
-                tar_idx = tmp[r:].view(1, -1, 1).expand(bsz, -1, dim)
+#         def forward(self, x, k):
+#             bsz, seq, dim = x.shape
+#             with torch.random.fork_rng(x.device):
+#                 tmp = torch.randperm(seq)
+#                 src_idx = tmp[:r].view(1, -1, 1).expand(bsz, -1, dim)
+#                 tar_idx = tmp[r:].view(1, -1, 1).expand(bsz, -1, dim)
             
-            src = torch.gather(x, -2, src_idx)
-            tar = torch.gather(x, -2, tar_idx)
+#             src = torch.gather(x, -2, src_idx)
+#             tar = torch.gather(x, -2, tar_idx)
 
-            q = tar / tar.norm(dim=-1, keepdim=True)
-            k = src / src.norm(dim=-1, keepdim=True)
+#             q = tar / tar.norm(dim=-1, keepdim=True)
+#             k = src / src.norm(dim=-1, keepdim=True)
 
             
 
@@ -117,8 +116,9 @@ def ToMeBlock(tome_container, r, dim, use_x=False):
             super().__init__()
             self.r = r
             self.use_x = use_x
+            self.tome_container = tome_container
 
-        def forward(self, x, k, size_old):
+        def forward(self, x, k):
             # bsz, hd, seq, _ = k.shape
             if self.use_x:
                 k_ = x.detach()
@@ -131,9 +131,13 @@ def ToMeBlock(tome_container, r, dim, use_x=False):
                 self.r
             )
 
+            size_old = self.tome_container.get('size', None)
+
             x, size = merge_wavg_sum(merge, x, size_old)
 
-            return x, size
+            self.tome_container['size'] = size
+
+            return x
         
     return ToMeBlock()
 
@@ -143,8 +147,13 @@ def FullToMeBlock(tome_container, r, dim, use_x=False):
             super().__init__()
             self.r = r
             self.use_x = use_x
+            self.tome_container = tome_container
 
-        def forward(self, x, k, size_old):
+        def forward(self, x, k):
+            if self.r <= 0:
+                return x
+
+            size_old = self.tome_container.get('size', None)
             if size_old is None:
                 size_old = torch.ones_like(x[..., 0:1])
             
@@ -152,7 +161,11 @@ def FullToMeBlock(tome_container, r, dim, use_x=False):
                 k_ = x.detach()
             else:
                 k_ = rearrange(k.detach(), "b h s d -> b s (h d)")
-            return _qk_merge(self.r, x, k_, k_, size_old)
+
+            x_, size = _qk_merge(self.r, x, k_, k_, size_old)
+            self.tome_container['size'] = size
+
+            return x_
         
     return ToMeBlock()
 
@@ -164,12 +177,16 @@ def FullChannelToMeBlock(tome_container, r, dim, use_x=False):
             self.tome_container = tome_container
             self.use_x = use_x
         
-        def forward(self, x, k, size_old):
+        def forward(self, x, k):
+            if self.r <= 0:
+                return x
+
             bsz, chs, seq, dim = self.tome_container['shape']
             wrap = partial(rearrange, pattern="b (c s) d -> (b s) c d", s=seq)
             unwrap = partial(rearrange, pattern="(b s) c d -> b (c s) d", s=seq)
 
             x = wrap(x)
+            size_old = self.tome_container.get('size', None)
             size_old = wrap(size_old) if size_old is not None else torch.ones_like(x[..., 0:1])
 
             if self.use_x:
@@ -178,13 +195,15 @@ def FullChannelToMeBlock(tome_container, r, dim, use_x=False):
                 k_ = rearrange(k.detach(), "b h (c s) d -> (b s) c (h d)", c=chs, s=seq)
 
             x_, size_ = _qk_merge(self.r, x, k_, k_, size_old)
+            size_ = unwrap(size_)
+            self.tome_container['size'] = size_
 
             chs = x_.shape[1]
             self.tome_container['shape'] = bsz, chs, seq, dim
             # x_ = rearrange(x_, "(b s) c d -> b (c s) d", c=chs, s=seq)
             # size_ = rearrange(size_, "(b s) c d -> b (c s) d", c=chs, s=seq)
 
-            return unwrap(x_), unwrap(size_)
+            return unwrap(x_)
 
     return ToMeBlock()
 
@@ -196,12 +215,16 @@ def FullTimestepToMeBlock(tome_container, r, dim, use_x=False):
             self.tome_container = tome_container
             self.use_x = use_x
         
-        def forward(self, x, k, size_old):
+        def forward(self, x, k):
+            if self.r <= 0:
+                return x
+
             bsz, chs, seq, dim = self.tome_container['shape']
             wrap = partial(rearrange, pattern="b (c s) d -> (b c) s d", c=chs)
             unwrap = partial(rearrange, pattern="(b c) s d -> b (c s) d", c=chs)
 
             x = wrap(x)
+            size_old = self.tome_container.get('size', None)
             size_old = wrap(size_old) if size_old is not None else torch.ones_like(x[..., 0:1])
 
             if self.use_x:
@@ -210,13 +233,15 @@ def FullTimestepToMeBlock(tome_container, r, dim, use_x=False):
                 k_ = rearrange(k.detach(), "b h (c s) d -> (b c) s (h d)", c=chs, s=seq)
 
             x_, size_ = _qk_merge(self.r, x, k_, k_, size_old)
+            size_ = unwrap(size_)
+            self.tome_container['size'] = size_
 
             seq = x_.shape[1]
             self.tome_container['shape'] = bsz, chs, seq, dim
             # x_ = rearrange(x_, "(b s) c d -> b (c s) d", c=chs, s=seq)
             # size_ = rearrange(size_, "(b s) c d -> b (c s) d", c=chs, s=seq)
 
-            return unwrap(x_), unwrap(size_)
+            return unwrap(x_)
 
     return ToMeBlock()
 
@@ -228,7 +253,10 @@ def ChannelToMeBlock(tome_container, r, dim):
             self.tome_container = tome_container
             self.r = r
 
-        def forward(self, x, k, size_old):
+        def forward(self, x, k):
+            if self.r <= 0:
+                return x
+
             bsz, chs, seq, dim = self.tome_container['shape']
 
             assert chs * seq == x.shape[1]
@@ -236,6 +264,7 @@ def ChannelToMeBlock(tome_container, r, dim):
             k = k.transpose(1, 2).reshape(bsz, chs, seq, dim).transpose(1, 2).flatten(0, 1)
             x = x.reshape(bsz, chs, seq, dim).transpose(1, 2).flatten(0, 1)
             # now x and k are all size of (bsz * seq, chs, dim)
+            size_old = self.tome_container.get('size', None)
             if size_old is None:
                 size_old = torch.ones_like(x[..., 0:1])
             else:
@@ -250,8 +279,9 @@ def ChannelToMeBlock(tome_container, r, dim):
             x = x.reshape(bsz, seq, chs, dim).transpose(1, 2).flatten(1, 2)
             size = rearrange(size, "(b s) c d -> b (c s) d", c=chs, s=seq)
             self.tome_container['shape'] = [bsz, chs, seq, dim]
+            self.tome_container['size'] = size
 
-            return x, size
+            return x
         
     return ChannelToMeBlock()
 
@@ -263,13 +293,17 @@ def DoubleChannelToMeBlock(tome_container, r, dim):
             self.tome_container = tome_container
             self.r = r
 
-        def forward(self, x, k, size_old):
+        def forward(self, x, k):
+            if self.r <= 0:
+                return x
+
             bsz, chs, seq, dim = self.tome_container['shape']
 
             assert chs * seq == x.shape[1]
 
             k = k.transpose(1, 2).reshape(bsz, chs, seq, dim).transpose(1, 2).flatten(0, 1)
             x = x.reshape(bsz, chs, seq, dim).transpose(1, 2).flatten(0, 1)
+            size_old = self.tome_container.get('size', None)
             if size_old is not None:
                 size_old = rearrange(size_old, "b (c s) d -> (b s) c d", c=chs, s=seq)
             # now x and k are all size of (bsz * seq, chs, dim)
@@ -288,10 +322,11 @@ def DoubleChannelToMeBlock(tome_container, r, dim):
             chs = x.shape[1]
             x = x.reshape(bsz, seq, chs, dim).transpose(1, 2).flatten(1, 2)
             size = rearrange(size, "(b s) c d -> b (c s) d", c=chs, s=seq)
+            self.tome_container['size'] = size
 
             self.tome_container['shape'] = [bsz, chs, seq, dim]
 
-            return x, size
+            return x
         
     return DoubleChannelToMeBlock()
 
@@ -303,7 +338,10 @@ def TimestepToMeBlock(tome_container, r, dim):
             self.tome_container = tome_container
             self.r = r
 
-        def forward(self, x, k, size_old):
+        def forward(self, x, k):
+            if self.r <= 0:
+                return x
+
             bsz, chs, seq, dim = self.tome_container['shape']
 
             assert chs * seq == x.shape[1]
@@ -311,6 +349,7 @@ def TimestepToMeBlock(tome_container, r, dim):
             # the shape of k is (bsz, n_head, chs*seq, dim_head)
             k = rearrange(k, "b h (c s) d -> (b c) s (h d)", c=chs, s=seq)
             x = rearrange(x, "b (c s) d -> (b c) s d", c=chs, s=seq)
+            size_old = self.tome_container.get('size', None)
             if size_old is not None:
                 size_old = rearrange(size_old, "b (c s) d -> (b c) s d", c=chs, s=seq)
             # now x and k are all size of (bsz * chs, seq, dim)
@@ -325,8 +364,9 @@ def TimestepToMeBlock(tome_container, r, dim):
 
             x = rearrange(x, "(b c) s d -> b (c s) d", c = chs, s = seq)
             size = rearrange(size, "(b c) s d -> b (c s) d", c = chs, s = seq)
-            # x = x.reshape(bsz, chs, seq, dim).flatten(1, 2)
-            return x, size
+            self.tome_container['size'] = size
+
+            return x
         
     return TimestepToMeBlock()
 
@@ -338,7 +378,10 @@ def DoubleTimestepToMeBlock(tome_container, r, dim):
             self.tome_container = tome_container
             self.r = r
 
-        def forward(self, x, k, size_old):
+        def forward(self, x, k):
+            if self.r <= 0:
+                return x
+
             bsz, chs, seq, dim = self.tome_container['shape']
 
             assert chs * seq == x.shape[1]
@@ -346,6 +389,7 @@ def DoubleTimestepToMeBlock(tome_container, r, dim):
             # the shape of k is (bsz, n_head, chs*seq, dim_head)
             k = rearrange(k, "b h (c s) d -> (b c) s (h d)", c=chs, s=seq)
             x = rearrange(x, "b (c s) d -> (b c) s d", c=chs, s=seq)
+            size_old = self.tome_container.get('size', None)
             if size_old is not None:
                 size_old = rearrange(size_old, "b (c s) d -> (b c) s d", c=chs, s=seq)
             # now x and k are all size of (bsz * chs, seq, dim)
@@ -365,7 +409,9 @@ def DoubleTimestepToMeBlock(tome_container, r, dim):
 
             x = rearrange(x, "(b c) s d -> b (c s) d", c = chs, s = seq)
             size = rearrange(size, "(b c) s d -> b (c s) d", c = chs, s = seq)
-            return x, size
+            self.tome_container['size'] = size
+
+            return x
         
     return DoubleTimestepToMeBlock()
 
@@ -774,10 +820,11 @@ def LearnableToMeBlock(tome_container, r, dim, q_only = False, learnable_merge =
             self.tome_container = tome_container
             self.q_only = q_only
         
-        def forward(self, x, k, size):
+        def forward(self, x, k):
             if self.r <= 0:
-                return x, size
+                return x
             
+            size = self.tome_container.get('size', None)
             if size is None:
                 size = torch.ones_like(x[..., 0:1])
 
@@ -790,9 +837,10 @@ def LearnableToMeBlock(tome_container, r, dim, q_only = False, learnable_merge =
                 q_, k_ = rearrange(q_, "b s (i d) -> i b s d", i=2)
 
             x_, size_, loss = _merge_grad(self.training, self.r, x, q_, k_, size, learnable_merge, learnable_loss)
+            self.tome_container['size'] = size_
             self.compression_loss = loss
 
-            return x_, size_
+            return x_
 
     return Learnable()
 
@@ -805,10 +853,11 @@ def LearnableChannel(tome_container, r, dim, q_only = False):
             self.proj = nn.Linear(dim, dim & -2)
             self.q_only = q_only
         
-        def forward(self, x, k, size):
+        def forward(self, x, k):
             if self.r <= 0:
-                return x, size
+                return x
 
+            size = self.tome_container.get('size', None)
             if size is None:
                 size = torch.ones_like(x[..., 0:1])
             
@@ -829,8 +878,9 @@ def LearnableChannel(tome_container, r, dim, q_only = False):
             self.tome_container['shape'] = bsz, chs, seq, dim
             x_ = rearrange(x_, "(b s) c d -> b (c s) d", c=chs, s=seq)
             size_ = rearrange(size_, "(b s) c d -> b (c s) d", c=chs, s=seq)
+            self.tome_container['size'] = size_
 
-            return x_, size_
+            return x_
     
     return LearnableCH()
 
@@ -843,10 +893,11 @@ def LearnableTimestep(tome_container, r, dim, q_only = False):
             self.proj = nn.Linear(dim, dim & -2)
             self.q_only = q_only
         
-        def forward(self, x, k, size):
+        def forward(self, x, k):
             if self.r <= 0:
-                return x, size
+                return x
 
+            size = self.tome_container.get('size', None)
             if size is None:
                 size = torch.ones_like(x[..., 0:1])
             
@@ -867,8 +918,9 @@ def LearnableTimestep(tome_container, r, dim, q_only = False):
             self.tome_container['shape'] = bsz, chs, seq, dim
             x_ = rearrange(x_, "(b c) s d -> b (c s) d", c=chs, s=seq)
             size_ = rearrange(size_, "(b c) s d -> b (c s) d", c=chs, s=seq)
+            self.tome_container['size'] = size_
 
-            return x_, size_
+            return x_
     
     return LearnableTS()
 
