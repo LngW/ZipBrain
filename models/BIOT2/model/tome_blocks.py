@@ -628,6 +628,42 @@ def _qk_merge2(r, x, q, k, size):
 
     return matrix @ x, matrix_ @ size, similarity
 
+def _qk_merge2s(r, x, q, k, size):
+    bsz, seq, dim = x.shape
+    r = min(max(r, 0), seq - 1) # keep at least one token
+
+    if r == 0:
+        return x, size
+    q_only = (q is k) or (k is None)
+    if q_only:
+        q = q / q.norm(dim=-1, keepdim=True)
+        thre_base = math.sqrt(8 / q.size(-1) * math.log(10))
+        similarity : torch.Tensor = q @ q.transpose(-1, -2)
+        importance = torch.sigmoid(similarity * 4 / thre_base).sum(-1)
+    else:
+        q = q / q.norm(dim=-1, keepdim=True)
+        k = k / k.norm(dim=-1, keepdim=True)
+        thre_base = math.sqrt(8 / q.size(-1) * math.log(10))
+        similarity : torch.Tensor = q @ k.transpose(-1, -2)
+        similarity_ : torch.Tensor = torch.sigmoid(similarity * 4 / thre_base)
+        importance = similarity_.sum(-1) - torch.diagonal(similarity_, 0, -2, -1) # so similarity to itself do not affect
+
+    _, top_idx = torch.topk(importance, seq - r)
+
+    matrix = similarity.gather(-2, top_idx[..., None].expand(-1, -1, seq))
+    matrix = (matrix + 1) / 2
+    matrix.scatter_(-1, top_idx[..., None], 1)
+
+    matrix_ = torch.zeros_like(matrix)
+    # matrix_.scatter_(-2, matrix.argmax(-2, True), 1) # merge to its most similar one
+    matrix_.scatter_(-2, matrix.argmax(-2, True), 0.9) # soft-labeled, we assign 0.9 to the max one, and 0.1 / (seq - r) is evenly assigned to all
+    matrix_ = matrix_ + (0.1 / (seq - r))
+
+    matrix = matrix * matrix_
+    matrix = matrix / matrix.sum(-1, True)
+
+    return matrix @ x, matrix_ @ size, similarity
+
 def _qk_merge2g(r, x, q, k, size):
     bsz, seq, dim = x.shape
     r = min(max(r, 0), seq - 1) # keep at least one token

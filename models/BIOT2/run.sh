@@ -1,5 +1,5 @@
 #!/bin/bash
-workspace='learnable_comparison_lr2e-4'
+workspace='learnable_merge2_896_5e-4'
 workspace="workspace/${workspace}"
 common_args=(
     # --epochs 2
@@ -10,7 +10,7 @@ common_args=(
     --hop_length 100
     --sample_length 10
     --batch_size 896
-    --lr 2e-4
+    --lr 5e-4
     --model BIOT
     --num_workers 8
     --subset 100
@@ -51,9 +51,9 @@ run_seed()
     done
 }
 
-run_seed "baseline" 0 1
+# run_seed "baseline" 0 1
 for r in "285 0 0 0" "266 0 0 0" "228 0 0 0" "152 0 0 0" "152 76 0 0" "152 76 38 0" "152 76 38 19"; do
-    for variant in "l_tome_0_1" "l_tome_0_3" "l_tome_1_1" "l_tome_1_3"; do
+    for variant in "l_tome_2_0" "l_tome_2_1" "l_tome_2s_0" "l_tome_2s_1"; do
         run_seed $variant "$r" 19
     done
 done
