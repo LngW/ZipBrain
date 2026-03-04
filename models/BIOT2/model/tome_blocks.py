@@ -5,6 +5,8 @@ from torch import nn
 from einops import rearrange
 
 def create_tome_block(variant : str, container, r, dim):
+    if variant == 'random':
+        return RandomBlock(container, r, dim)
     if variant == 'tome':
         return ToMeBlock(container, r, dim, use_x=False)
     elif variant == 'tomex':
@@ -35,7 +37,7 @@ def create_tome_block(variant : str, container, r, dim):
         if len(configs) > 1:
             gct = configs[1]
         if len(configs) > 2:
-            merge = int(configs[2])
+            merge = configs[2]
         if len(configs) > 3:
             loss = int(configs[3])
         if len(configs) > 4:
@@ -61,6 +63,18 @@ def create_tome_block(variant : str, container, r, dim):
 
     return lambda x, k, size: (x, size)
 
+def softsort(x : torch.Tensor, metric : torch.Tensor, tau : float, descending : bool):
+    val, idx = torch.sort(metric, dim=-2, descending=False)
+    dist = -torch.square(metric.transpose(-2, -1) - val)
+    weight = torch.softmax(dist / tau, dim = -1)
+    return weight @ x
+
+# @torch.jit.script
+def softtopk(x : torch.Tensor, metric : torch.Tensor, k : int, tau : float, largest : bool = True, sorted : bool = True):
+    val, idx = torch.topk(metric, k, dim=-1, largest=largest, sorted=sorted)
+    weight = torch.softmax(-torch.square(metric[..., None, :] - val[..., None]) / tau, dim = -1)
+    return torch.bmm(weight, x), val, idx
+
 def NormOnly(dim):
     class NormOnly(nn.Module):
         def __init__(self):
@@ -72,70 +86,28 @@ def NormOnly(dim):
     
     return NormOnly()
 
-class __GlobalBlock():
-    def __init__(self, tome_container, r, dim):
-        self.tome_container = tome_container
-        self.r = r
-        self.dim = dim
-    
-    def _resizer(self):
-        return lambda x : x, lambda x : x
-    
-    def _update_shape(self, x):
-        pass
-
-    def _real_forward(self, x, k, size):
-        raise NotImplementedError()
-
-    def forward(self, x, k, size):
-        if self.r <= 0:
-            return x, size
+def RandomBlock(tome_container, r, dim):
+    class RandomBlock(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.tome_container = tome_container
+            self.r = r
+            self.dim = dim
         
-        if k is not None:
-            k = rearrange(k, "b h s d -> b s (h d)")
+        def forward(self, x, k, size_old):
+            bsz, seq, dim = x.shape
+            with torch.random.fork_rng(x.device):
+                tmp = torch.randperm(seq)
+                src_idx = tmp[:r].view(1, -1, 1).expand(bsz, -1, dim)
+                tar_idx = tmp[r:].view(1, -1, 1).expand(bsz, -1, dim)
+            
+            src = torch.gather(x, -2, src_idx)
+            tar = torch.gather(x, -2, tar_idx)
 
-        resize_to, resize_back = self._resizer()
-        x = resize_to(x)
-        k = resize_to(k)
+            q = tar / tar.norm(dim=-1, keepdim=True)
+            k = src / src.norm(dim=-1, keepdim=True)
 
-        if size is None:
-            size = torch.ones_like(x[..., 0:1])
-        else:
-            size = resize_to(size)
-        
-        x, size = self._real_forward(x, k, size)
-
-        self._update_shape(x)
-        x = resize_back(x)
-        size = resize_back(size)
-
-        return x, size
-
-class __ChannelBlock(__GlobalBlock):
-    def __init__(self, tome_container, r, dim):
-        super().__init__(tome_container, r, dim)
-
-    def _resizer(self):
-        bsz, chs, seq, dim = self.tome_container['shape']
-        resize = partial(rearrange, s=seq)
-        return partial(resize, "b (c s) d -> (b s) c d"), partial(resize, "(b s) c d -> b (c s) d")
-
-    def _update_shape(self, x):
-        bsz, chs, seq, dim = self.tome_container['shape']
-        self.tome_container['shape'] = bsz, x.shape[1], seq, dim
-
-class __ChannelBlock(__GlobalBlock):
-    def __init__(self, tome_container, r, dim):
-        super().__init__(tome_container, r, dim)
-
-    def _resizer(self):
-        bsz, chs, seq, dim = self.tome_container['shape']
-        resize = partial(rearrange, c=chs)
-        return partial(resize, "b (c s) d -> (b c) s d"), partial(resize, "(b c) s d -> b (c s) d")
-
-    def _update_shape(self, x):
-        bsz, chs, seq, dim = self.tome_container['shape']
-        self.tome_container['shape'] = bsz, chs, x.shape[1], dim
+            
 
 def ToMeBlock(tome_container, r, dim, use_x=False):
     from .tome.merge import bipartite_soft_matching, merge_wavg_sum
@@ -476,6 +448,38 @@ def _qk_merge0(r, x, q, k, size):
 
     return matrix @ x, matrix_ @ size, similarity
 
+def _qk_merge0g(r, x, q, k, size):
+    bsz, seq, dim = x.shape
+    r = min(max(r, 0), seq - 1) # keep at least one token
+
+    if r == 0:
+        return x, size
+    q_only = (q is k) or (k is None)
+    if q_only:
+        q = q / q.norm(dim=-1, keepdim=True)
+        similarity : torch.Tensor = q @ q.transpose(-1, -2)
+        importance = torch.exp(similarity).sum(-1)
+    else:
+        q = q / q.norm(dim=-1, keepdim=True)
+        k = k / k.norm(dim=-1, keepdim=True)
+        similarity : torch.Tensor = q @ k.transpose(-1, -2)
+        similarity_ : torch.Tensor = torch.exp(similarity)
+        importance = similarity_.sum(-1) - torch.diagonal(similarity_, 0, -2, -1) # so similarity to itself do not affect
+
+    matrix, _, top_idx = softtopk(similarity, importance, seq - r, 0.005)
+
+    # matrix = similarity.gather(-2, top_idx[..., None].expand(-1, -1, seq))
+    matrix = (matrix + 1) / 2
+    matrix.scatter_(-1, top_idx[..., None], 1)
+
+    matrix_ = torch.zeros_like(matrix)
+    matrix_.scatter_(-2, matrix.argmax(-2, True), 1) # merge to its most similar one
+
+    matrix = matrix * matrix_
+    matrix = matrix / matrix.sum(-1, True)
+
+    return matrix @ x, matrix_ @ size, similarity
+
 # The soft-label version
 def _qk_merge1(r, x, q, k, size):
     bsz, seq, dim = x.shape
@@ -510,6 +514,110 @@ def _qk_merge1(r, x, q, k, size):
 
     return matrix @ x, matrix_ @ size, similarity
 
+# The soft-label version
+def _qk_merge1g(r, x, q, k, size):
+    bsz, seq, dim = x.shape
+    r = min(max(r, 0), seq - 1) # keep at least one token
+
+    if r == 0:
+        return x, size
+    q_only = (q is k) or (k is None)
+    if q_only:
+        q = q / q.norm(dim=-1, keepdim=True)
+        similarity : torch.Tensor = q @ q.transpose(-1, -2)
+        importance = torch.exp(similarity).sum(-1)
+    else:
+        q = q / q.norm(dim=-1, keepdim=True)
+        k = k / k.norm(dim=-1, keepdim=True)
+        similarity : torch.Tensor = q @ k.transpose(-1, -2)
+        similarity_ : torch.Tensor = torch.exp(similarity)
+        importance = similarity_.sum(-1) - torch.diagonal(similarity_, 0, -2, -1) # so similarity to itself do not affect
+
+    matrix, _, top_idx = softtopk(similarity, importance, seq - r, 0.005)
+
+    # matrix = similarity.gather(-2, top_idx[..., None].expand(-1, -1, seq))
+    matrix = (matrix + 1) / 2
+    matrix.scatter_(-1, top_idx[..., None], 1)
+
+    matrix_ = torch.zeros_like(matrix)
+    matrix_.scatter_(-2, matrix.argmax(-2, True), 0.9) # soft-labeled, we assign 0.9 to the max one, and 0.1 / (seq - r) is evenly assigned to all
+    matrix_ = matrix_ + (0.1 / (seq - r))
+
+    matrix = matrix * matrix_
+    matrix = matrix / matrix.sum(-1, True)
+
+    return matrix @ x, matrix_ @ size, similarity
+
+def _qk_merge2(r, x, q, k, size):
+    bsz, seq, dim = x.shape
+    r = min(max(r, 0), seq - 1) # keep at least one token
+
+    if r == 0:
+        return x, size
+    q_only = (q is k) or (k is None)
+    if q_only:
+        q = q / q.norm(dim=-1, keepdim=True)
+        thre_base = math.sqrt(8 / q.size(-1) * math.log(10))
+        similarity : torch.Tensor = q @ q.transpose(-1, -2)
+        importance = torch.sigmoid(similarity * 4 / thre_base).sum(-1)
+    else:
+        q = q / q.norm(dim=-1, keepdim=True)
+        k = k / k.norm(dim=-1, keepdim=True)
+        thre_base = math.sqrt(8 / q.size(-1) * math.log(10))
+        similarity : torch.Tensor = q @ k.transpose(-1, -2)
+        similarity_ : torch.Tensor = torch.sigmoid(similarity * 4 / thre_base)
+        importance = similarity_.sum(-1) - torch.diagonal(similarity_, 0, -2, -1) # so similarity to itself do not affect
+
+    _, top_idx = torch.topk(importance, seq - r)
+
+    matrix = similarity.gather(-2, top_idx[..., None].expand(-1, -1, seq))
+    matrix = (matrix + 1) / 2
+    matrix.scatter_(-1, top_idx[..., None], 1)
+
+    matrix_ = torch.zeros_like(matrix)
+    matrix_.scatter_(-2, matrix.argmax(-2, True), 1) # merge to its most similar one
+
+    matrix = matrix * matrix_
+    matrix = matrix / matrix.sum(-1, True)
+
+    return matrix @ x, matrix_ @ size, similarity
+
+def _qk_merge2g(r, x, q, k, size):
+    bsz, seq, dim = x.shape
+    r = min(max(r, 0), seq - 1) # keep at least one token
+
+    if r == 0:
+        return x, size
+    q_only = (q is k) or (k is None)
+    if q_only:
+        q = q / q.norm(dim=-1, keepdim=True)
+        thre_base = math.sqrt(8 / q.size(-1) * math.log(10))
+        similarity : torch.Tensor = q @ q.transpose(-1, -2)
+        importance = torch.sigmoid(similarity * 4 / thre_base).sum(-1)
+        # importance = torch.sigmoid(similarity).sum(-1)
+    else:
+        q = q / q.norm(dim=-1, keepdim=True)
+        k = k / k.norm(dim=-1, keepdim=True)
+        thre_base = math.sqrt(8 / q.size(-1) * math.log(10))
+        similarity : torch.Tensor = q @ k.transpose(-1, -2)
+        similarity_ : torch.Tensor = torch.sigmoid(similarity * 4 / thre_base)
+        # similarity_ : torch.Tensor = torch.sigmoid(similarity)
+        importance = similarity_.sum(-1) - torch.diagonal(similarity_, 0, -2, -1) # so similarity to itself do not affect
+
+    matrix, _, top_idx = softtopk(similarity, importance, seq - r, 0.005)
+
+    # matrix = similarity.gather(-2, top_idx[..., None].expand(-1, -1, seq))
+    matrix = (matrix + 1) / 2
+    matrix.scatter_(-1, top_idx[..., None], 1)
+
+    matrix_ = torch.zeros_like(matrix)
+    matrix_.scatter_(-2, matrix.argmax(-2, True), 1) # merge to its most similar one
+
+    matrix = matrix * matrix_
+    matrix = matrix / matrix.sum(-1, True)
+
+    return matrix @ x, matrix_ @ size, similarity
+
 def _sst(input, thre, factor):
     # input = input
     output = torch.sigmoid(input * factor)
@@ -522,7 +630,7 @@ def _sst(input, thre, factor):
     # output[input < -thre] = (0-output)[input < -thre]
     return output
 
-def _qk_merge2(r, x, q, k, size):
+def _qk_merge4(r, x, q, k, size):
     bsz, seq, dim = x.shape
     r = min(max(r, 0), seq - 1) # keep at least one token
 
@@ -657,7 +765,7 @@ def _qk_consective_merge(r, x, q, k, size):
     return matrix @ x, matrix_ @ size
 
 
-def LearnableToMeBlock(tome_container, r, dim, q_only = False, learnable_merge = 0, learnable_loss = 0, attached = True):
+def LearnableToMeBlock(tome_container, r, dim, q_only = False, learnable_merge = '0', learnable_loss = 0, attached = True):
     class Learnable(nn.Module):
         def __init__(self):
             super().__init__()
