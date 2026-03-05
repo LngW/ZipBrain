@@ -1,3 +1,5 @@
+from functools import partial
+import math
 import os
 import argparse
 import pickle
@@ -29,11 +31,12 @@ from utils import TUABLoader, CHBMITLoader, PTBLoader, focal_loss, BCE
 from torch.profiler import profile, ProfilerActivity, record_function
 
 class LitModel_finetune(pl.LightningModule):
-    def __init__(self, args, model):
+    def __init__(self, args, model, steps_per_epoch):
         super().__init__()
         self.model : torch.nn.Module = model
         self.threshold = 0.5
         self.args = args
+        self.steps_per_epoch = steps_per_epoch
 
     def training_step(self, batch, batch_idx):
         X, y = batch
@@ -45,6 +48,7 @@ class LitModel_finetune(pl.LightningModule):
         self.log("Train/train_loss", loss)
         self.log("Mem/AllocMax", torch.cuda.max_memory_allocated() / 1024 / 1024)
         self.log("Mem/ReservMax", torch.cuda.max_memory_reserved() / 1024 / 1024)
+        self.log('lr', self.lr_schedulers().get_last_lr()[0], True, False)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -84,6 +88,8 @@ class LitModel_finetune(pl.LightningModule):
         self.log("val_pr_auc", result["pr_auc"], sync_dist=True)
         self.log("val_auroc", result["roc_auc"], sync_dist=True)
 
+        result = result.copy()
+        result['lr'] = self.lr_schedulers().get_last_lr()[0]
         result_ = 'Epoch {:>3d}:\t'.format(self.current_epoch) + (' ' * 4).join(['{}={:.6f}'.format(k, v) for k,v in result.items()])
         self.print(result_)
 
@@ -140,12 +146,35 @@ class LitModel_finetune(pl.LightningModule):
             weight_decay=self.args.weight_decay,
         )
 
+        # def schedule_lr(step, step_per_epoch):
+        #     warmup_part = 2 * step_per_epoch
+        #     plat_part = 2 * step_per_epoch
+        #     annealing_part = 18 * step_per_epoch
+        #     final_lr = 1 / 50
+            
+        #     if step > annealing_part:
+        #         return final_lr
+        #     elif step > plat_part:                
+        #         angle = (step - plat_part) / (annealing_part - plat_part)
+        #         rad = math.pi * angle
+        #         c = math.cos(rad)
+        #         return (c + 1) / 2 * (1 - final_lr) + final_lr
+        #     if step > warmup_part:
+        #         return 1.
+        #     else:
+        #         angle = 1 - (step + 1) / (warmup_part + 1)
+        #         rad = -math.pi * angle
+        #         c = math.cos(rad)
+        #         return (c + 1) / 2
+
+        # scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, partial(schedule_lr, step_per_epoch=self.steps_per_epoch))
+
         # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [5, 10, 20, 40], gamma=1/1.41)
 
-        return [optimizer]  #, [scheduler]
+        return [optimizer]  #, [{"scheduler": scheduler, "interval": 'step'}]
     
     def lr_scheduler_step(self, scheduler, optimizer_idx, metric):
-        scheduler.step(self.current_epoch)
+        scheduler.step()
 
 
 def prepare_TUAB_dataloader(args):
@@ -418,9 +447,9 @@ def supervised(args):
     if args.load_from_checkpoint is not None:
         # state_dict = torch.load(args.load_from_checkpoint, weights_only=False)
         # print(state_dict)
-        lightning_model = LitModel_finetune.load_from_checkpoint(args.load_from_checkpoint, args=args, model = model)
+        lightning_model = LitModel_finetune.load_from_checkpoint(args.load_from_checkpoint, args=args, model = model, steps_per_epoch=len(train_loader))
     else:
-        lightning_model = LitModel_finetune(args, model)
+        lightning_model = LitModel_finetune(args, model, steps_per_epoch=len(train_loader))
 
     # print(model)
 
