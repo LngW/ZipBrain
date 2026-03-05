@@ -1,0 +1,9 @@
+torch>=1.12.1
+torchvision
+timm==0.4.12
+numpy
+jupyter
+pillow
+tqdm
+scipy
+scikit-learn
