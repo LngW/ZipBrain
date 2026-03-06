@@ -264,7 +264,8 @@ def __train_loop(
 def __inference_loop(
         model : torch.nn.Module, dataloader, infer_post_fn, 
         ctx_global : __GlobalContext, ctx_epoch : _EpochContext, slots : _Slots,
-        test_stage,
+        test_stage, 
+        valid=False,
         **kwargs
         ):
 
@@ -316,6 +317,9 @@ def __inference_loop(
                 with torch.cuda.stream(s_cout):
                     e_cmpt.wait()
                     eval_preds[idx * bsz : idx * bsz + pred.size(0)].copy_(pred, non_blocking=True)
+
+                if valid:
+                    break
 
                 try:
                     idx_, (sample_, label_) = next(itor)
@@ -480,22 +484,46 @@ def test_loop(
     metrics2 = metrics.copy()
 
     pbar.write("Test:\t\t" + (" " * 4).join(f"{k}={v:.6f}" for k,v in metrics2.items()))
+    pbar.close()
+    ctx_global.logger.flush()
+
+def valid_loop(
+        ctx_global : __GlobalContext,
+        model, 
+        test_dataloader, 
+        infer_post_fn, 
+        metric_fn, 
+        **kwargs):
+    
+    bhs_eval = len(test_dataloader)
+    device, s_cmpt, s_cin, s_cout, queue = ctx_global
+
+    pbar = tqdm(total=bhs_eval, desc="Test", leave=False)
+    ctx_epoch = _EpochContext(0, pbar)
+    slots = _Slots(2)
+
+    events_timeit = [torch.cuda.Event(True) for _ in range(2)]
+
+    events_timeit[0].record(s_cmpt)
+    preds, labels = __inference_loop(
+        ctx_global=ctx_global, ctx_epoch=ctx_epoch, 
+        model=model, dataloader=test_dataloader, infer_post_fn=infer_post_fn, 
+        slots=slots, test_stage=True, 
+        valid=True,
+        **kwargs)
+    events_timeit[1].record(s_cmpt)
+
+    events_timeit[1].synchronize()
+    ctx_global.log_epoch('test/elapse',  events_timeit[1].elapsed_time(events_timeit[0]) / 1000, 0)
+    ctx_global.log_epoch('test/mem', torch.cuda.max_memory_allocated() / 1024 / 1024, 0)
+
+    metrics, _ = metric_fn(preds.numpy(), labels.numpy())
+    for key, value in metrics.items():
+        ctx_global.log_epoch(f'test/{key}', value, 0)
+
+    metrics2 = metrics.copy()
+
+    pbar.write("Test:\t\t" + (" " * 4).join(f"{k}={v:.6f}" for k,v in metrics2.items()))
     # pbar.set_postfix(metrics2)
     pbar.close()
     ctx_global.logger.flush()
-    # logger.flush()
-
-
-# def train(
-#         context, 
-#         model, 
-#         optimizer, 
-#         scheduler, 
-#         loss_fn, 
-#         metric_fn, 
-#         train_set, 
-#         eval_set,
-#         logger,
-#         checkpoint
-#         ):
-#     pass

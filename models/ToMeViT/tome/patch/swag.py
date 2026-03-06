@@ -15,8 +15,8 @@ from typing import Tuple
 import torch
 
 from tome.merge import bipartite_soft_matching, merge_source, merge_wavg
-from tome.utils import parse_r
-
+from tome.utils import parse_r, parse_variant
+from tome.merge2 import call_variant
 # Since we don't necessarily have the swag code available, this patch is a little bit more involved
 
 
@@ -39,21 +39,32 @@ def make_block_class(block_cls):
             x = x + input
 
             r = self._tome_info["r"].pop(0)
+            variant = self._tome_info["variant"].pop(0)
             if r > 0:
                 # Apply ToMe here
-                merge, _ = bipartite_soft_matching(
-                    metric,
-                    r,
-                    self._tome_info["class_token"],
-                    self._tome_info["distill_token"],
-                )
-                if self._tome_info["trace_source"]:
-                    self._tome_info["source"] = merge_source(
-                        merge, x, self._tome_info["source"]
+                if variant is None or variant in ['', 'tome']:
+                    merge, _ = bipartite_soft_matching(
+                        metric,
+                        r,
+                        self._tome_info["class_token"],
+                        self._tome_info["distill_token"],
                     )
-                x, self._tome_info["size"] = merge_wavg(
-                    merge, x, self._tome_info["size"]
-                )
+                    if self._tome_info["trace_source"]:
+                        self._tome_info["source"] = merge_source(
+                            merge, x, self._tome_info["source"]
+                        )
+                    x, self._tome_info["size"] = merge_wavg(
+                        merge, x, self._tome_info["size"]
+                    )
+                else:
+                    soft, hard = call_variant(
+                        variant,
+                        x,
+                        metric,
+                        r,
+                        self._tome_info["class_token"],
+                        self._tome_info["distill_token"],
+                    )
 
             y = self.ln_2(x)
             y = self.mlp(y)
@@ -109,6 +120,7 @@ def make_transformer_class(transformer_class):
 
         def forward(self, *args, **kwdargs) -> torch.Tensor:
             self._tome_info["r"] = parse_r(len(self.encoder.layers), self.r)
+            self._tome_info["variant"] = parse_variant(len(self.encoder.layers), self.variant)
             self._tome_info["size"] = None
             self._tome_info["source"] = None
 
@@ -173,6 +185,7 @@ def apply_patch(model, trace_source: bool = False, prop_attn: bool = True):
 
     model.__class__ = ToMeVisionTransformer
     model.r = 0
+    model.variant = None
     model._tome_info = {
         "r": model.r,
         "size": None,

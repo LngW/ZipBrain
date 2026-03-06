@@ -2,13 +2,13 @@ import os
 import argparse
 from pathlib import Path
 
-import torch
-import numpy as np
 
-from torch.utils.data import DataLoader
 
 
 def set_seeds(device, args):
+    import torch
+    import numpy as np
+
     seed = args.seed
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
@@ -21,6 +21,7 @@ def set_seeds(device, args):
 
 def prepare_dataloader(args, input_size, mean, std):
     from utils import ImageNetWoofLoader
+    from torch.utils.data import DataLoader
     train_set, val_set, test_set = ImageNetWoofLoader(args.dataset_dir, input_size, mean, std)
 
     batch_size=  args.batch_size
@@ -56,14 +57,37 @@ def prepare_dataloader(args, input_size, mean, std):
     return train_loader, val_loader, test_loader
 
 def prepare_model(args) -> 'torch.nn.Module':
-    import torch, tome
+    import torch
+    import tome
+
     model_name = 'vit_b16_in1k'
     model = torch.hub.load("facebookresearch/swag", model=model_name)
     model.eval()
-    # print(len(model.blocks))
     tome.patch.swag(model)
-    model.r = args.tome_r
-    model.variant = args.tome_variant
+
+    r = args.tome_r
+    variant = args.tome_variant
+
+    # print(r)
+    if len(r) == 0:
+        r = 0
+        variant = ""
+    elif len(r) == 1:
+        r : str = r[0]
+        if r.startswith("L/"):
+            r = [int(r[2:])]
+        elif r.startswith("F/"):
+            r, f = r[2:].split(',')
+            r = (int(r), float(f))
+        else:
+            r = int(r)
+    else:
+        r = [int(it) for it in r]
+
+    print(type(r), ":", r)
+
+    model.r = r
+    model.variant = variant
     return model
 
 def calculate_metrics(y_hat, y_ground, threshold = None):
@@ -88,6 +112,7 @@ def run(args):
 
     print("running {}/{}".format(args.log_dir, version))
     print(args)
+    import torch
 
     device = torch.device('cuda:0')
 
@@ -118,37 +143,11 @@ def run(args):
         return pred, label
     
     from torch.profiler import profile, ProfilerActivity, record_function, _ExperimentalConfig
-    from engine import create_global_context, train_loop, test_loop
+    from engine import create_global_context, train_loop, test_loop, valid_loop
 
     # from torch.utils.tensorboard import SummaryWriter
     ctx = create_global_context(device, log_dir, cp_dir)
-
     
-    # def _train_fn():
-    #     if not args.no_train:
-    #         train_loop(
-    #                 ctx_global=ctx,
-    #                 epochs=args.epochs, 
-    #                 model = model, 
-    #                 optimizer = optimizer,
-    #                 scheduler = None,
-    #                 train_dataloader = train_loader, 
-    #                 val_dataloader = val_loader, 
-    #                 loss_fn = loss_fn,
-    #                 metric_fn = calculate_metrics,
-    #                 metric_comp_fn = compare_metrics,
-    #                 infer_post_fn = infer_post_fn,
-    #             )
-    #     if args.test:
-    #         test_loop(
-    #             ctx_global=ctx,
-    #             model=model,
-    #             test_dataloader=test_loader,
-    #             infer_post_fn=infer_post_fn,
-    #             metric_fn=calculate_metrics,
-                
-    #         )
-
     from contextlib import ExitStack
     with ExitStack() as stack:
 
@@ -158,6 +157,15 @@ def run(args):
 
             stack.push(lambda *_: torch.cuda.memory._dump_snapshot(str(prof_dir / "memory.pickle")))
             stack.push(lambda *_: perf.export_chrome_trace(str(prof_dir / 'profile.json')))
+        
+        if args.valid:
+            valid_loop(
+                ctx_global=ctx,
+                model=model,
+                test_dataloader=test_loader,
+                infer_post_fn=infer_post_fn,
+                metric_fn=calculate_metrics,
+            )
 
         if args.train:
             class FastStop:
@@ -227,7 +235,7 @@ if __name__ == "__main__":
     parser.add_argument("--weight_decay", type=float,
                         default=1e-5, help="weight decay")
     parser.add_argument("--batch_size", type=int,
-                        default=512, help="batch size")
+                        default=32, help="batch size")
     parser.add_argument("--num_workers", type=int,
                         default=4, help="number of workers")
     parser.add_argument("--dataset", type=str, default="TUAB", help="dataset")
@@ -265,16 +273,17 @@ if __name__ == "__main__":
     parser.add_argument("--subset", type=str, default='')
 
     parser.add_argument("--top_k", type=int, default=0)
-    parser.add_argument("--tome_r", type=int, nargs='+', default=[])
+    parser.add_argument("--tome_r", type=str, nargs='+', default=[])
+    parser.add_argument("--tome_variant", type=str, nargs='+', default=[])
     parser.add_argument("--linear", action='store_true', default=False)
     parser.add_argument("--flash", action='store_true', default=False)
 
     # parser.add_argument("--load_from_checkpoint", type=str, default=None)
     parser.add_argument("--train", action='store_true', default=False)
     parser.add_argument("--test", action='store_true', default=False)
+    parser.add_argument("--valid", action='store_true', default=False)
     parser.add_argument("--profile", action='store_true', default=False)
     # parser.add_argument("--rtl_tome", action='store_true', default=False)
-    parser.add_argument("--tome_variant", type=str, nargs='+', default=[])
     parser.add_argument("--cls_token", action='store_true', default=False)
     parser.add_argument("--debug", action='store_true', default=False)
     # end of modification

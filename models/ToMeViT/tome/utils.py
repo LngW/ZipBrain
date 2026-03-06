@@ -103,3 +103,12 @@ def parse_r(num_layers: int, r: Union[List[int], Tuple[int, float], int]) -> Lis
     step = (max_val - min_val) / (num_layers - 1)
 
     return [int(min_val + step * i) for i in range(num_layers)]
+
+
+def parse_variant(num_layers: int, variant: Union[str, list[str]]) -> list[str]:
+    if isinstance(variant, list):
+        if len(variant) < num_layers:
+            variant = variant + [''] * (num_layers - len(variant))
+        return variant
+    else:
+        return [variant] * num_layers
