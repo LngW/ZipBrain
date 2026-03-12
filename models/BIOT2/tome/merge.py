@@ -62,13 +62,13 @@ def bipartite_soft_matching(
         unm_idx = edge_idx[..., r:, :]  # Unmerged Tokens
         src_idx = edge_idx[..., :r, :]  # Merged Tokens
         dst_idx = node_idx[..., None].gather(dim=-2, index=src_idx)
-        n, t2, _ = b.shape
-        src_idx_metrix = (
-            torch.eye(t2, dtype=torch.int, device=b.device)
-            .unsqueeze(0).expand(n, -1, -1)
-            .gather(-1, dst_idx[:,None,:,0].expand(-1, t2, -1))
-            .contiguous()
-        )
+        # n, t2, _ = b.shape
+        # src_idx_metrix = (
+        #     torch.eye(t2, dtype=torch.int, device=b.device)
+        #     .unsqueeze(0).expand(n, -1, -1)
+        #     .gather(-1, dst_idx[:,None,:,0].expand(-1, t2, -1))
+        #     .contiguous()
+        # )
 
         if class_token:
             # Sort to ensure the class token is at the start
@@ -86,17 +86,17 @@ def bipartite_soft_matching(
         else:
             return torch.cat([unm, dst], dim=1)
         
-    def merge_sum(x: torch.Tensor) -> torch.Tensor:
-        src, dst = x[..., ::2, :], x[..., 1::2, :]
-        n, t1, c = src.shape
-        unm = src.gather(dim=-2, index=unm_idx.expand(n, t1 - r, c))
-        src = src.gather(dim=-2, index=src_idx.expand(n, r, c))
-        dst = torch.baddbmm(dst, src_idx_metrix.to(x.dtype), src)
+    # def merge_sum(x: torch.Tensor) -> torch.Tensor:
+    #     src, dst = x[..., ::2, :], x[..., 1::2, :]
+    #     n, t1, c = src.shape
+    #     unm = src.gather(dim=-2, index=unm_idx.expand(n, t1 - r, c))
+    #     src = src.gather(dim=-2, index=src_idx.expand(n, r, c))
+    #     dst = torch.baddbmm(dst, src_idx_metrix.to(x.dtype), src)
 
-        if distill_token:
-            return torch.cat([unm[:, :1], dst[:, :1], unm[:, 1:], dst[:, 1:]], dim=1)
-        else:
-            return torch.cat([unm, dst], dim=1)
+    #     if distill_token:
+    #         return torch.cat([unm[:, :1], dst[:, :1], unm[:, 1:], dst[:, 1:]], dim=1)
+    #     else:
+    #         return torch.cat([unm, dst], dim=1)
 
 
     def unmerge(x: torch.Tensor) -> torch.Tensor:
@@ -114,7 +114,8 @@ def bipartite_soft_matching(
 
         return out
 
-    return merge, merge_sum, unmerge
+    return merge, unmerge, scores
+    # return merge, merge_sum, unmerge
 
 
 def kth_bipartite_soft_matching(
