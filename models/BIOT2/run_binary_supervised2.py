@@ -2,35 +2,27 @@ import os
 import argparse
 from pathlib import Path
 
-import torch
-# from tqdm import tqdm
-import numpy as np
-# import torch.nn as nn
+# import torch
 
-# import pytorch_lightning as pl
-# from pytorch_lightning.loggers import TensorBoardLogger
-# from pytorch_lightning.strategies import DDPStrategy
-# from pytorch_lightning.callbacks import ModelCheckpoint
-# from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-# from pyhealth.metrics import binary_metrics_fn
-from sklearn.metrics import accuracy_score, balanced_accuracy_score, roc_auc_score, average_precision_score
+# import numpy as np
+# from sklearn.metrics import accuracy_score, balanced_accuracy_score, roc_auc_score, average_precision_score
 
-from model import (
-    # SPaRCNet,
-    # ContraWR,
-    # CNNTransformer,
-    # FFCL,
-    # STTransformer,
-    BIOTClassifier,
-)
-from utils import TUABLoader, CHBMITLoader, PTBLoader, focal_loss, BCE
+# from model import (
+#     # SPaRCNet,
+#     # ContraWR,
+#     # CNNTransformer,
+#     # FFCL,
+#     # STTransformer,
+#     BIOTClassifier,
+# )
+# from utils import TUABLoader, CHBMITLoader, PTBLoader, focal_loss, BCE
 
 # import torch.distributed as dist
-from torch.utils.tensorboard import SummaryWriter
-from torch.utils.data import DataLoader
+# from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.data import DataLoader
 
-from torch.profiler import profile, ProfilerActivity, record_function, _ExperimentalConfig
-from engine import create_global_context, train_loop, test_loop
+# from torch.profiler import profile, ProfilerActivity, record_function, _ExperimentalConfig
+# from engine import create_global_context, _train_loop, _inference_loop
 
 def set_seeds(args):
     pass
@@ -48,77 +40,83 @@ def prepare_dataloader(args):
 
     pass
 
-def prepare_model(args) -> torch.nn.Module:
+def prepare_model(args) -> 'torch.nn.Module':
+    import torch
     with torch.random.fork_rng():
-        if args.model == "SPaRCNet":
-            model = SPaRCNet(
-                in_channels=args.in_channels,
-                sample_length=int(args.sampling_rate * args.sample_length),
-                n_classes=args.n_classes,
-                block_layers=4,
-                growth_rate=16,
-                bn_size=16,
-                drop_rate=0.5,
-                conv_bias=True,
-                batch_norm=True,
-            )
+        # if args.model == "SPaRCNet":
+        #     model = SPaRCNet(
+        #         in_channels=args.in_channels,
+        #         sample_length=int(args.sampling_rate * args.sample_length),
+        #         n_classes=args.n_classes,
+        #         block_layers=4,
+        #         growth_rate=16,
+        #         bn_size=16,
+        #         drop_rate=0.5,
+        #         conv_bias=True,
+        #         batch_norm=True,
+        #     )
 
-        elif args.model == "ContraWR":
-            model = ContraWR(
-                in_channels=args.in_channels,
-                n_classes=args.n_classes,
-                fft=args.token_size,
-                steps=args.hop_length // 5,
-            )
+        # elif args.model == "ContraWR":
+        #     model = ContraWR(
+        #         in_channels=args.in_channels,
+        #         n_classes=args.n_classes,
+        #         fft=args.token_size,
+        #         steps=args.hop_length // 5,
+        #     )
 
-        elif args.model == "CNNTransformer":
-            model = CNNTransformer(
-                in_channels=args.in_channels,
-                n_classes=args.n_classes,
-                fft=args.sampling_rate,
-                steps=args.hop_length // 5,
-                dropout=0.2,
-                nhead=4,
-                emb_size=256,
-            )
+        # elif args.model == "CNNTransformer":
+        #     model = CNNTransformer(
+        #         in_channels=args.in_channels,
+        #         n_classes=args.n_classes,
+        #         fft=args.sampling_rate,
+        #         steps=args.hop_length // 5,
+        #         dropout=0.2,
+        #         nhead=4,
+        #         emb_size=256,
+        #     )
 
-        elif args.model == "FFCL":
-            model = FFCL(
-                in_channels=args.in_channels,
-                n_classes=args.n_classes,
-                fft=args.token_size,
-                steps=args.hop_length // 5,
-                sample_length=int(args.sampling_rate * args.sample_length),
-                shrink_steps=20,
-            )
+        # elif args.model == "FFCL":
+        #     model = FFCL(
+        #         in_channels=args.in_channels,
+        #         n_classes=args.n_classes,
+        #         fft=args.token_size,
+        #         steps=args.hop_length // 5,
+        #         sample_length=int(args.sampling_rate * args.sample_length),
+        #         shrink_steps=20,
+        #     )
 
-        elif args.model == "STTransformer":
-            model = STTransformer(
-                emb_size=256,
-                depth=4,
-                n_classes=args.n_classes,
-                channel_legnth=int(
-                    args.sampling_rate * args.sample_length
-                ),  # (sampling_rate * duration)
-                n_channels=args.in_channels,
-            )
+        # elif args.model == "STTransformer":
+        #     model = STTransformer(
+        #         emb_size=256,
+        #         depth=4,
+        #         n_classes=args.n_classes,
+        #         channel_legnth=int(
+        #             args.sampling_rate * args.sample_length
+        #         ),  # (sampling_rate * duration)
+        #         n_channels=args.in_channels,
+        #     )
 
-        elif args.model == "BIOT":
+        if args.model == "BIOT":
+            from model.biot2 import BIOTClassifier
             model = BIOTClassifier(
                 n_classes=args.n_classes,
                 # set the n_channels according to the pretrained model if necessary
                 n_channels=args.in_channels,
                 n_fft=args.token_size,
                 hop_length=args.hop_length,
-                linear = args.linear, # modifications for tc_eeg
-                top_k = args.top_k,
-                tome_r = args.tome_r,
-                flash=args.flash,
-                tome_variant=args.tome_variant
+                # linear = args.linear, # modifications for tc_eeg
+                # top_k = args.top_k,
+                # tome_r = args.tome_r,
+                # flash=args.flash,
+                # tome_variant=args.tome_variant
             )
             if args.pretrain_model_path and (args.sampling_rate == 200):
                 model.biot.load_state_dict(torch.load(args.pretrain_model_path))
                 print(f"load pretrain model from {args.pretrain_model_path}")
+
+            for f, g in model.biot.transformer.layers.layers:
+                g.fn.fn.dropout.p = 0.5 # PreNorm.Chunk.FeedForward.Dropout.p
+                pass
 
         else:
             raise NotImplementedError
@@ -128,11 +126,14 @@ def prepare_model(args) -> torch.nn.Module:
     return model
 
 def calculate_metrics(y_hat, y_ground, threshold = None):
+    import numpy as np
+    from sklearn.metrics import accuracy_score, balanced_accuracy_score, roc_auc_score, average_precision_score
+
     if (
         sum(y_ground) * (len(y_ground) - sum(y_ground)) != 0
     ):  # to prevent all 0 or all 1 and raise the AUROC error
         if threshold is None:
-            threshold = np.sort(y_hat)[-int(np.sum(y_ground))]
+            threshold = np.sort(y_hat)[-int(np.sum(y_ground))].item()
         y_pred = np.empty_like(y_hat)
         y_pred[y_hat >= threshold] = 1
         y_pred[y_hat < threshold] = 0
@@ -141,6 +142,7 @@ def calculate_metrics(y_hat, y_ground, threshold = None):
             "balanced_accuracy": balanced_accuracy_score(y_ground, y_pred),
             "pr_auc": average_precision_score(y_ground, y_pred),
             "roc_auc": roc_auc_score(y_ground, y_pred),
+            "threshold": threshold,
         }
     else:
         result = {
@@ -148,11 +150,16 @@ def calculate_metrics(y_hat, y_ground, threshold = None):
             "balanced_accuracy": 0.0,
             "pr_auc": 0.0,
             "roc_auc": 0.0,
+            "threshold": 0.5,
         }
-    return result, threshold
-
+    return result
 
 def prepare_TUAB_dataloader(args):
+    import torch
+    from torch.utils.data import DataLoader
+    import numpy as np
+    from utils import TUABLoader
+
     # set random seed
     seed = args.seed
     torch.manual_seed(seed)
@@ -211,6 +218,11 @@ def prepare_TUAB_dataloader(args):
 
 
 def prepare_CHB_MIT_dataloader(args):
+    import torch
+    from torch.utils.data import DataLoader
+    import numpy as np
+    from utils import CHBMITLoader
+
     # set random seed
     seed = 12345
     torch.manual_seed(seed)
@@ -256,6 +268,11 @@ def prepare_CHB_MIT_dataloader(args):
 
 
 def prepare_PTB_dataloader(args):
+    import torch
+    from torch.utils.data import DataLoader
+    import numpy as np
+    from utils import PTBLoader
+
     # set random seed
     seed = 12345
     torch.manual_seed(seed)
@@ -299,6 +316,11 @@ def prepare_PTB_dataloader(args):
     return train_loader, test_loader, val_loader
 
 def prepare_RND_dataloader(args):
+    import torch
+    # from torch.utils.data import DataLoader
+    # import numpy as np
+    # from utils import CHBMITLoader
+
     # set random seed
     seed = args.seed
     # torch.manual_seed(seed)
@@ -344,12 +366,16 @@ def supervised(args):
     cp_dir = workspace / 'checkpoints' / logdir / version
     prof_dir = workspace / 'profiles' / logdir / version
 
-    if log_dir.exists() or cp_dir.exists() or prof_dir.exists():
+    if not args.debug and (log_dir.exists() or cp_dir.exists() or prof_dir.exists()):
         print("workspace {}/{} exists, skipping".format(args.log_dir, version))
         exit()
 
     print("running {}/{}".format(args.log_dir, version))
     print(args)
+
+    import torch
+    from utils import BCE
+    from engine import Hooks, create_global_context, train, test, valid
 
     # get data loaders
     device = torch.device('cuda:0')
@@ -388,21 +414,15 @@ def supervised(args):
                 self.count_down -= 1
             
             return self.count_down <= 0
-
     fast_stop = FastStop(5)
+
     def compare_metrics(best, current):
         # if best is None:
         #     return True, False
 
         improved = best is None or current['roc_auc'] > best['roc_auc']
 
-        return improved, fast_stop.update(improved)
-
-
-    # log_dir = log_dir / version
-    # cp_dir = cp_dir / version
-
-    ctx = create_global_context(device, log_dir, cp_dir)
+        return improved
 
     def loss_fn(model, preds, labels):
         loss = BCE(preds, labels)
@@ -412,40 +432,73 @@ def supervised(args):
 
         return loss
     
-    def _train_fn():
-        if not args.no_train:
-            train_loop(
-                    ctx_global=ctx,
-                    epochs=args.epochs, 
-                    model = model, 
-                    optimizer = optimizer,
-                    scheduler = None,
-                    train_dataloader = train_loader, 
-                    val_dataloader = val_loader, 
-                    loss_fn = loss_fn,
-                    metric_fn = calculate_metrics,
-                    metric_comp_fn = compare_metrics,
-                    infer_post_fn = infer_post_fn,
-                )
-        if args.test:
-            test_loop(
-                ctx_global=ctx,
-                model=model,
-                test_dataloader=test_loader,
-                infer_post_fn=infer_post_fn,
-                metric_fn=calculate_metrics,
-                
-            )
+    def compose_custom_state(result, metrics):
+        result['threshold'] = metrics['threshold']
 
-    if args.profile:
-        torch.cuda.memory._record_memory_history()
-        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], with_stack=True) as prof:
-            _train_fn()
+    hooks = Hooks(calc_metric=calculate_metrics)
+    hooks.calc_loss = loss_fn
+    hooks.handle_post_infer_result = infer_post_fn
+    hooks.compare_metric = compare_metrics
+    hooks.compose_cp_custom_state = compose_custom_state
+    hooks.test_break = lambda better, *_: fast_stop.update(better)
+
+    ctx = create_global_context(device, log_dir, cp_dir)
+
+    from contextlib import ExitStack
+
+    with ExitStack() as stack:
+        if args.profile:
+            from torch.profiler import profile, ProfilerActivity
+            torch.cuda.memory._record_memory_history()
+            stack.push(lambda *_: torch.cuda.memory._dump_snapshot(str(prof_dir / 'memory.pickle')))
+
+            prof = None
+            stack.push(lambda *_: prof.export_chrome_trace(str(prof_dir / 'profile.json')))
+            prof = stack.enter_context(profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU]))
+
+        if args.valid:
+            valid(ctx, model, test_loader, hooks)
+
+        if not args.no_train:
+            train(ctx, args.epochs, model, train_loader, val_loader, optimizer, hooks)
+
+        if args.test:
+            test(ctx, model, test_loader, hooks)
+
+    # def _train_fn():
+    #     if not args.no_train:
+    #         _train_loop(
+    #                 ctx_global=ctx,
+    #                 epochs=args.epochs, 
+    #                 model = model, 
+    #                 optimizer = optimizer,
+    #                 scheduler = None,
+    #                 train_dataloader = train_loader, 
+    #                 val_dataloader = val_loader, 
+    #                 loss_fn = loss_fn,
+    #                 metric_fn = calculate_metrics,
+    #                 metric_comp_fn = compare_metrics,
+    #                 infer_post_fn = infer_post_fn,
+    #             )
+    #     if args.test:
+    #         _inference_loop(
+    #             ctx_global=ctx,
+    #             model=model,
+    #             test_dataloader=test_loader,
+    #             infer_post_fn=infer_post_fn,
+    #             metric_fn=calculate_metrics,
+                
+    #         )
+
+    # if args.profile:
+    #     torch.cuda.memory._record_memory_history()
+    #     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], with_stack=True) as prof:
+    #         _train_fn()
         
-        prof.export_chrome_trace(str(prof_dir / "profile.json"))
-        torch.cuda.memory._dump_snapshot(str(prof_dir / "memory.pickle"))
-    else:
-        _train_fn()
+    #     prof.export_chrome_trace(str(prof_dir / "profile.json"))
+    #     torch.cuda.memory._dump_snapshot(str(prof_dir / "memory.pickle"))
+    # else:
+    #     _train_fn()
 
         # torch.cuda.memory._record_memory_history()
         # with profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU]) as perf:
@@ -491,25 +544,49 @@ if __name__ == "__main__":
     )
 
     # modification made for tc_eeg
-    parser.add_argument("--seed", type=int, required=True)
-    parser.add_argument("--log_dir", type=str, required=True)
+    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--workspace", type=str, default=None)
+    parser.add_argument("--log_dir", type=str, default=None)
+
     parser.add_argument("--subset", type=str, default='')
 
-    parser.add_argument("--top_k", type=int, default=0)
+    # parser.add_argument("--top_k", type=int, default=0)
     parser.add_argument("--tome_r", type=int, nargs='+', default=[])
-    parser.add_argument("--linear", action='store_true', default=False)
-    parser.add_argument("--flash", action='store_true', default=False)
+    parser.add_argument("--tome_variant", type=str, nargs='+', default=[])
+    # parser.add_argument("--linear", action='store_true', default=False)
+    # parser.add_argument("--flash", action='store_true', default=False)
 
     # parser.add_argument("--load_from_checkpoint", type=str, default=None)
     parser.add_argument("--no_train", action='store_true', default=False)
     parser.add_argument("--test", action='store_true', default=False)
+    parser.add_argument("--valid", action='store_true', default=False)
+    parser.add_argument("--debug", action='store_true', default=False)
     parser.add_argument("--profile", action='store_true', default=False)
-    parser.add_argument("--workspace", type=str, required=True)
     # parser.add_argument("--rtl_tome", action='store_true', default=False)
-    parser.add_argument("--tome_variant", type=str, nargs='+', default=[])
-    parser.add_argument("--cls_token", action='store_true', default=False)
+    # parser.add_argument("--cls_token", action='store_true', default=False)
     # end of modification
 
     args = parser.parse_args()
+
+    if args.debug:
+        args.workspace = 'debug'
+        args.log_dir = 'debug'
+    else:
+        required = []
+        if args.workspace is None:
+            required.append('workspace')
+            # parser.error('--workspace is required but found None')
+        if args.log_dir is None:
+            required.append('log_dir')
+            # parser.error('--log_dir is required but found None')
+        
+        if len(required) > 0:
+            parser.error('the following arguments are required: ' + ', '.join(['--' + it for it in required]))
+
+    if args.seed is None:
+        if not args.no_train:
+            parser.error('the following arguments are required: --seed')
+        else:
+            args.seed = 0
 
     supervised(args)

@@ -1,14 +1,11 @@
+from dataclasses import dataclass
 import threading
 import time
-# from collections import deque
-from typing import NamedTuple
+from typing import NamedTuple, Callable, Any
 from queue import Queue
 from functools import partial
-# import asyncio
-# from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-# import numpy as np
 from tqdm import tqdm
 
 import torch
@@ -16,16 +13,20 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.profiler import record_function
 
+import numpy
+
 class __GlobalContext:
     __device : torch.device
+    __slots : '_Slots'
     __s_compute : torch.cuda.Stream = None
     __s_mem_in  : torch.cuda.Stream = None
     __s_mem_out : torch.cuda.Stream = None
     __event_loop : threading.Thread = None
     __event_queue : Queue = None
 
-    def __init__(self, device, queue, loop, log_dir, cp_dir):
+    def __init__(self, device, slots, queue, loop, log_dir, cp_dir):
         self.__device = device
+        self.__slots = slots
         self.__event_queue = queue
         self.__event_loop = loop
         # self.__log_dir = log_dir
@@ -72,16 +73,44 @@ class __GlobalContext:
         self.logger.add_scalar(key, value, epoch)
 
     def __iter__(self):
-        return iter((self.device, self.s_compute, self.s_mem_in, self.s_mem_out, self.__event_queue))
+        return iter((self.device, self.__slots, self.s_compute, self.s_mem_in, self.s_mem_out, self.__event_queue))
 
-def create_global_context(device, log_dir, cp_dir):
+@dataclass
+class Hooks:
+    calc_metric : Callable[[numpy.ndarray, numpy.ndarray], dict[str, Any]]
+    ''' (pred, label) -> metrics, extra_metrics '''
+
+    calc_loss : Callable[[torch.nn.Module, torch.Tensor, torch.Tensor], torch.Tensor] = None
+    '''(pred, label) -> loss'''
+
+    compare_metric : Callable[[dict[str, Any], dict[str, Any]], bool] = None
+
+    handle_post_train : Callable[[torch.nn.Module], None] = None
+    '''decide which modules are freezed in train. this method is called after `model.train()`'''
+
+    handle_post_infer_result : Callable[[torch.Tensor, torch.Tensor], tuple[torch.Tensor, torch.Tensor]] = None
+    '''(pred, label) -> (handled_pred, handled_label)'''
+
+    compose_cp_custom_state : Callable[[dict[str, Any], dict[str, Any]], None] = None
+    '''(result, metrics) -> None. Write custom state to the parameter `result`'''
+
+    test_break : Callable[[bool, tuple[str, Any], tuple[str, Any]], bool] = None
+    '''(better, old_metric, new_metric) -> is_break. Break the loop when return True'''
+
+    schedule_step_batch : Callable[[torch.optim.lr_scheduler.LRScheduler], None] = None
+    ''' (scheduler) -> None. Called after every batch finished. Step your scheduler in this method if necessary. '''
+
+    schedule_step_epoch : Callable[[torch.optim.lr_scheduler.LRScheduler, dict[str, Any]], None] = None
+    ''' (scheduler, metrics) -> None. Called after every epoch finished. Step your scheduler in this method if necessary. '''
+
+def create_global_context(device, log_dir, cp_dir, slots = 2):
     if not isinstance(device, torch.device):
         device = torch.device(device)
 
     queue = Queue()
     loop = __monitor(queue)
-    
-    return __GlobalContext(device, queue, loop, log_dir, cp_dir)
+
+    return __GlobalContext(device, _Slots(slots), queue, loop, log_dir, cp_dir)
 
 class _EpochContext:
     epoch: int
@@ -145,9 +174,9 @@ def __monitor_log_train_batch(ctx_g : __GlobalContext, ctx_e : _EpochContext, lo
     pbar.set_postfix({'loss': loss}, False)
     pbar.update()
 
-def __monitor_log_eval_batch(ctx : _EpochContext):
+def __monitor_log_eval_batch(ctx : _EpochContext, prefix : str):
     pbar = ctx.pbar
-    pbar.set_description("Epoch {}/Eval".format(ctx.epoch), False)
+    pbar.set_description(prefix.format(ctx.epoch), False)
     pbar.update()
 
 def __save_model(state_dict, path):
@@ -156,24 +185,28 @@ def __save_model(state_dict, path):
 
     torch.save(state_dict, path)
 
-def __monitor_log_test_batch(ctx : _EpochContext):
-    pbar = ctx.pbar
-    pbar.set_description("Epoch {}/Test".format(ctx.epoch), False)
-    pbar.update()
+# def __monitor_log_test_batch(ctx : _EpochContext):
+#     pbar = ctx.pbar
+#     pbar.set_description("Epoch {}/Test".format(ctx.epoch), False)
+#     pbar.update()
 
 def __train_loop(
-        model : torch.nn.Module, loss_fn, optimizer : torch.optim.Optimizer, scheduler, dataloader : DataLoader, 
-        ctx_global: __GlobalContext, ctx_epoch : _EpochContext, slots : _Slots,
+        model : torch.nn.Module, optimizer : torch.optim.Optimizer, scheduler : torch.optim.lr_scheduler.LRScheduler, dataloader : DataLoader, 
+        ctx_global: __GlobalContext, ctx_epoch : _EpochContext, hooks : Hooks,
+        # handle_post_train = None,
         **kwargs
         ):
     
     # losses = ctx_epoch.losses
     losses = torch.empty(len(dataloader), dtype=torch.float, device='cpu', pin_memory=True, requires_grad=False)
-    device, s_cmpt, s_cin, s_cout, queue = ctx_global
+    device, slots, s_cmpt, s_cin, s_cout, queue = ctx_global
 
     e_in, e_cmpt = [torch.cuda.Event() for _ in range(2)]
 
     model.train()
+    if hooks.handle_post_train is not None:
+        hooks.handle_post_train(model)
+    # handle_post_train(model)
     itor = iter(enumerate(dataloader))
     try:
         idx, (sample, label) = next(itor)
@@ -189,7 +222,7 @@ def __train_loop(
             with torch.cuda.stream(s_cmpt):
                 e_in.wait()
                 pred = model(sample)
-                loss : torch.Tensor = loss_fn(model, pred, label)
+                loss : torch.Tensor = hooks.calc_loss(model, pred, label)
                 # now s_cout should wait util computation finish
                 e_cmpt.record()
 
@@ -208,6 +241,8 @@ def __train_loop(
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
+                if scheduler is not None and hooks.schedule_step_batch is not None:
+                    hooks.schedule_step_batch(scheduler)
 
                 # we can deem this slot is free after the backward completed
                 slot.record(s_cmpt)
@@ -262,9 +297,11 @@ def __train_loop(
     return dump_event, model_state_dict, optimizer_state_dict, losses
 
 def __inference_loop(
-        model : torch.nn.Module, dataloader, infer_post_fn, 
-        ctx_global : __GlobalContext, ctx_epoch : _EpochContext, slots : _Slots,
-        test_stage,
+        model : torch.nn.Module, dataloader,
+        ctx_global : __GlobalContext, ctx_epoch : _EpochContext, hooks : Hooks,
+        # test_stage, 
+        # valid=False,
+        prefix : str,
         **kwargs
         ):
 
@@ -274,7 +311,7 @@ def __inference_loop(
     eval_preds = None
     eval_labels = None
 
-    device, s_cmpt, s_cin, s_cout, queue = ctx_global
+    device, slots, s_cmpt, s_cin, s_cout, queue = ctx_global
     e_in, e_cmpt = [torch.cuda.Event() for _ in range(2)]
 
     model.eval()
@@ -297,15 +334,17 @@ def __inference_loop(
                     slot.record(s_cmpt)
 
                     # continue computation
-                    pred, label = infer_post_fn(pred, label)
+                    if hooks.handle_post_infer_result is not None:
+                        pred, label = hooks.handle_post_infer_result(pred, label)
+                    # pred, label = infer_post_fn(pred, label)
 
                     # computation completed
                     e_cmpt.record()
                     # events_eval.append(s_cmpt.record_event())
-                    if test_stage:
-                        queue.put((s_cmpt.record_event(), partial(__monitor_log_test_batch, ctx_epoch)))
-                    else:
-                        queue.put((s_cmpt.record_event(), partial(__monitor_log_eval_batch, ctx_epoch)))
+                    # if test_stage:
+                    #     queue.put((s_cmpt.record_event(), partial(__monitor_log_test_batch, ctx_epoch)))
+                    # else:
+                    queue.put((s_cmpt.record_event(), partial(__monitor_log_eval_batch, ctx_epoch, prefix)))
 
                 if eval_preds is None:
                     eval_preds = torch.empty(len(dataloader.dataset), *pred.shape[1:], pin_memory=True, dtype=pred.dtype, device='cpu')
@@ -332,30 +371,22 @@ def __inference_loop(
 
     return eval_preds, eval_labels
 
-    # ctx_epoch.preds  = eval_preds
-    # ctx_epoch.labels = eval_labels
-
-def train_loop(
+def _train_loop(
         ctx_global : __GlobalContext,
         epochs : int, 
         model : torch.nn.Module,
         train_dataloader : DataLoader, 
         val_dataloader : DataLoader, 
         optimizer : torch.optim.Optimizer,
-        loss_fn,
-        infer_post_fn,
-        metric_fn, 
-        metric_comp_fn = None,
-        scheduler = None,
-        # **kwargs):
-):
+        scheduler : torch.optim.lr_scheduler.LRScheduler,
+        hooks : Hooks,
+        **kwargs,
+    ):
     
-    device, s_cmpt, s_cin, s_cout, queue = ctx_global
+    device, slots, s_cmpt, s_cin, s_cout, queue = ctx_global
 
     bhs_train = len(train_dataloader)
     bhs_eval = len(val_dataloader)
-
-    slots = _Slots(2)
 
     class BestModel(NamedTuple):
         metrics : dict
@@ -377,11 +408,12 @@ def train_loop(
             ctx_global=ctx_global,
             ctx_epoch=context, 
             model=model,
-            loss_fn=loss_fn,
+            hooks=hooks,
+            # loss_fn=loss_fn,
             optimizer=optimizer,
             scheduler=scheduler,
             dataloader=train_dataloader, 
-            slots=slots,
+            **kwargs,
             # **kwargs)
         )
         events_timeit[1].record(s_cmpt)
@@ -391,9 +423,8 @@ def train_loop(
             ctx_epoch=context, 
             model=model,
             dataloader=val_dataloader, 
-            infer_post_fn=infer_post_fn,
-            slots=slots,
-            test_stage=False,
+            hooks=hooks,
+            prefix="Epoch {}/Eval"
             # **kwargs)
         )
         events_timeit[2].record(s_cmpt)
@@ -412,7 +443,7 @@ def train_loop(
         # wait preds and models to be copied
         s_cout.synchronize()
         # calculate metrics for each epoch
-        metrics, threshold = metric_fn(preds.numpy(), labels.numpy())
+        metrics = hooks.calc_metric(preds.numpy(), labels.numpy())
         for key, value in metrics.items():
             ctx_global.log_epoch(f'eval/{key}', value, epoch)
 
@@ -422,21 +453,31 @@ def train_loop(
 
         metrics2 = metrics.copy()
         metrics2['loss'] = loss
+        if scheduler is not None and hooks.schedule_step_epoch is not None:
+            last_lr = scheduler.get_last_lr()[0]
+            hooks.schedule_step_epoch(scheduler, metrics2)
+            metrics2['lr'] = last_lr
+
         pbar.write("Epoch{:>4}:\t".format(context.epoch) + (" " * 4).join(f"{k}={v:.6f}" for k,v in metrics2.items()))
         pbar.close()
 
+
+        custom_state = {}
+        if hooks.compose_cp_custom_state is not None:
+            hooks.compose_cp_custom_state(custom_state, metrics2)
+
         state_dict = {
-            "threshold": threshold,
             "model": model_state,
             "optimizer": optimizer_state,
-            # "scheduler": sche
+            "custom": custom_state,
         }
-        if metric_comp_fn is not None:
-            better, fast_stop = metric_comp_fn(None if best_model is None else best_model.metrics, metrics2)
-            if better:
-                best_model = BestModel(metrics2, model_state)
-                queue.put((None, partial(__save_model, state_dict, ctx_global.save_path("best.pt"))))        
-        if fast_stop:
+        better = best_model is None or hooks.compare_metric(best_model.metrics, metrics2)
+        old_state = None if best_model is None else best_model.metrics 
+        if better:
+            best_model = BestModel(metrics2, model_state)
+            queue.put((None, partial(__save_model, state_dict, ctx_global.save_path("best.pt"))))
+
+        if hooks.test_break is not None and hooks.test_break(better, old_state, metrics2):
             break
 
     if state_dict is not None:
@@ -444,20 +485,62 @@ def train_loop(
 
     ctx_global.logger.flush()
 
-def test_loop(
+def _inference_loop(
         ctx_global : __GlobalContext,
+        model : torch.nn.Module, 
+        test_dataloader : DataLoader, 
+        hooks : Hooks,
+        prefix : str = 'Test',
+        **kwargs):
+
+    bhs_eval = len(test_dataloader)
+    device, slots, s_cmpt, s_cin, s_cout, queue = ctx_global
+
+    pbar = tqdm(total=bhs_eval, desc=prefix, leave=False)
+    ctx_epoch = _EpochContext(0, pbar)
+    # slots = _Slots(2)
+
+    events_timeit = [torch.cuda.Event(True) for _ in range(2)]
+
+    events_timeit[0].record(s_cmpt)
+    preds, labels = __inference_loop(
+        ctx_global=ctx_global, ctx_epoch=ctx_epoch, 
+        model=model, dataloader=test_dataloader, hooks=hooks,
+        prefix = prefix,
+        # test_stage=True,
+        **kwargs)
+    events_timeit[1].record(s_cmpt)
+
+    prefix_lower = prefix.lower()
+    events_timeit[1].synchronize()
+    ctx_global.log_epoch(prefix_lower + '/elapse',  events_timeit[0].elapsed_time(events_timeit[1]) / 1000, 0)
+    ctx_global.log_epoch(prefix_lower + '/mem', torch.cuda.max_memory_allocated() / 1024 / 1024, 0)
+
+    metrics = hooks.calc_metric(preds.numpy(), labels.numpy())
+    for key, value in metrics.items():
+        ctx_global.log_epoch(f'{prefix_lower}/{key}', value, 0)
+
+    metrics2 = metrics.copy()
+
+    pbar.write(prefix + ":\t\t" + (" " * 4).join(f"{k}={v:.6f}" for k,v in metrics2.items()))
+    pbar.close()
+    ctx_global.logger.flush()
+
+def valid_loop(
+        ctx_global : __GlobalContext,
+        # hooks: Hooks,
         model, 
         test_dataloader, 
         infer_post_fn, 
         metric_fn, 
         **kwargs):
-
+    
     bhs_eval = len(test_dataloader)
-    device, s_cmpt, s_cin, s_cout, queue = ctx_global
+    device, slots, s_cmpt, s_cin, s_cout, queue = ctx_global
 
     pbar = tqdm(total=bhs_eval, desc="Test", leave=False)
     ctx_epoch = _EpochContext(0, pbar)
-    slots = _Slots(2)
+    # slots = _Slots(2)
 
     events_timeit = [torch.cuda.Event(True) for _ in range(2)]
 
@@ -465,7 +548,9 @@ def test_loop(
     preds, labels = __inference_loop(
         ctx_global=ctx_global, ctx_epoch=ctx_epoch, 
         model=model, dataloader=test_dataloader, infer_post_fn=infer_post_fn, 
-        slots=slots, test_stage=True,
+        # slots=slots, 
+        test_stage=True, 
+        valid=True,
         **kwargs)
     events_timeit[1].record(s_cmpt)
 
@@ -483,19 +568,73 @@ def test_loop(
     # pbar.set_postfix(metrics2)
     pbar.close()
     ctx_global.logger.flush()
-    # logger.flush()
 
+def train(
+        ctx_global : __GlobalContext,
+        epochs : int, 
+        model : torch.nn.Module,
+        train_dataloader : DataLoader, 
+        val_dataloader : DataLoader, 
+        optimizer : torch.optim.Optimizer,
+        hooks : Hooks,
+        scheduler = None,
+        **kwargs,
+):
+    if hooks.calc_loss is None or hooks.compare_metric is None:
+        raise NotImplementedError("both calc_loss and compare_metric are required in training, but they are not defined in hooks")
+    
+    _train_loop(
+        ctx_global = ctx_global, 
+        epochs = epochs, 
+        model = model, 
+        train_dataloader = train_dataloader, 
+        val_dataloader = val_dataloader, 
+        optimizer = optimizer, 
+        scheduler = scheduler, 
+        hooks = hooks, 
+        **kwargs
+    )
 
-# def train(
-#         context, 
-#         model, 
-#         optimizer, 
-#         scheduler, 
-#         loss_fn, 
-#         metric_fn, 
-#         train_set, 
-#         eval_set,
-#         logger,
-#         checkpoint
-#         ):
-#     pass
+def test(
+        ctx_global : __GlobalContext,
+        model : torch.nn.Module, 
+        test_dataloader : DataLoader, 
+        hooks : Hooks,
+        **kwargs
+):
+    _inference_loop(
+        ctx_global=ctx_global, model=model, test_dataloader=test_dataloader, hooks=hooks, prefix = 'Test', **kwargs
+    )
+
+def valid(
+        ctx_global : __GlobalContext,
+        model : torch.nn.Module, 
+        test_dataloader : DataLoader, 
+        hooks : Hooks,
+        **kwargs
+):  
+    from torch.utils.data import Dataset
+    class LimitedDataset(Dataset):
+        def __init__(self, upper, limit : int):
+            super().__init__()
+            self.upper = upper
+            self.limit = limit
+        
+        def __len__(self):
+            return min(self.limit, len(self.upper))
+
+        def __getitem__(self, index):
+            return self.upper.__getitem__(index)
+
+    dataset = LimitedDataset(test_dataloader.dataset, test_dataloader.batch_size)
+    loader = DataLoader(
+        dataset=dataset,
+        batch_size=test_dataloader.batch_size,
+        num_workers=test_dataloader.num_workers,
+        persistent_workers=test_dataloader.persistent_workers,
+        pin_memory=test_dataloader.pin_memory,
+    )
+    
+    _inference_loop(
+        ctx_global=ctx_global, model=model, test_dataloader=loader, hooks=hooks, prefix = 'Valid', **kwargs
+    )
