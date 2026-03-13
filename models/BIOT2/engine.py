@@ -112,6 +112,16 @@ def create_global_context(device, log_dir, cp_dir, slots = 2):
 
     return __GlobalContext(device, _Slots(slots), queue, loop, log_dir, cp_dir)
 
+def destructure_global_context(ctx):
+    if not isinstance(ctx, __GlobalContext):
+        return
+    
+    ctx.__event_queue.put((None, None))
+    ctx.__event_loop.join()
+
+    ctx.logger.flush()
+    ctx.logger.close()
+
 class _EpochContext:
     epoch: int
     pbar : tqdm
@@ -154,17 +164,22 @@ def __monitor(event_queue) -> threading.Thread:
     def __logic(event_queue : Queue):
         while True:
             e, processor = event_queue.get()
-            while e is not None and not e.query():
-                time.sleep(0.01)
-            
-            processor()
+            if e is None:
+                if processor is None:
+                    break
+                else:
+                    processor()
+            elif isinstance(e, torch.cuda.Event):
+                while not e.query():
+                    time.sleep(0.01)
+                processor()
 
     thread = threading.Thread(target=__logic, args=(event_queue,), name='cuda_event_monitor', daemon=True)
     thread.start()
 
     return thread
 
-def __monitor_log_train_batch(ctx_g : __GlobalContext, ctx_e : _EpochContext, loss: torch.Tensor):
+def __monitor_log_train_batch(ctx_g : __GlobalContext, ctx_e : _EpochContext, loss: torch.Tensor, lr = None):
     pbar = ctx_e.pbar
 
     loss = loss.item()
@@ -172,6 +187,8 @@ def __monitor_log_train_batch(ctx_g : __GlobalContext, ctx_e : _EpochContext, lo
     ctx_g.log_global_step('train/loss', loss)
     pbar.set_description(f"Epoch {ctx_e.epoch}/Train", False)
     pbar.set_postfix({'loss': loss}, False)
+    if lr is not None:
+        pbar.set_postfix({'lr': lr}, False)
     pbar.update()
 
 def __monitor_log_eval_batch(ctx : _EpochContext, prefix : str):
@@ -230,8 +247,12 @@ def __train_loop(
             with torch.cuda.stream(s_cout):
                 e_cmpt.wait()
                 losses[idx].copy_(loss.detach(), non_blocking=True)
+                if scheduler is not None:
+                    lr = scheduler.get_last_lr()[0]
+                else:
+                    lr = None
                 queue.put(
-                    (s_cout.record_event(), partial(__monitor_log_train_batch, ctx_global, ctx_epoch, losses[idx]))
+                    (s_cout.record_event(), partial(__monitor_log_train_batch, ctx_global, ctx_epoch, losses[idx], lr))
                 )
                 # events_train.append((idx, s_cout.record_event()))
 
@@ -440,6 +461,8 @@ def _train_loop(
         events_timeit[2].synchronize()
         ctx_global.log_epoch('eval/elapse',  events_timeit[1].elapsed_time(events_timeit[2]) / 1000, epoch)
         ctx_global.log_epoch('train/mem', torch.cuda.max_memory_allocated() / 1024 / 1024, epoch)
+        if scheduler is not None:
+            ctx_global.log_epoch('train/lr', scheduler.get_last_lr()[0], epoch)
 
         # wait preds and models to be copied
         s_cout.synchronize()
@@ -454,9 +477,10 @@ def _train_loop(
 
         metrics2 = metrics.copy()
         metrics2['loss'] = loss
-        if scheduler is not None and hooks.schedule_step_epoch is not None:
+        if scheduler is not None:
             last_lr = scheduler.get_last_lr()[0]
-            hooks.schedule_step_epoch(scheduler, metrics2)
+            if hooks.schedule_step_epoch is not None:
+                hooks.schedule_step_epoch(scheduler, metrics2)
             metrics2['lr'] = last_lr
 
         pbar.write("Epoch{:>4}:\t".format(context.epoch) + (" " * 4).join(f"{k}={v:.6f}" for k,v in metrics2.items()))

@@ -428,7 +428,9 @@ def supervised(args):
     def compose_custom_state(result, metrics):
         result['threshold'] = metrics['threshold']
 
-    from engine import Hooks, create_global_context, train, test, valid
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, args.lr, len(train_loader) * args.epochs)
+
+    from engine import Hooks, create_global_context, destructure_global_context, train, test, valid
 
     hooks = Hooks(calc_metric=calculate_metrics)
     hooks.calc_loss = loss_fn
@@ -436,13 +438,15 @@ def supervised(args):
     hooks.compare_metric = compare_metrics
     hooks.compose_cp_custom_state = compose_custom_state
     hooks.test_break = lambda better, *_: fast_stop.update(better)
+    hooks.schedule_step_batch = lambda it : it.step()
 
-    ctx = create_global_context(device, log_dir, cp_dir, 1)
+    ctx = create_global_context(device, log_dir, cp_dir, 2)
 
     from contextlib import ExitStack
 
     with ExitStack() as stack:
         if args.profile:
+            stack.push(lambda *_: destructure_global_context(ctx))
             from torch.profiler import profile, ProfilerActivity
             torch.cuda.memory._record_memory_history()
             stack.push(lambda *_: torch.cuda.memory._dump_snapshot(str(prof_dir / 'memory.pickle')))
@@ -456,7 +460,7 @@ def supervised(args):
             valid(ctx, model, test_loader, hooks)
 
         if not args.no_train:
-            train(ctx, args.epochs, model, train_loader, val_loader, optimizer, hooks)
+            train(ctx, args.epochs, model, train_loader, val_loader, optimizer, hooks, scheduler)
 
         if args.test:
             test(ctx, model, test_loader, hooks)
