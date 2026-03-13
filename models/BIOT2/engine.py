@@ -78,7 +78,7 @@ class __GlobalContext:
 @dataclass
 class Hooks:
     calc_metric : Callable[[numpy.ndarray, numpy.ndarray], dict[str, Any]]
-    ''' (pred, label) -> metrics, extra_metrics '''
+    ''' (pred, label) -> metrics '''
 
     calc_loss : Callable[[torch.nn.Module, torch.Tensor, torch.Tensor], torch.Tensor] = None
     '''(pred, label) -> loss'''
@@ -393,8 +393,9 @@ def _train_loop(
         state_dict : dict
     best_model : BestModel = None
 
-    iter(train_dataloader)
-    iter(val_dataloader)
+    with torch.random.fork_rng():
+        iter(train_dataloader)
+        iter(val_dataloader)
 
     state_dict = None
     for epoch in range(epochs):

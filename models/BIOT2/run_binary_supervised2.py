@@ -114,14 +114,12 @@ def prepare_model(args) -> 'torch.nn.Module':
                 model.biot.load_state_dict(torch.load(args.pretrain_model_path))
                 print(f"load pretrain model from {args.pretrain_model_path}")
 
-            for f, g in model.biot.transformer.layers.layers:
-                g.fn.fn.dropout.p = 0.5 # PreNorm.Chunk.FeedForward.Dropout.p
-                pass
+            # for f, g in model.biot.transformer.layers.layers:
+            #     g.fn.fn.dropout.p = 0.5 # PreNorm.Chunk.FeedForward.Dropout.p
+            #     pass
 
         else:
             raise NotImplementedError
-    
-
 
     return model
 
@@ -140,8 +138,8 @@ def calculate_metrics(y_hat, y_ground, threshold = None):
         result = {
             "accuracy": accuracy_score(y_ground, y_pred),
             "balanced_accuracy": balanced_accuracy_score(y_ground, y_pred),
-            "pr_auc": average_precision_score(y_ground, y_pred),
-            "roc_auc": roc_auc_score(y_ground, y_pred),
+            "pr_auc": average_precision_score(y_ground, y_hat),
+            "roc_auc": roc_auc_score(y_ground, y_hat),
             "threshold": threshold,
         }
     else:
@@ -157,7 +155,7 @@ def calculate_metrics(y_hat, y_ground, threshold = None):
 def prepare_TUAB_dataloader(args):
     import torch
     from torch.utils.data import DataLoader
-    import numpy as np
+    # import numpy as np
     from utils import TUABLoader
 
     # set random seed
@@ -165,7 +163,7 @@ def prepare_TUAB_dataloader(args):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
+    # np.random.seed(seed)
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
     torch.backends.cudnn.benchmark=False
     torch.backends.cudnn.deterministic=True
@@ -177,7 +175,7 @@ def prepare_TUAB_dataloader(args):
     root = './datasets/TUAB/processed_' + args.subset
 
     train_files = os.listdir(os.path.join(root, "train"))
-    np.random.shuffle(train_files)
+    # np.random.shuffle(train_files)
     # train_files = train_files[:100000]
     val_files = os.listdir(os.path.join(root, "val"))
     test_files = os.listdir(os.path.join(root, "test"))
@@ -197,7 +195,7 @@ def prepare_TUAB_dataloader(args):
     )
     test_loader = torch.utils.data.DataLoader(
         TUABLoader(os.path.join(root, "test"), test_files, args.sampling_rate),
-        batch_size=args.batch_size * 2,
+        batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.num_workers,
         persistent_workers=args.num_workers > 0,
@@ -206,7 +204,7 @@ def prepare_TUAB_dataloader(args):
     )
     val_loader = torch.utils.data.DataLoader(
         TUABLoader(os.path.join(root, "val"), val_files, args.sampling_rate),
-        batch_size=args.batch_size * 2,
+        batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.num_workers,
         persistent_workers=args.num_workers > 0,
@@ -374,9 +372,6 @@ def supervised(args):
     print(args)
 
     import torch
-    from utils import BCE
-    from engine import Hooks, create_global_context, train, test, valid
-
     # get data loaders
     device = torch.device('cuda:0')
 
@@ -385,7 +380,6 @@ def supervised(args):
 
     # define the model
     model = prepare_model(args)
-    model = model.to(device)
 
     # define optimizer and scheduler
     optimizer = torch.optim.AdamW(
@@ -395,7 +389,7 @@ def supervised(args):
     )
 
     def infer_post_fn(pred, label):
-        pred = torch.sigmoid(pred)#.flatten(-2, -1)
+        pred = torch.sigmoid(pred).flatten()
         return pred, label
     
     class FastStop:
@@ -417,12 +411,11 @@ def supervised(args):
     fast_stop = FastStop(5)
 
     def compare_metrics(best, current):
-        # if best is None:
-        #     return True, False
-
         improved = best is None or current['roc_auc'] > best['roc_auc']
 
         return improved
+
+    from utils import BCE
 
     def loss_fn(model, preds, labels):
         loss = BCE(preds, labels)
@@ -435,6 +428,8 @@ def supervised(args):
     def compose_custom_state(result, metrics):
         result['threshold'] = metrics['threshold']
 
+    from engine import Hooks, create_global_context, train, test, valid
+
     hooks = Hooks(calc_metric=calculate_metrics)
     hooks.calc_loss = loss_fn
     hooks.handle_post_infer_result = infer_post_fn
@@ -442,7 +437,7 @@ def supervised(args):
     hooks.compose_cp_custom_state = compose_custom_state
     hooks.test_break = lambda better, *_: fast_stop.update(better)
 
-    ctx = create_global_context(device, log_dir, cp_dir)
+    ctx = create_global_context(device, log_dir, cp_dir, 1)
 
     from contextlib import ExitStack
 
@@ -456,6 +451,7 @@ def supervised(args):
             stack.push(lambda *_: prof.export_chrome_trace(str(prof_dir / 'profile.json')))
             prof = stack.enter_context(profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU]))
 
+        model = model.to(device)
         if args.valid:
             valid(ctx, model, test_loader, hooks)
 

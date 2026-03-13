@@ -18,7 +18,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pyhealth.metrics import binary_metrics_fn
 
-from model import (
+from model.biot2 import (
     # SPaRCNet,
     # ContraWR,
     # CNNTransformer,
@@ -48,7 +48,7 @@ class LitModel_finetune(pl.LightningModule):
         self.log("Train/train_loss", loss)
         self.log("Mem/AllocMax", torch.cuda.max_memory_allocated() / 1024 / 1024)
         self.log("Mem/ReservMax", torch.cuda.max_memory_reserved() / 1024 / 1024)
-        self.log('lr', self.lr_schedulers().get_last_lr()[0], True, False)
+        # self.log('lr', self.lr_schedulers().get_last_lr()[0], True, False)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -66,9 +66,15 @@ class LitModel_finetune(pl.LightningModule):
             result = np.append(result, out[0])
             gt = np.append(gt, out[1])
 
+        # np.save('workspace/test_impl/gt1.npy', gt)
+        # np.save('workspace/test_impl/result1.npy', result)
+
         if (
             sum(gt) * (len(gt) - sum(gt)) != 0
         ):  # to prevent all 0 or all 1 and raise the AUROC error
+            print(result.shape)
+            print(gt.shape)
+
             self.threshold = np.sort(result)[-int(np.sum(gt))]
             result = binary_metrics_fn(
                 gt,
@@ -76,12 +82,14 @@ class LitModel_finetune(pl.LightningModule):
                 metrics=["pr_auc", "roc_auc", "accuracy", "balanced_accuracy"],
                 threshold=self.threshold,
             )
+            result['threshold'] = self.threshold
         else:
             result = {
                 "accuracy": 0.0,
                 "balanced_accuracy": 0.0,
                 "pr_auc": 0.0,
                 "roc_auc": 0.0,
+                "threshold": 0.5
             }
         self.log("val_acc", result["accuracy"], sync_dist=True)
         self.log("val_bacc", result["balanced_accuracy"], sync_dist=True)
@@ -89,7 +97,7 @@ class LitModel_finetune(pl.LightningModule):
         self.log("val_auroc", result["roc_auc"], sync_dist=True)
 
         result = result.copy()
-        result['lr'] = self.lr_schedulers().get_last_lr()[0]
+        # result['lr'] = self.lr_schedulers().get_last_lr()[0]
         result_ = 'Epoch {:>3d}:\t'.format(self.current_epoch) + (' ' * 4).join(['{}={:.6f}'.format(k, v) for k,v in result.items()])
         self.print(result_)
 
@@ -183,7 +191,9 @@ def prepare_TUAB_dataloader(args):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
+    # np.random.seed(seed)
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    torch.use_deterministic_algorithms(True)
 
     root = "/srv/local/data/TUH/tuh3/tuh_eeg_abnormal/v3.0.0/edf/processed"
 
@@ -193,36 +203,38 @@ def prepare_TUAB_dataloader(args):
         root = './datasets/TUAB/processed'
 
     train_files = os.listdir(os.path.join(root, "train"))
-    np.random.shuffle(train_files)
+    # np.random.shuffle(train_files)
     # train_files = train_files[:100000]
     val_files = os.listdir(os.path.join(root, "val"))
     test_files = os.listdir(os.path.join(root, "test"))
 
     print(len(train_files), len(val_files), len(test_files))
 
+    from torch.utils.data import DataLoader
     # prepare training and test data loader
-    train_loader = torch.utils.data.DataLoader(
+    train_loader = DataLoader(
         TUABLoader(os.path.join(root, "train"),
                    train_files, args.sampling_rate),
         batch_size=args.batch_size,
         shuffle=True,
         drop_last=True,
         num_workers=args.num_workers,
-        persistent_workers=True,
+        persistent_workers=args.num_workers > 0,
+        pin_memory=True,
     )
     test_loader = torch.utils.data.DataLoader(
         TUABLoader(os.path.join(root, "test"), test_files, args.sampling_rate),
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.num_workers,
-        persistent_workers=True,
+        persistent_workers=args.num_workers > 0,
     )
     val_loader = torch.utils.data.DataLoader(
         TUABLoader(os.path.join(root, "val"), val_files, args.sampling_rate),
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.num_workers,
-        persistent_workers=True,
+        persistent_workers=args.num_workers > 0,
     )
     print(len(train_loader), len(val_loader), len(test_loader))
     return train_loader, test_loader, val_loader
@@ -429,13 +441,13 @@ def supervised(args):
                 n_channels=args.in_channels,
                 n_fft=args.token_size,
                 hop_length=args.hop_length,
-                linear = args.linear, # modifications for tc_eeg
-                top_k = args.top_k,
-                tome_r = args.tome_r,
-                flash=args.flash,
-                tome_variant=args.tome_variant,
-                cls_token = args.cls_token,
-                merge_in_attn=args.merge_in_attn,
+                # linear = args.linear, # modifications for tc_eeg
+                # top_k = args.top_k,
+                # tome_r = args.tome_r,
+                # flash=args.flash,
+                # tome_variant=args.tome_variant,
+                # cls_token = args.cls_token,
+                # merge_in_attn=args.merge_in_attn,
             )
             if args.pretrain_model_path and (args.sampling_rate == 200):
                 model.biot.load_state_dict(torch.load(args.pretrain_model_path))
@@ -477,6 +489,7 @@ def supervised(args):
         max_epochs=args.epochs,
         callbacks=[early_stop_callback],
         log_every_n_steps=1,
+        # num_sanity_val_steps=0
     )
 
     # train the model
