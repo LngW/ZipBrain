@@ -92,6 +92,7 @@ def prepare_model(args) -> 'torch.nn.Module':
                 model.biot.load_state_dict(torch.load(args.pretrain_model_path))
                 print(f"load pretrain model from {args.pretrain_model_path}")
 
+
             # for f, g in model.biot.transformer.layers.layers:
             #     g.fn.fn.dropout.p = 0.5 # PreNorm.Chunk.FeedForward.Dropout.p
             #     pass
@@ -359,6 +360,19 @@ def supervised(args):
     # define the model
     model = prepare_model(args)
 
+    # load from checkpoint
+    state_dict = torch.load('checkpoints/prest-tuab100.pt', weights_only=True)
+    model_dict = state_dict['model']
+    if 'biot.window' in model_dict:
+        model_dict.pop('biot.window')
+    model.load_state_dict(model_dict)
+    threshold = state_dict['threshold']
+
+    from tome.patch import apply_patch
+    apply_patch(model, True)
+    model.r = args.tome_r
+    model.variant = args.tome_variant
+
     # define optimizer and scheduler
     optimizer = torch.optim.AdamW(
         model.parameters(), 
@@ -410,7 +424,7 @@ def supervised(args):
 
     from engine import Hooks, create_global_context, destructure_global_context, train, test, valid
 
-    hooks = Hooks(calc_metric=calculate_metrics)
+    hooks = Hooks(calc_metric=lambda pred, label : calculate_metrics(pred, label, threshold))
     hooks.calc_loss = loss_fn
     hooks.handle_post_infer_result = infer_post_fn
     hooks.compare_metric = compare_metrics
@@ -421,10 +435,9 @@ def supervised(args):
     ctx = create_global_context(device, log_dir, cp_dir, 2)
 
     from contextlib import ExitStack
-
     with ExitStack() as stack:
+        stack.push(lambda *_: destructure_global_context(ctx))
         if args.profile:
-            stack.push(lambda *_: destructure_global_context(ctx))
             from torch.profiler import profile, ProfilerActivity
             torch.cuda.memory._record_memory_history()
             stack.push(lambda *_: torch.cuda.memory._dump_snapshot(str(prof_dir / 'memory.pickle')))
@@ -442,48 +455,6 @@ def supervised(args):
 
         if args.test:
             test(ctx, model, test_loader, hooks)
-
-    # def _train_fn():
-    #     if not args.no_train:
-    #         _train_loop(
-    #                 ctx_global=ctx,
-    #                 epochs=args.epochs, 
-    #                 model = model, 
-    #                 optimizer = optimizer,
-    #                 scheduler = None,
-    #                 train_dataloader = train_loader, 
-    #                 val_dataloader = val_loader, 
-    #                 loss_fn = loss_fn,
-    #                 metric_fn = calculate_metrics,
-    #                 metric_comp_fn = compare_metrics,
-    #                 infer_post_fn = infer_post_fn,
-    #             )
-    #     if args.test:
-    #         _inference_loop(
-    #             ctx_global=ctx,
-    #             model=model,
-    #             test_dataloader=test_loader,
-    #             infer_post_fn=infer_post_fn,
-    #             metric_fn=calculate_metrics,
-                
-    #         )
-
-    # if args.profile:
-    #     torch.cuda.memory._record_memory_history()
-    #     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], with_stack=True) as prof:
-    #         _train_fn()
-        
-    #     prof.export_chrome_trace(str(prof_dir / "profile.json"))
-    #     torch.cuda.memory._dump_snapshot(str(prof_dir / "memory.pickle"))
-    # else:
-    #     _train_fn()
-
-        # torch.cuda.memory._record_memory_history()
-        # with profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU]) as perf:
-        # if True:
-        # perf.export_chrome_trace("engine_profile")
-        # torch.cuda.memory._dump_snapshot()
-    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

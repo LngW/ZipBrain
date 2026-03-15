@@ -18,7 +18,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pyhealth.metrics import binary_metrics_fn
 
-from model.biot2 import (
+from model import (
     # SPaRCNet,
     # ContraWR,
     # CNNTransformer,
