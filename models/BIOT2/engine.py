@@ -74,6 +74,13 @@ class __GlobalContext:
 
     def __iter__(self):
         return iter((self.device, self.__slots, self.s_compute, self.s_mem_in, self.s_mem_out, self.__event_queue))
+    
+    def destory(self):
+        self.__event_queue.put((None, None))
+        self.__event_loop.join()
+
+        self.logger.flush()
+        self.logger.close()
 
 @dataclass
 class Hooks:
@@ -116,11 +123,7 @@ def destructure_global_context(ctx):
     if not isinstance(ctx, __GlobalContext):
         return
     
-    ctx.__event_queue.put((None, None))
-    ctx.__event_loop.join()
-
-    ctx.logger.flush()
-    ctx.logger.close()
+    ctx.destory()
 
 class _EpochContext:
     epoch: int
