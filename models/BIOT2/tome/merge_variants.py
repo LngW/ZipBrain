@@ -1,4 +1,5 @@
 
+import math
 from typing import Callable, Tuple
 
 import torch
@@ -6,18 +7,39 @@ from einops import rearrange
 
 from tome.merge import merge_source
 
+Spliter = Callable[[torch.Tensor], tuple[torch.Tensor, torch.Tensor]]
+
 def apply_merge(pinfo, r : int, variant : str, x, metric):
+
+    protected = 0
+    if pinfo['class_token']:
+        protected += 1
+    if pinfo['distill_token']:
+        protected += 1
+    t = metric.size(1) - protected
+    r_ = min(r, t - 1)
+    if r_ <= 0:
+        return x
+    
+    def split(input):
+        return input[..., :protected, :], input[..., protected:, :]
 
     if variant is None or variant == '' or variant.startswith('tome'):
         return tome_merge(pinfo, r, x, metric)
     elif variant.startswith('full'):
         return full_merge(pinfo, r, x, metric)
+    elif variant.startswith('rpe'):
+        return rpe_merge(pinfo, r, x, metric)
+    elif variant.startswith('alibi'):
+        return alibi_merge(pinfo, r, x, metric, split)
     # elif variant.startswith('fch'):
     #     return fch_merge(pinfo, r, x, metric)
     elif variant.startswith('meann'):
         return mean_merge(pinfo, r, x, metric, True)
-    elif variant.startswith('mean'):
+    elif variant.startswith('meanm'):
         return mean_merge(pinfo, r, x, metric, False)
+    elif variant.startswith('meanp'):
+        return mean_prune(pinfo, r_, x, metric, split)
     elif variant.startswith('clsp'):
         return cls_prune(pinfo, r, x, metric)
     elif variant.startswith('clsm'):
@@ -26,6 +48,10 @@ def apply_merge(pinfo, r : int, variant : str, x, metric):
         return dart_merge(pinfo, r, x, metric)
     elif variant.startswith('dartp'):
         return dart_prune(pinfo, r, x, metric)
+    elif variant.startswith('rndm'):
+        return random_merge(pinfo, r_, x, metric, split)
+    elif variant.startswith('rndp'):
+        return random_prune(pinfo, r_, x, metric, split)
 
     return x
 
@@ -85,6 +111,65 @@ def tome_merge(pinfo, r, x, metric):
 
     return x
 
+def random_merge(pinfo, r, x, metric, split : Spliter):
+    m_prot, m_raw = split(metric)
+
+    with torch.no_grad():
+        bsz, seq, dim = m_raw.shape
+        rnd = torch.Generator(m_raw.device)
+
+        indices = torch.stack([torch.randperm(seq, generator=rnd, device=m_raw.device) for _ in range(bsz)])
+        # indices = torch.randperm(bsz * seq, generator=rnd, device=m_raw.device)
+        # indices = indices.view(bsz, seq) - (torch.arange(0, bsz, device=m_raw.device) * seq).view(bsz, 1)
+
+        src_idx = indices[:, :r, None]
+        left_idx = indices[:, r:, None]
+        tar_idx = torch.randint(0, seq-r, (bsz, r, 1), device=m_raw.device)
+
+    def merge(x, mode = 'sum'):
+        x_prot, x_raw = split(x)
+
+        dim = x_raw.size(-1)
+        src = x_raw.gather(-2, src_idx.expand(-1, -1, dim))
+        left = x_raw.gather(-2, left_idx.expand(-1, -1, dim))
+
+        left = left.scatter_reduce(-2, tar_idx.expand(-1, -1, dim), src, mode)
+        
+        return torch.cat([x_prot, left], -2)
+    
+    handle_source(pinfo, x, merge)
+    size, size_ = handle_size(pinfo, x, merge)
+
+    return merge(x * size) / size_
+
+def random_prune(pinfo, r, x, metric, split : Spliter):
+    m_prot, m_raw = split(metric)
+
+    with torch.no_grad():
+        bsz, seq, dim = m_raw.shape
+        rnd = torch.Generator(m_raw.device)
+
+        indices = torch.stack([torch.randperm(seq, generator=rnd, device=m_raw.device) for _ in range(bsz)])
+
+        # indices = torch.randperm(bsz * seq, generator=rnd, device=m_raw.device)
+        # indices = indices.view(bsz, seq) - (torch.arange(0, bsz, device=m_raw.device) * seq).view(bsz, 1)
+        left_idx = indices[:, r:, None]
+
+    def merge(x, mode = 'sum'):
+        x_prot, x_raw = split(x)
+
+        dim = x_raw.size(-1)
+        left = x_raw.gather(-2, left_idx.expand(-1, -1, dim))
+
+        # left = left.scatter_reduce(-2, tar_idx.expand(-1, -1, dim), src, mode)
+        
+        return torch.cat([x_prot, left], -2)
+    
+    handle_source(pinfo, x, merge)
+    size, size_ = handle_size(pinfo, x, merge)
+
+    return merge(x * size) / size_
+
 def _full_merge(x, metric, r, class_token, distill_token):
     protected = 0
     if class_token:
@@ -137,12 +222,55 @@ def _full_merge(x, metric, r, class_token, distill_token):
         return torch.cat([x[..., :protected, :], right], dim=-2)
         # return torch.cat([x[..., :protected, :], matrix_ @ x[..., protected:, :]], dim=-2)
 
-    # if soft_hard_mode == 1:
-    #     return hard_merge, hard_merge
-    # elif soft_hard_mode == 2:
-    #     return soft_merge, soft_merge
-    # else:
     return soft_merge, hard_merge, similarity
+
+# A bad implementation. 
+# After once two token merged, how to measure the distance between this merged token with other tokens?
+# Those token may not event in same channel or at same timestep
+def alibi_merge(pinfo, r, x, metric, split : Callable[[torch.Tensor], tuple[torch.Tensor, torch.Tensor]]):
+    with torch.no_grad():
+        alibi = pinfo.get('alibi', None)
+        if alibi is None:
+            bsz, chs, seq, dim = pinfo['shape']
+            alibi = torch.arange(seq, dtype=metric.dtype, device=metric.device).view(1, -1)
+            alibi = (alibi - alibi.view(-1, 1)).abs() / seq
+            alibi = alibi.unsqueeze(0).repeat(bsz, chs, chs)
+        else:
+            alibi : torch.Tensor = alibi
+
+        m_prot, m_raw = split(metric)
+
+        m_raw = m_raw / m_raw.norm(p=2, dim=-1, keepdim=True)
+        similarity = m_raw @ m_raw.transpose(-2, -1)
+        similarity = similarity - alibi
+
+        importance = torch.exp(similarity).sum(-1)
+        left_idx = importance.topk(m_raw.size(1) - r, dim=-1, sorted=False).indices.sort().values
+
+        left_similarity = similarity.gather(-2, left_idx[..., None].expand(-1, -1, similarity.size(-1)))
+        max_idx = left_similarity.argmax(-2, True)
+        matrix_hard = torch.zeros_like(left_similarity).scatter(-2, max_idx, 1)
+        left_similarity = None
+
+    def merge_hard(input):
+        i_prot, i_raw = split(input)
+        i_raw = matrix_hard @ i_raw
+        return torch.cat([i_prot, i_raw], dim=-2)
+    
+    handle_source(pinfo, x, merge_hard)
+    size, size_ = handle_size(pinfo, x, merge_hard)
+
+    # alibi = (matrix_hard @ (alibi * size)).gather(-1, left_idx[..., None, :].expand(-1, left_idx.size(-1), -1))
+    alibi = alibi.gather(-2, left_idx[..., None].expand(-1, -1, left_idx.size(-1))).contiguous()
+    torch.diagonal_scatter(alibi, torch.diagonal(alibi, 0, -2, -1) - torch.diagonal(alibi, 0, -2, -1), 0, -2, -1)
+    # alibi.fill_diagonal_(0)
+    # alibi = alibi.gather(-1, left_idx[..., None, :].expand(-1, left_idx.size(-1), -1)).contiguous()
+    # alibi = alibi / size_
+    pinfo['alibi'] = alibi
+
+    pinfo['attn_score'] = similarity
+
+    return merge_hard(x * size) / size_
 
 def full_merge(pinfo, r, x, metric):
 
@@ -199,6 +327,93 @@ def full_merge(pinfo, r, x, metric):
 
     x_prot, x_raw = split(x)
     x_raw = matrix @ x_raw / matrix.sum(-1, True)
+    return torch.cat([x_prot, x_raw], dim = -2)
+
+    # return x_
+
+def rpe_merge(pinfo, r, x, metric):
+
+    protected = 0
+    if pinfo['class_token']:
+        protected += 1
+    if pinfo['distill_token']:
+        protected += 1
+    bsz, seq, dim = metric.shape
+    t = seq - protected
+    r = min(r, t - 1)
+
+    if r <= 0:
+        return x
+    
+    def split(input):
+        return input[..., :protected, :], input[..., protected:, :]
+    
+    with torch.no_grad():
+        pe_score = pinfo['pe_score']
+        if pe_score is None:
+            _, chs, seq_, _ = pinfo['shape']
+            pe = pinfo['pe'][:, :seq_, :]
+            pe_score = pe @ pe.transpose(-2, -1)
+
+            pe_score = (pe_score - pe_score.min()) / (pe_score.amax() - pe_score.amin())
+            pe_score = pe_score.to(x.device)
+            pe_score = pe_score / math.sqrt(2)
+            pe_score = pe_score.repeat(bsz, chs, chs)
+
+        pe_score = pe_score / math.sqrt(2)
+        # pinfo['pe_score'] = pe_score
+
+        q = metric[..., protected:, :]
+        q = q / q.norm(dim = -1, keepdim = True)
+
+        similarity = q @ q.transpose(-2, -1)
+        bsz, seq, _ = similarity.shape
+        similarity_ = similarity.view(bsz, -1)
+        pe_score_ = pe_score.view(bsz, -1)
+        # print(similarity_.device)
+        # print(pe_score.device)
+        # print(pe_score_.device)
+        pe_score_ = pe_score_ * (similarity_.amax(-1, True) - similarity_.amin(-1, True))
+        pe_score_ = pe_score_ + similarity_.amin(-1, True)
+        pe_score_ = pe_score_.view(bsz, seq, seq)
+        similarity = similarity - pe_score_
+        importance = torch.exp(similarity).sum(-1)
+
+        top_idx = torch.topk(importance, t - r).indices.sort().values
+
+        matrix = similarity.gather(-2, top_idx[..., None].expand(-1, -1, t - protected))
+        matrix = (matrix + 1) / 2
+        matrix.scatter_(-1, top_idx[..., None], 1)
+
+        matrix_ = torch.zeros_like(matrix)
+        matrix_.scatter_(-2, matrix.argmax(-2, True), 1) # merge to its most similar one
+
+        # similarity = None
+        importance = None
+        # top_idx = None
+
+        matrix = matrix * matrix_
+    
+    def merge(x, mean = False):
+        x_prot, x_raw = split(x)
+        x_raw = matrix_ @ x_raw
+        if mean:
+            x_raw = x_raw / matrix_.sum(-1, True)
+
+        return torch.cat([x_prot, x_raw], dim=-2)
+    
+    if pinfo['trace_source']:
+        pinfo['attn_score'] = similarity
+
+    handle_source(pinfo, x, lambda it : merge(it, False))
+    handle_size(pinfo, x, lambda it : merge(it, True))
+
+    x_prot, x_raw = split(x)
+    x_raw = matrix @ x_raw / matrix.sum(-1, True)
+
+    # pe_score = 
+    pinfo['pe_score'] = (matrix_ @ pe_score).gather(dim=-1, index=top_idx[..., None, :].expand(-1, seq - r, -1))
+
     return torch.cat([x_prot, x_raw], dim = -2)
 
     # return x_
@@ -275,12 +490,12 @@ def mean_merge(pinfo, r, x, metric, centerize):
         centerize
     )
 
-    pinfo['attn_score'] = scores
-
     if pinfo["trace_source"]:
         pinfo["source"] = merge_source(
             merge, x, pinfo["source"]
         )
+        pinfo['attn_score'] = scores
+
     x, pinfo["size"] = merge_wavg(
         merge, x, pinfo["size"]
     )
@@ -315,28 +530,30 @@ def _mean_merge(pinfo, r, x, metric, centerize):
     token_mean = token_mean.transpose(-2, -1)
     m_r = m_r / m_r.norm(2, -1, True)
 
-    score = (m_r @ token_mean).squeeze(-1)
-    vals, sort_indicies = score.sort(dim=-1)
+    score = (m_r @ token_mean).squeeze(-1) # (bsz, seq)
+    vals, sort_indicies = score.sort(dim=-1) # (bsz, seq)
 
-    diff = vals[..., 1:] - vals[..., :-1]
-    _, top_indicies = torch.topk(diff, r, largest=False)
+    diff = vals[..., 1:] - vals[..., :-1] # (bsz, seq - 1)
+    _, top_indicies = torch.topk(diff, r, largest=False) # (bsz, r)
 
-    top_mask = torch.zeros_like(sort_indicies[..., 1:])
+    top_mask = torch.zeros_like(sort_indicies[..., 1:]) # (bsz, seq - 1)
     top_mask.scatter_(-1, top_indicies, 1)
     top_shift = top_mask.cumsum(-1)
     top_counts = top_shift - (top_shift * (1 - top_mask)).cummax(-1).values
-    top_counts = top_counts.gather(-1, top_indicies)
+    top_counts = top_counts.gather(-1, top_indicies) # (bsz, seq - 1)
 
     src_idx = sort_indicies.gather(-1, top_indicies + 1)
     tar_idx = sort_indicies.gather(-1, top_indicies - top_counts + 1)
 
+    bsz, seq = sort_indicies.shape
     left_mask = torch.ones_like(sort_indicies)
     left_mask.scatter_(-1, src_idx, 0)
     left_indicies = torch.arange(0, sort_indicies.size(-1), 1, device=x.device)
-    left_indicies = left_indicies[None, ...] * left_mask
-    left_indicies, _ = left_indicies.sort()
-    left_indicies = left_indicies[..., r:]
-
+    left_indicies = torch.masked_select(left_indicies, left_mask.to(dtype=torch.bool))
+    left_indicies = left_indicies.view(bsz, seq - r)
+    # left_indicies = left_indicies[None, ...] * left_mask
+    # left_indicies, _ = left_indicies.sort()
+    # left_indicies = left_indicies[..., r:]
 
     def merge(x, mode='mean'):
         dim = x.size(-1)
@@ -349,6 +566,48 @@ def _mean_merge(pinfo, r, x, metric, centerize):
         return torch.cat([x_prot, x_raw], dim=-2)
     
     return merge, merge, score
+
+def mean_merge1(pinfo, r, x, metric, split : Spliter):
+    m_prot, m_raw = split(metric)
+
+    with torch.no_grad():
+        bsz, seq, dim = m_raw.shape
+
+        mean = m_raw.mean(-2, True) # (bsz, 1, dim)
+        m_raw = m_raw - mean
+        m_raw = m_raw / m_raw.norm(2, -1, True) # (bsz, seq, dim)
+
+        scores = (m_raw @ mean.view(bsz, dim, 1)).squeeze(-1) # (bsz, seq)
+        sort_val, sort_idx = scores.sort()
+
+
+def mean_prune(pinfo, r, x, metric, split : Spliter):
+    m_prot, m_raw = split(metric)
+
+    with torch.no_grad():
+        bsz, seq, dim = m_raw.shape
+
+        mean = m_raw.mean(-2, True) # (bsz, 1, dim)
+        m_raw = m_raw - mean
+        scores = ((m_raw / m_raw.norm(2, -1, True)) @ mean.view(bsz, dim, 1)).squeeze(-1) # (bsz, seq, dim) @ (bsz, dim, 1) -> (bsz, seq, 1) -> (bsz, seq)
+
+        # scores.sort
+        mask = torch.ones_like(scores, dtype=torch.bool) # (bsz, seq)
+        mask.scatter_(-1, scores.topk(r, -1, False).indices, False)
+
+        def merge(x):
+            x_p, x_r = split(x)
+            x_r = x_r[mask]
+            x_r = x_r.view(bsz, -1, x_r.size(-1))
+
+            return torch.cat([x_p, x_r], dim=-2)
+        
+        handle_source(pinfo, x, merge)
+        size, size_ = handle_size(pinfo, x, merge)
+
+        pinfo['attn_score'] = scores
+
+        return merge(x)
 
 def cls_prune(pinfo, r, x, metric):
     if not pinfo['class_token']:
@@ -476,18 +735,18 @@ def dart_merge(pinfo, r, x, metric : torch.Tensor):
     # select tokens via metric's l1-norm
     pivot_idx = metric.norm(dim=-1, p=1).topk(k=k, dim=-1).indices
     pivot_tokens = metric.gather(dim=-2, index=pivot_idx[..., None].expand(-1, -1, dim))
-    # non_pivot_idx = torch.arange(0, seq, 1)[None, ...].repeat(bsz, 1)
-    # non_pivot_idx = non_pivot_idx.scatter_(-1, pivot_idx, 0)
-    # non_pivot_idx = non_pivot_idx.sort().indices[..., k:]
-    # non_pivot_tokens = metric.gather(-2, non_pivot_idx[..., None].expand(-1, -1, dim))
 
     similarity = (pivot_tokens / pivot_tokens.norm(2, -1, True)) @ (metric / metric.norm(2, -1, True)).transpose(-2, -1)
 
     sim_max_val, sim_max_idx = similarity.max(dim=-2)
     _, src_idx = sim_max_val.scatter(-1, pivot_idx, -1).topk(r, -1)
 
+    # similarity = None
+
     tar_idx = sim_max_idx.gather(-1, src_idx)
     tar_idx = pivot_idx.gather(-1, tar_idx)
+
+    # pivot_idx = None
 
     left_idx = torch.arange(0, seq, device=metric.device)[None, ...]
     left_idx = left_idx.repeat(bsz, 1)

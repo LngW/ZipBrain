@@ -76,6 +76,9 @@ def make_classifier_class(klass):
             self._pinfo["size"] = None
             self._pinfo["source"] = None
             self._pinfo["qkv"] = None
+            self._pinfo["pe_score"] = None
+            self._pinfo["alibi"] = None
+            self._pinfo["attn_score"] = None
 
             return super().forward(x)
 
@@ -221,6 +224,8 @@ def apply_patch(model, trace_source: bool = False):
         "prop_attn": False,
         "class_token": False,
         "distill_token": False,
+        "pe" : model.biot.positional_encoding.pe,
+        "pe_score": None,
     }
 
     biot.__class__ = PatchedEncoder
@@ -239,7 +244,7 @@ def apply_patch(model, trace_source: bool = False):
 
 
 if __name__ == '__main__':
-    from model.biot2 import BIOTClassifier
+    from model import BIOTClassifier
     import torch
 
     x = torch.rand((1, 16, 2000))
@@ -252,10 +257,8 @@ if __name__ == '__main__':
         hop_length=100,
     )
 
-    # model(x)
-
     apply_patch(model)
     model.r = [38]
     model.variant = ['tome']
 
-    model(x)
+    print(model(x))
