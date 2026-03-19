@@ -52,6 +52,12 @@ def apply_merge(pinfo, r : int, variant : str, x, metric):
         return random_merge(pinfo, r_, x, metric, split)
     elif variant.startswith('rndp'):
         return random_prune(pinfo, r_, x, metric, split)
+    elif variant.startswith('kiddp'): # Keep Important Drop Duplicated, merge to pivot
+        return kidd_pivot(pinfo, r_, x, metric, split)
+    # elif variant.startswith('dartd'): # DART Combined
+    #     return merge_prune1(pinfo, r_, x, metric, split)
+    elif variant.startswith('kiddl'): # Keep Important Drop Duplicated, merge to left
+        return kidd_left(pinfo, r_, x, metric, split)
 
     return x
 
@@ -416,68 +422,6 @@ def rpe_merge(pinfo, r, x, metric):
 
     return torch.cat([x_prot, x_raw], dim = -2)
 
-    # return x_
-
-# def fch_merge(pinfo, r, x, metric):
-#     bsz, chs, seq, dim = pinfo['shape']
-#     def reshaper(input):
-#         return rearrange(input, "b (c s) d -> (b s) c d", s=seq)
-    
-#     r = min(r, chs - 1)
-#     # print(r)
-#     if r <= 0:
-#         return x
-    
-#     protected = 0
-#     if pinfo['class_token']:
-#         protected += 1
-#     if pinfo['distill_token']:
-#         protected += 1
-
-#     def handle_protected(input):
-#         prot = input[..., :protected, :]
-#         raw = input[..., protected:, :]
-
-#         raw = reshaper(raw)
-#         return prot, raw
-
-#     x_prot, x_raw = handle_protected(x)
-#     m_prot, m_raw = handle_protected(metric)
-
-#     size = pinfo['size']
-#     if size is None:
-#         size = torch.ones_like(x[..., 0:1])
-#     size_prot, size_raw = handle_protected(size)
-    
-#     if pinfo['trace_source']:
-#         source = pinfo['source']
-#         if source is None:
-#             source = torch.eye(chs * seq)[None, ...].repeat(bsz, 1, 1)
-#         source_prot, source_raw = handle_protected(source)
-
-#     del reshaper, handle_protected
-#     def reshaper(input):
-#         return rearrange(input, "(b s) c d -> b (c s) d", s = seq)
-    
-#     def handle_protected(prot, raw):
-#         raw = reshaper(raw)
-#         return torch.cat([prot, raw], dim = -2)
-
-#     soft, hard = _full_merge(x_raw, m_raw, r, False, False)
-
-#     if pinfo['trace_source']:
-#         source_raw = hard(source_raw)
-#         pinfo['source'] = handle_protected(source_prot, source_raw)
-    
-#     x_raw, size_raw = merge_wavg(soft, hard, x_raw, size_raw)
-#     chs = x_raw.size(-2)
-#     x = handle_protected(x_prot, x_raw)
-#     size = handle_protected(size_prot, size_raw)
-
-#     pinfo['size'] = size
-#     pinfo['shape'] = bsz, chs, seq, dim
-#     return x
-
 def mean_merge(pinfo, r, x, metric, centerize):
     if r <= 0: 
         return x
@@ -822,3 +766,473 @@ def dart_prune(pinfo, r, x, metric : torch.Tensor):
     x = merge(x * size) / size_
 
     return x
+
+# drop un-important and duplicate tokens, merge importance but duplicate tokens
+def merge_prune(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter : Spliter):
+
+    m_prot, m_raw = spliter(metric)
+
+    # cal improtance by attention score with mean
+    bsz, seq, dim = m_raw.shape
+
+    imp_num = seq - r
+    pivot_num = math.ceil((seq - r) * 0.05)
+    # indices = torch.arange(0, seq, device=metric.device).view(1, seq).expand(bsz, -1)
+    
+    mean_token = m_raw.mean(-2, True) # (bsz, 1, dim)
+    # mean_norm =  # (bsz, 1, 1)
+    mean_token = mean_token / mean_token.norm(2, -1, True)
+
+    metric_norm = m_raw.norm(2, -1, True) # (bsz, seq, 1)
+    m_raw = m_raw / metric_norm
+    imp_score = (m_raw @ mean_token.view(bsz, dim, 1)).squeeze(-1) # (bsz, seq)
+    imp_idx = imp_score.topk(imp_num, -1, True, False).indices
+
+    # pivot_num = math.ceil(math.log(seq - r))
+
+    # pivot_num = math.ceil(seq / 20)
+    # pivot_idx = metric_norm.squeeze(-1).gather(-1, imp_idx).topk(pivot_num, -1, True, False).indices # (bsz, p)
+    tmp_idx = metric_norm.squeeze(-1).sort(-1, descending=True).indices # (bsz, p)
+    pivot_idx = tmp_idx[:, :pivot_num] # (bsz, p)
+    # non_pivot_idx = tmp_idx[:, pivot_num:] # (bsz, seq - p)
+
+    # non_pivot_idx = indices[
+    #     torch.ones_like(indices, dtype=torch.bool).scatter_(-1, pivot_idx, False)
+    # ].view(bsz, -1) # (bsz, seq - p)
+
+    pivots = m_raw.gather(-2, pivot_idx[..., None].expand(-1, -1, dim))
+    # non_pivots = m_raw.gather(-2, non_pivot_idx[..., None].expand(-1, -1, dim))
+
+    # non_pivot_non_imp_num = min(seq - pivot_num, r)
+    sim_score, sim_idx = (m_raw @ pivots.transpose(-2, -1)).max(-1) # (bsz, seq)
+    sim_score = sim_score.scatter(-1, pivot_idx, -2)
+
+    tmp_idx = sim_score.sort(-1, descending=True).indices
+    dup_idx = tmp_idx[:, :r]
+    left_idx = tmp_idx[:, r:]
+
+    tar_idx = pivot_idx.gather(-1, sim_idx).gather(-1, dup_idx)
+    src_idx = dup_idx
+
+    # non_dup_idx = non_pivot_idx.gather(-1, non_dup_idx)
+
+    imp_mask = torch.zeros_like(m_raw[:, :, 0], dtype=torch.bool).scatter_(-1, imp_idx, True)
+    imp_dup_mask = imp_mask.gather(-1, dup_idx)
+
+    # imp_dup_num = min(imp_num, r)
+    # imp_dup_value, imp_dup_idx = imp_dup_mask.to(dtype=torch.int).topk(imp_dup_num, -1, sorted=False) # (bsz, k)
+
+    # tar_idx = tar_idx.gather(-1, imp_dup_idx)
+    # src_idx = dup_idx.gather(-1, imp_dup_idx)
+
+    # tar_idx[imp_dup_value != 1] = -1
+    # src_idx[imp_dup_value != 1] = -1
+    tar_idx[~imp_dup_mask] = -1
+    src_idx[~imp_dup_mask] = -1
+
+    tar_idx = tar_idx + 1
+    src_idx = src_idx + 1
+
+    # tar_idx = torch.where(imp_dup_value == 1, sim_idx.gather(-1, imp_dup_idx), -1) + 1
+    # src_idx = torch.where(imp_dup_value == 1, dup_idx.gather(-1, imp_dup_idx), -1) + 1
+    # left_idx = indices.scatter(-1, dup_idx, -1).sort(-1).values[:, r:]
+    # assert left_idx.size(1) == seq - r
+    # left_idx = torch.cat([pivot_idx, non_dup_idx], dim=-1)
+    left_idx = left_idx.sort().values
+    assert left_idx.size(1) == seq - r
+
+    def merge(x : torch.Tensor, reduce = 'sum'):
+        x_prot, x_raw = spliter(x)
+        bsz, seq, dim = x_raw.shape
+        x_raw_ = torch.cat([torch.zeros_like(x_raw[:, 0:1, :]), x_raw], dim = -2)
+        src = x_raw_.gather(-2, src_idx[..., None].expand(-1, -1, dim))
+        x_raw_ = x_raw_.scatter_reduce(-2, tar_idx[..., None].expand(-1, -1, dim), src, reduce)
+        left = x_raw_[:, 1:].gather(-2, left_idx[..., None].expand(-1, -1, dim))
+
+        return torch.cat([x_prot, left], dim = -2)
+    
+    handle_source(pinfo, x, merge)
+
+    # slerp
+    # size, size_ = handle_size(pinfo, x, merge)
+    # return merge(x * size) / size_
+
+    # mlerp
+    length = x.norm(2, -1, True)
+    length_ = merge(length, 'amax')
+    x = merge(x)
+    x = x / x.norm(2, -1, True)
+    x = x * length_
+    return x
+
+    # avg
+    # size = torch.ones_like(x[..., :1])
+    # size_ = merge(size)
+    # return merge(x) / merge(size)
+
+    # length_avg
+    # length = x.norm(2, -1, True)
+    # size, size_ = handle_size(pinfo, x, merge)
+    # length_ = merge(length * size) / size_
+    # x = merge(x)
+    # x = x / x.norm(2, -1, True) * length_
+    # return x
+
+# Merge tokens with similar mean score, rather than with the pivot token.
+def merge_prune1(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter : Spliter):
+
+    m_prot, m_raw = spliter(metric)
+
+    # cal improtance by attention score with mean
+    bsz, seq, dim = m_raw.shape
+    t = seq - r
+
+    indices = torch.arange(0, seq, device=metric.device).view(1, seq).expand(bsz, -1)
+    
+    mean_token = m_raw.mean(-2, True) # (bsz, 1, dim)
+    mean_norm = mean_token.norm(2, -1, True) # (bsz, 1, 1)
+    mean_token = mean_token / mean_norm
+
+    metric_norm = m_raw.norm(2, -1, True) # (bsz, seq, 1)
+    m_raw = m_raw / metric_norm
+    imp_score = (m_raw @ mean_token.view(bsz, dim, 1)).squeeze(-1) # (bsz, seq)
+    imp_idx = imp_score.topk(t, -1, True, False).indices
+
+    pivot_num = math.ceil(seq * 0.05)
+    pivot_idx = metric_norm.squeeze(-1).topk(pivot_num, -1, True, False).indices # (bsz, p)
+    non_pivot_idx = indices[
+        torch.ones_like(indices, dtype=torch.bool).scatter_(-1, pivot_idx, False)
+    ].view(bsz, -1) # (bsz, seq - p)
+
+    pivots = m_raw.gather(-2, pivot_idx[..., None].expand(-1, -1, dim))
+    non_pivots = m_raw.gather(-2, non_pivot_idx[..., None].expand(-1, -1, dim))
+
+    k = min(seq - pivot_num, r)
+    sim_score, sim_idx = (non_pivots @ pivots.transpose(-2, -1)).max(-1) # (bsz, seq - p)
+    dup_idx = sim_score.topk(k, -1, True, False).indices # (bsz, k)
+    # sim_idx = pivot_idx.gather(-1, sim_idx).gather(-1, dup_idx)
+    dup_idx = non_pivot_idx.gather(-1, dup_idx)
+
+    k = min(seq - r, r)
+    imp_mask = torch.zeros_like(indices, dtype=torch.bool).scatter_(-1, imp_idx, True)
+    imp_dup_mask = imp_mask.gather(-1, dup_idx)
+    # there will be no more than k tokens are both important and duplicated
+    # so we select those tokens out here
+    imp_dup_mask, imp_dup_idx = imp_dup_mask.to(dtype=torch.int).topk(k, -1, sorted=False) # (bsz, k)
+    imp_dup_mask = imp_dup_mask.to(dtype=torch.bool)
+
+
+    left_idx = indices.scatter(-1, dup_idx, -1).sort(-1).values[:, r:]
+
+    dup_mean_score = imp_score.gather(-1, dup_idx)
+    left_mean_score = imp_score.gather(-1, left_idx)
+    diff_score = (dup_mean_score.unsqueeze(-1) - left_mean_score.unsqueeze(-2)).abs()
+
+
+
+    # diff_score = torch.where(imp_dup_mask, diff_score, torch.inf)
+    min_score, min_indices = diff_score.min(dim = -1)
+
+    src_idx = torch.where(imp_dup_mask, dup_idx.gather(-1, imp_dup_idx), -1) + 1
+    tar_idx = torch.where(imp_dup_mask, left_idx.gather(-1, min_indices).gather(-1, imp_dup_idx), -1) + 1
+    # tar_idx = torch.where(imp_dup_mask, imp_dup_idx, -1) + 1
+    # src_idx = torch.where(imp_dup_mask, min_indices.gather(-1, imp_dup_idx), -1) + 1
+
+
+    # tar_idx = torch.where(imp_dup_value == 1, sim_idx.gather(-1, imp_dup_idx), -1) + 1
+    # src_idx = torch.where(imp_dup_value == 1, dup_idx.gather(-1, imp_dup_idx), -1) + 1
+    # left_idx = indices.scatter(-1, dup_idx, -1).sort(-1).values[:, r:]
+
+    def merge(x : torch.Tensor, reduce = 'sum'):
+        x_prot, x_raw = spliter(x)
+        bsz, seq, dim = x_raw.shape
+        x_raw_ = torch.cat([torch.zeros_like(x_raw[:, 0:1, :]), x_raw], dim = -2)
+        src = x_raw_.gather(-2, src_idx[..., None].expand(-1, -1, dim))
+        x_raw_ = x_raw_.scatter_reduce(-2, tar_idx[..., None].expand(-1, -1, dim), src, reduce)
+        left = x_raw_[:, 1:].gather(-2, left_idx[..., None].expand(-1, -1, dim))
+
+        return torch.cat([x_prot, left], dim = -2)
+    
+    handle_source(pinfo, x, merge)
+    size, size_ = handle_size(pinfo, x, merge)
+    return merge(x * size) / size_
+
+    length = x.norm(2, -1, True)
+    length_ = merge(length, 'amax')
+    x = merge(x)
+    x = x / x.norm(2, -1, True) * length_
+    return x
+
+# def merge_prune2(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter : Spliter):
+
+#     m_prot, m_raw = spliter(metric)
+
+#     # cal improtance by attention score with mean
+#     bsz, seq, dim = m_raw.shape
+
+#     imp_num = seq - min(r, seq - r)
+#     indices = torch.arange(0, seq, device=metric.device).view(1, seq).expand(bsz, -1)
+    
+#     mean_token = m_raw.mean(-2, True) # (bsz, 1, dim)
+#     mean_norm = mean_token.norm(2, -1, True) # (bsz, 1, 1)
+#     mean_token = mean_token / mean_norm
+
+#     metric_norm = m_raw.norm(2, -1, True) # (bsz, seq, 1)
+#     m_raw = m_raw / metric_norm
+#     imp_score = (m_raw @ mean_token.view(bsz, dim, 1)).squeeze(-1) # (bsz, seq)
+#     imp_idx = imp_score.topk(imp_num, -1, True, False).indices
+
+#     pivot_num = math.ceil(math.log(seq))
+#     pivot_idx = metric_norm.squeeze(-1).topk(pivot_num, -1, True, False).indices # (bsz, p)
+#     non_pivot_idx = indices[
+#         torch.ones_like(indices, dtype=torch.bool).scatter_(-1, pivot_idx, False)
+#     ].view(bsz, -1) # (bsz, seq - p)
+
+#     pivots = m_raw.gather(-2, pivot_idx[..., None].expand(-1, -1, dim))
+#     non_pivots = m_raw.gather(-2, non_pivot_idx[..., None].expand(-1, -1, dim))
+
+#     k = min(seq - pivot_num, r)
+#     sim_score, sim_idx = (non_pivots @ pivots.transpose(-2, -1)).max(-1) # (bsz, seq - p)
+#     dup_idx = sim_score.topk(k, -1, True, False).indices # (bsz, k)
+#     # sim_idx = pivot_idx.gather(-1, sim_idx).gather(-1, dup_idx)
+#     dup_idx = non_pivot_idx.gather(-1, dup_idx)
+
+#     k = min(imp_num, r)
+#     imp_mask = torch.zeros_like(indices, dtype=torch.bool).scatter_(-1, imp_idx, True)
+#     imp_dup_mask = imp_mask.gather(-1, dup_idx)
+#     # there will be no more than k tokens are both important and duplicated
+#     # so we select those tokens out here
+#     imp_dup_mask, imp_dup_idx = imp_dup_mask.to(dtype=torch.int).topk(k, -1, sorted=False) # (bsz, k)
+#     imp_dup_mask = imp_dup_mask.to(dtype=torch.bool)
+
+#     left_idx = indices.scatter(-1, dup_idx, -1).sort(-1).values[:, r:]
+#     left_tokens = m_raw.gather(-2, left_idx[..., None].expand(-1, -1, dim))
+
+#     src_idx = dup_idx.gather(-1, imp_dup_idx)
+#     src_tokens = m_raw.gather(-2, src_idx[..., None].expand(-1, -1, dim))
+
+#     score_idx = (src_tokens @ left_tokens.transpose(-2, -1)).max(-1, False).indices
+#     tar_idx = left_idx.gather(-1, score_idx)
+
+#     src_idx = torch.where(imp_dup_mask, src_idx, -1) + 1
+#     tar_idx = torch.where(imp_dup_mask, tar_idx, -1) + 1
+
+#     def merge(x : torch.Tensor, reduce = 'sum'):
+#         x_prot, x_raw = spliter(x)
+#         bsz, seq, dim = x_raw.shape
+#         x_raw_ = torch.cat([torch.zeros_like(x_raw[:, 0:1, :]), x_raw], dim = -2)
+#         src = x_raw_.gather(-2, src_idx[..., None].expand(-1, -1, dim))
+#         x_raw_ = x_raw_.scatter_reduce(-2, tar_idx[..., None].expand(-1, -1, dim), src, reduce)
+#         left = x_raw_[:, 1:].gather(-2, left_idx[..., None].expand(-1, -1, dim))
+
+#         return torch.cat([x_prot, left], dim = -2)
+    
+#     handle_source(pinfo, x, merge)
+#     size, size_ = handle_size(pinfo, x, merge)
+#     length = x.norm(2, -1, True)
+#     length_ = merge(length, 'amax')
+#     x = merge(x)
+#     x = x / x.norm(2, -1, True) * length_
+#     return x
+#     # return merge(x * size) / size_
+#     # return merge(x)
+
+def kidd_pivot(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter : Spliter):
+
+    m_prot, m_raw = spliter(metric)
+
+    # cal improtance by attention score with mean
+    bsz, seq, dim = m_raw.shape
+
+    # the number of important tokens should depend on the number of remaining tokens and reducing tokens.
+    # if the number of removing tokens is too large and remaining tokens is too small
+    # then most of tokens should be merged rather than pruned, but the number of merging tokens is constrained 
+    # by the smaller one of important number and reducing number.
+    # Therefore, the number of 
+
+    # num_original = pinfo.get('total_tokens', None)
+    # if num_original is None:
+    #     pinfo['total_tokens'] = seq
+    #     num_original = seq
+
+    num_imp = max(r, seq - r) # min(r, seq // 2)
+    num_imp_dup = min(num_imp, r)
+    # num_pivot = math.ceil((seq - r) / 20)
+    num_pivot = math.ceil(seq / 20)
+    # num_non_imp = seq - num_imp
+    # num_non_pivot_non_imp = min(seq - num_pivot, num_non_imp)
+
+    tokens_mean = m_raw.mean(-2, True) # (bsz, 1, dim)
+    tokens_mean = tokens_mean / tokens_mean.norm(2, -1, True)
+
+    # scale the metric matrix
+    metric_norm = m_raw.norm(2, -1, True) # (bsz, seq, 1)
+    m_raw = m_raw / metric_norm
+
+    # select pivot tokens, there will be (bsz, num_pivot) indices
+    idx_pivot = metric_norm.squeeze(-1).topk(num_pivot, sorted=False).indices
+    tokens_pivot = m_raw.gather(-2, idx_pivot[..., None].expand(-1, -1, dim))
+
+    # calculate redundancy
+    score_dup, idx_dup_tar = (m_raw @ tokens_pivot.transpose(-2, -1)).max(-1)
+
+    # regard top r tokens as duplicate tokens
+    idx_tmp = score_dup.scatter(-1, idx_pivot, -torch.inf).sort(descending=True).indices
+    idx_dup = idx_tmp[:, :r]
+    left_idx = idx_tmp[:, r:].sort().values
+
+    # now we assign tar_idx and src_idx, note that they are not filtered by importance yet
+    tar_idx = idx_pivot.gather(-1, idx_dup_tar).gather(-1, idx_dup)
+    src_idx = idx_dup
+
+    # calculate importance now
+    score_imp = (m_raw @ tokens_mean.view(bsz, dim, 1)).squeeze(-1) # (bsz, seq)
+    idx_imp = score_imp.topk(num_imp, -1, True, False).indices
+
+    mask_imp = torch.zeros_like(score_imp, dtype=torch.bool)
+    mask_imp.scatter_(-1, idx_imp, True)
+    mask_imp = mask_imp.gather(-1, idx_dup)
+
+    # now only those important tokens have a target, others should be assigned to indices which are not in left_idx
+    tar_idx[~mask_imp] = src_idx[~mask_imp]
+
+    # shrunk the array from seq to min(num_imp, r)
+    idx_imp_dup = mask_imp.to(dtype=torch.int).topk(num_imp_dup, sorted=False).indices
+
+    tar_idx = tar_idx.gather(-1, idx_imp_dup)
+    src_idx = src_idx.gather(-1, idx_imp_dup)
+
+    def merge(x : torch.Tensor, reduce = 'sum'):
+        x_prot, x_raw = spliter(x)
+        bsz, seq, dim = x_raw.shape
+
+        src = x_raw.gather(-2, src_idx[..., None].expand(-1, -1, dim))
+        x_raw = x_raw.scatter_reduce(-2, tar_idx[..., None].expand(-1, -1, dim), src, reduce)
+        left = x_raw.gather(-2, left_idx[..., None].expand(-1, -1, dim))
+
+        return torch.cat([x_prot, left], dim = -2)
+    
+    handle_source(pinfo, x, merge)
+
+    # slerp
+    # size, size_ = handle_size(pinfo, x, merge)
+    # return merge(x * size) / size_
+
+    # mlerp
+    length = x.norm(2, -1, True)
+    length_ = merge(length, 'amax')
+    x = merge(x)
+    x = x / x.norm(2, -1, True)
+    x = x * length_
+    return x
+
+    # avg
+    # size = torch.ones_like(x[..., :1])
+    # size_ = merge(size)
+    # return merge(x) / merge(size)
+
+    # length_avg
+    # length = x.norm(2, -1, True)
+    # size, size_ = handle_size(pinfo, x, merge)
+    # length_ = merge(length * size) / size_
+    # x = merge(x)
+    # x = x / x.norm(2, -1, True) * length_
+    # return x
+
+def kidd_left(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter : Spliter):
+
+    m_prot, m_raw = spliter(metric)
+
+    # cal improtance by attention score with mean
+    bsz, seq, dim = m_raw.shape
+
+    # the number of important tokens should depend on the number of remaining tokens and reducing tokens.
+    # if the number of removing tokens is too large and remaining tokens is too small
+    # then most of tokens should be merged rather than pruned, but the number of merging tokens is constrained 
+    # by the smaller one of important number and reducing number.
+    num_imp = max(r, seq - r)
+    num_imp_dup = min(num_imp, r)
+    num_pivot = math.ceil(seq / 20)
+    # num_pivot = math.ceil((seq - r) / 20)
+    # num_non_imp = seq - num_imp
+    # num_non_pivot_non_imp = min(seq - num_pivot, num_non_imp)
+
+    tokens_mean = m_raw.mean(-2, True) # (bsz, 1, dim)
+    tokens_mean = tokens_mean / tokens_mean.norm(2, -1, True)
+
+    # scale the metric matrix
+    metric_norm = m_raw.norm(2, -1, True) # (bsz, seq, 1)
+    m_raw = m_raw / metric_norm
+
+    # select pivot tokens, there will be (bsz, num_pivot) indices
+    idx_pivot = metric_norm.squeeze(-1).topk(num_pivot, sorted=False).indices
+    tokens_pivot = m_raw.gather(-2, idx_pivot[..., None].expand(-1, -1, dim))
+
+    # calculate redundancy
+    score_dup, idx_dup_tar = (m_raw @ tokens_pivot.transpose(-2, -1)).max(-1)
+    idx_tmp = score_dup.scatter(-1, idx_pivot, -torch.inf).sort(descending=True).indices
+
+    # regard top r tokens as duplicate tokens
+    src_idx = idx_tmp[:, :r]
+    left_idx = idx_tmp[:, r:].sort().values
+
+    # find merging target basing on similarity, again, with whole left set
+    tokens_src = m_raw.gather(-2, src_idx[..., None].expand(-1, -1, dim))
+    tokens_left = m_raw.gather(-2, left_idx[..., None].expand(-1, -1, dim))
+    idx_sim = (tokens_left @ tokens_src.transpose(-2, -1)).argmax(-2)
+    # assert idx_sim.size(1) == r
+    tar_idx = left_idx.gather(-1, idx_sim)
+
+    # calculate importance now
+    score_imp = (m_raw @ tokens_mean.view(bsz, dim, 1)).squeeze(-1) # (bsz, seq)
+    idx_imp = score_imp.topk(num_imp, -1, True, False).indices
+
+    mask_imp = torch.zeros_like(score_imp, dtype=torch.bool)
+    mask_imp.scatter_(-1, idx_imp, True)
+    mask_imp = mask_imp.gather(-1, src_idx)
+
+    # now only those important tokens have a target, others should be assigned to indices which are not in left_idx
+    tar_idx[~mask_imp] = src_idx[~mask_imp]
+
+    # shrunk the array from seq to min(num_imp, r)
+    idx_imp_dup = mask_imp.to(dtype=torch.int).topk(num_imp_dup, sorted=False).indices
+
+    tar_idx = tar_idx.gather(-1, idx_imp_dup)
+    src_idx = src_idx.gather(-1, idx_imp_dup)
+
+    def merge(x : torch.Tensor, reduce = 'sum'):
+        x_prot, x_raw = spliter(x)
+        bsz, seq, dim = x_raw.shape
+
+        src = x_raw.gather(-2, src_idx[..., None].expand(-1, -1, dim))
+        x_raw = x_raw.scatter_reduce(-2, tar_idx[..., None].expand(-1, -1, dim), src, reduce)
+        left = x_raw.gather(-2, left_idx[..., None].expand(-1, -1, dim))
+
+        return torch.cat([x_prot, left], dim = -2)
+    
+    handle_source(pinfo, x, merge)
+
+    # slerp
+    # size, size_ = handle_size(pinfo, x, merge)
+    # return merge(x * size) / size_
+
+    # mlerp
+    length = x.norm(2, -1, True)
+    length_ = merge(length, 'amax')
+    x = merge(x)
+    x = x / x.norm(2, -1, True)
+    x = x * length_
+    return x
+
+    # avg
+    # size = torch.ones_like(x[..., :1])
+    # size_ = merge(size)
+    # return merge(x) / merge(size)
+
+    # length_avg
+    # length = x.norm(2, -1, True)
+    # size, size_ = handle_size(pinfo, x, merge)
+    # length_ = merge(length * size) / size_
+    # x = merge(x)
+    # x = x / x.norm(2, -1, True) * length_
+    # return x
