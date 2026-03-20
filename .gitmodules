@@ -13,6 +13,9 @@
 [submodule "thirdparty/CBraMod"]
 	path = thirdparty/CBraMod
 	url = https://github.com/wjq-learning/CBraMod
-[submodule "thirdparty/ECGFounder"]
-	path = thirdparty/ECGFounder
-	url = https://github.com/PKUDigitalHealth/ECGFounder.git
+[submodule "thirdparty/fairseq-signals"]
+	path = thirdparty/fairseq-signals
+	url = https://github.com/Jwoo5/fairseq-signals.git
+[submodule "thirdparty/ecg-fm"]
+	path = thirdparty/ecg-fm
+	url = https://github.com/bowang-lab/ecg-fm.git
