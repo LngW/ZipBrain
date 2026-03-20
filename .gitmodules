@@ -13,3 +13,6 @@
 [submodule "thirdparty/CBraMod"]
 	path = thirdparty/CBraMod
 	url = https://github.com/wjq-learning/CBraMod
+[submodule "thirdparty/ECGFounder"]
+	path = thirdparty/ECGFounder
+	url = https://github.com/PKUDigitalHealth/ECGFounder.git
