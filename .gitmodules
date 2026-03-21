@@ -19,3 +19,6 @@
 [submodule "thirdparty/ecg-fm"]
 	path = thirdparty/ecg-fm
 	url = https://github.com/bowang-lab/ecg-fm.git
+[submodule "thirdparty/TFM-Tokenizer"]
+	path = thirdparty/TFM_Tokenizer
+	url = https://github.com/Jathurshan0330/TFM-Tokenizer.git
