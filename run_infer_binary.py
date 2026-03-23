@@ -29,7 +29,8 @@ def prepare_dataloader(args):
     if dataset == 'TUAB':
         if model == 'BIOT':
             from thirdparty.BIOT.utils import TUABLoader
-            root = './models/BIOT2/datasets/TUAB/processed_' + subset
+            root = './datasets/tuab/biot/' + subset
+            root = './datasets/tuab/biot/'
 
             train_files = os.listdir(os.path.join(root, "train"))
             # np.random.shuffle(train_files)

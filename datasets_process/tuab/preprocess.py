@@ -40,6 +40,8 @@ def main():
 
     if model == 'tfm_tokenizer':
         from thirdparty.TFM_Tokenizer.datasets_processing.TUAB.process import split_and_dump
+    elif model == 'biot':
+        from thirdparty.BIOT.datasets.TUAB.process import split_and_dump
     else:
         raise NotImplementedError()
     
