@@ -1,0 +1,58 @@
+import argparse
+from pathlib import Path
+from multiprocessing import Pool
+
+def preprocess(config, handle, outdir):
+    train_files = config['train']
+    val_files = config['val']
+    test_files = config['test']
+
+    outdir = Path(outdir)
+
+    train_outdir = outdir / 'train'
+    val_outdir = outdir / 'val'
+    test_outdir = outdir / 'test'
+
+    parameters = []
+    for files, outdir in zip([train_files, val_files, test_files], [train_outdir, val_outdir, test_outdir]):
+        for cfg in files:
+            p = Path(cfg['file'])
+            folder = p.parent
+            name = p.name
+            label = cfg['label']
+
+            parameters.append([folder, name, outdir, label])
+    
+    with Pool(processes=4) as pool:
+        pool.map(handle, parameters)
+
+def main():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--model')
+    parser.add_argument('--config')
+    parser.add_argument('--outdir')
+    parser.add_argument('--test_only', action='store_true', default=False)
+
+    args = parser.parse_args()
+
+    model : str = args.model
+
+    if model == 'tfm_tokenizer':
+        from tfm_tokenizer import split_and_dump
+    else:
+        raise NotImplementedError()
+    
+    import json
+
+    with open(args.config, 'r') as f:
+        config = json.load(f)
+    
+    if args.test_only:
+        config['train'] = []
+        config['val'] = []
+
+    preprocess(config, split_and_dump, args.outdir)
+
+if __name__ == '__main__':
+    main()
