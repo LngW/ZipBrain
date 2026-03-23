@@ -13,6 +13,10 @@ def preprocess(config, handle, outdir):
     val_outdir = outdir / 'val'
     test_outdir = outdir / 'test'
 
+    train_outdir.mkdir(parents=True, exist_ok=True)
+    val_outdir.mkdir(parents=True, exist_ok=True)
+    test_outdir.mkdir(parents=True, exist_ok=True)
+
     parameters = []
     for files, outdir in zip([train_files, val_files, test_files], [train_outdir, val_outdir, test_outdir]):
         for cfg in files:
