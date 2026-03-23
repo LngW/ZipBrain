@@ -42,6 +42,8 @@ def main():
         from thirdparty.TFM_Tokenizer.datasets_processing.TUAB.process import split_and_dump
     elif model == 'biot':
         from thirdparty.BIOT.datasets.TUAB.process import split_and_dump
+    elif model == 'labram':
+        from thirdparty.LaBraM.dataset_maker.make_TUAB import split_and_dump
     else:
         raise NotImplementedError()
     
