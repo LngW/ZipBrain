@@ -368,6 +368,7 @@ def pre_main():
 def main(args):
 
     version = f"{args.dataset}-{args.model}-{args.lr}-{args.batch_size}-{args.sampling_rate}-{args.token_size}-{args.hop_length}-{args.seed}"
+    version = f"{args.dataset}-{'_'.join(args.tome_variant)}-{'_'.join([str(it) for it in args.tome_r])}"
     logdir : str = args.log_dir
     workspace = Path('.', 'workspace', args.workspace)
     log_dir = workspace / 'logs' / logdir / version
