@@ -39,7 +39,7 @@ def main():
     model : str = args.model
 
     if model == 'tfm_tokenizer':
-        from tfm_tokenizer import split_and_dump
+        from thirdparty.TFM_Tokenizer.datasets_processing.TUAB.process import split_and_dump
     else:
         raise NotImplementedError()
     
