@@ -15,7 +15,7 @@ def set_seeds(args):
     torch.use_deterministic_algorithms(True)
     # pass
 
-def prepare_dataloader(args):
+def prepare_dataloader(args, hooks):
     set_seeds(args)
     # from utils import TUABLoader, CHBMITLoader, PTBLoader
     dataset = args.dataset
@@ -43,6 +43,41 @@ def prepare_dataloader(args):
             train_set = TUABLoader(os.path.join(root, "train"), train_files, args.sampling_rate)
             test_set = TUABLoader(os.path.join(root, "test"), test_files, args.sampling_rate)
             val_set = TUABLoader(os.path.join(root, "val"), val_files, args.sampling_rate)
+        elif model == 'LaBraM':
+            from thirdparty.LaBraM.utils import prepare_TUAB_dataset, get_input_chans
+            train_dataset, test_dataset, val_dataset = prepare_TUAB_dataset("./datasets/tuab/labrama/")
+            ch_names = ['EEG FP1', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
+                        'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
+            ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
+            args.nb_classes = 1
+            metrics = ["pr_auc", "roc_auc", "accuracy", "balanced_accuracy"]
+
+            input_chs = get_input_chans(ch_names)
+            from torch.utils.data import Dataset
+
+            # class Wrapper(Dataset):
+            #     def __init__(self, upstream):
+            #         self.upstream = upstream
+
+            #     def __getitem__(self, index):
+            #         return self.upstream[index], input_chs
+
+            #     def __len__(self):
+            #         return len(self.upstream)
+
+            # cds = ConstantDataset()
+            train_set = train_dataset
+            val_set = val_dataset
+            test_set = test_dataset
+
+            from einops import rearrange
+
+            def call_model(model, sample):
+                eeg = sample
+                eeg = rearrange(eeg.float(), 'B N (A T) -> B N A T', T=200) / 100
+                return model(eeg, input_chans = input_chs)
+
+            hooks.call_model = call_model
         elif model == 'TFM':
             from thirdparty.TFM_Tokenizer.datasets.data_loaders import TUABloader
             train_set = TUABloader('./datasets/tuab/tfm_tokenizer/', 'train', 200, None)
@@ -223,7 +258,34 @@ def prepare_model(args): # -> 'torch.nn.Module':
             model.load_state_dict(model_dict)
             patch.biot(model)
         elif args.model == 'LaBraM':
-            pass
+            import thirdparty.LaBraM.modeling_finetune
+            from timm.models import create_model
+
+            state_dict = torch.load('./models/LaBraM/checkpoints/finetune_tuab_base/checkpoint-best.pth', weights_only=False)
+            args = state_dict['args']
+            model_dict = state_dict['model']
+
+            model = create_model(
+                args.model,
+                pretrained=False,
+                num_classes=args.nb_classes,
+                drop_rate=args.drop,
+                drop_path_rate=args.drop_path,
+                attn_drop_rate=args.attn_drop_rate,
+                drop_block_rate=None,
+                use_mean_pooling=args.use_mean_pooling,
+                init_scale=args.init_scale,
+                use_rel_pos_bias=args.rel_pos_bias,
+                use_abs_pos_emb=args.abs_pos_emb,
+                init_values=args.layer_scale_init_value,
+                qkv_bias=args.qkv_bias,
+            )
+
+            model.load_state_dict(model_dict)
+            patch.labram(model)
+
+            return model, 0.5
+
         elif args.model == 'EEGPT':
             pass
         elif args.model == 'CBraMod':
@@ -385,9 +447,11 @@ def main(args):
     import torch
     # get data loaders
     device = torch.device('cuda:0')
+    from engine import Hooks, create_global_context, destructure_global_context, train, test, valid
+    hooks = Hooks(calc_metric=lambda pred, label : calculate_metrics(pred, label, threshold))
 
     # prepare dataloaders
-    train_loader, test_loader, val_loader = prepare_dataloader(args)
+    train_loader, test_loader, val_loader = prepare_dataloader(args, hooks)
 
     # define the model
     model, threshold = prepare_model(args)
@@ -447,9 +511,7 @@ def main(args):
     # scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, args.lr, len(train_loader) * args.epochs)
     scheduler = None
 
-    from engine import Hooks, create_global_context, destructure_global_context, train, test, valid
 
-    hooks = Hooks(calc_metric=lambda pred, label : calculate_metrics(pred, label, threshold))
     hooks.calc_loss = loss_fn
     hooks.handle_post_infer_result = infer_post_fn
     hooks.compare_metric = compare_metrics

@@ -110,6 +110,9 @@ class Hooks:
     schedule_step_epoch : Callable[[torch.optim.lr_scheduler.LRScheduler, dict[str, Any]], None] = None
     ''' (scheduler, metrics) -> None. Called after every epoch finished. Step your scheduler in this method if necessary. '''
 
+    call_model : Callable[[torch.nn.Module, Any], Any] = None
+    ''' (model, dataset_sample[0]) -> model_returns '''
+
 def create_global_context(device, log_dir, cp_dir, slots = 2):
     if not isinstance(device, torch.device):
         device = torch.device(device)
@@ -241,7 +244,10 @@ def __train_loop(
         while True:
             with torch.cuda.stream(s_cmpt):
                 e_in.wait()
-                pred = model(sample)
+                if hooks.call_model is not None:
+                    pred = hooks.call_model(model, sample)
+                else:
+                    pred = model(sample)
                 loss : torch.Tensor = hooks.calc_loss(model, pred, label)
                 # now s_cout should wait util computation finish
                 e_cmpt.record()
@@ -353,7 +359,10 @@ def __inference_loop(
             while True:
                 with torch.cuda.stream(s_cmpt):
                     e_in.wait()
-                    pred : torch.Tensor = model(sample)
+                    if hooks.call_model is not None:
+                        pred : torch.Tensor = hooks.call_model(model, sample)
+                    else:
+                        pred : torch.Tensor = model(sample)
                     # we can move in next batch of data now
                     slot.record(s_cmpt)
 
