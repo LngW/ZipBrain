@@ -45,7 +45,8 @@ def prepare_dataloader(args, hooks):
             val_set = TUABLoader(os.path.join(root, "val"), val_files, args.sampling_rate)
         elif model == 'LaBraM':
             from thirdparty.LaBraM.utils import prepare_TUAB_dataset, get_input_chans
-            train_dataset, test_dataset, val_dataset = prepare_TUAB_dataset("./datasets/tuab/labrama/")
+            # train_dataset, test_dataset, val_dataset = prepare_TUAB_dataset("./datasets/tuab/labrama/")
+            train_dataset, test_dataset, val_dataset = prepare_TUAB_dataset("./models/LaBraM/datasets/tuab/processed/")
             ch_names = ['EEG FP1', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
                         'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
             ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
@@ -78,6 +79,10 @@ def prepare_dataloader(args, hooks):
                 return model(eeg, input_chans = input_chs)
 
             hooks.call_model = call_model
+        elif model == 'EEGPT':
+            from thirdparty.EEGPT.downstream_tueg.utils import prepare_TUAB_dataset
+            
+            train_set, test_set, val_set = prepare_TUAB_dataset('./datasets/tuab/eegpt/')
         elif model == 'TFM':
             from thirdparty.TFM_Tokenizer.datasets.data_loaders import TUABloader
             train_set = TUABloader('./datasets/tuab/tfm_tokenizer/', 'train', 200, None)
@@ -287,7 +292,31 @@ def prepare_model(args): # -> 'torch.nn.Module':
             return model, 0.5
 
         elif args.model == 'EEGPT':
-            pass
+            from thirdparty.EEGPT.downstream_tueg.Modules.models.EEGPT_mcae_finetune_change import EEGPTClassifier
+            use_channels_names = [      
+                        'FP1','FPZ', 'FP2',
+                'F7', 'F3', 'FZ', 'F4', 'F8',
+                'T7', 'C3', 'CZ', 'C4', 'T8',
+                'P7', 'P3', 'PZ', 'P4', 'P8',
+                        'O1', 'O2' ]
+            ch_names = ['EEG FP1', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
+                            'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
+            ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
+            model = EEGPTClassifier(
+                num_classes=1,
+                in_channels=len(ch_names), 
+                img_size=[len(use_channels_names),2000], 
+                use_channels_names=use_channels_names, 
+                use_chan_conv=True,
+            )
+
+            state_dict = torch.load('./finetunes/EEGPT/downstream_tueg/checkpoints/finetune_tuab_eegpt/checkpoint-best.pth', weights_only=False)
+            model.load_state_dict(state_dict['model'])
+
+            patch.eegpt(model)
+
+            return model, 0.5
+
         elif args.model == 'CBraMod':
             pass
         elif args.model == 'TFM':
@@ -519,7 +548,7 @@ def main(args):
     hooks.test_break = lambda better, *_: fast_stop.update(better)
     hooks.schedule_step_batch = lambda it : it.step()
 
-    ctx = create_global_context(device, log_dir, cp_dir, 2)
+    ctx = create_global_context(device, log_dir, cp_dir, 1)
 
     from contextlib import ExitStack
     with ExitStack() as stack:
