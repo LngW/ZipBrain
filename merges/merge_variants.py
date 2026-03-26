@@ -3,6 +3,9 @@ import math
 from typing import Callable, Tuple
 
 import torch
+import triton
+import triton.language as tl
+
 from einops import rearrange
 
 # from tome.merge import merge_source
@@ -1061,49 +1064,53 @@ def kidd_pivot(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter 
     num_pivot = math.ceil(seq / 20)
     # num_non_imp = seq - num_imp
     # num_non_pivot_non_imp = min(seq - num_pivot, num_non_imp)
+    with torch.no_grad():
+        if pinfo['class_token']:
+            tokens_base = m_prot[:, 0:1]
+        else:
+            tokens_base = m_raw.mean(-2, True) # (bsz, 1, dim)
+        tokens_base = tokens_base / tokens_base.norm(2, -1, True)
 
-    if pinfo['class_token']:
-        tokens_base = m_prot[:, 0:1]
-    else:
-        tokens_base = m_raw.mean(-2, True) # (bsz, 1, dim)
-    tokens_base = tokens_base / tokens_base.norm(2, -1, True)
+        # scale the metric matrix
+        metric_norm = m_raw.norm(2, -1, True) # (bsz, seq, 1)
+        m_raw = m_raw / metric_norm
 
-    # scale the metric matrix
-    metric_norm = m_raw.norm(2, -1, True) # (bsz, seq, 1)
-    m_raw = m_raw / metric_norm
+        # select pivot tokens, there will be (bsz, num_pivot) indices
+        idx_pivot = metric_norm.squeeze(-1).topk(num_pivot, sorted=False).indices
+        tokens_pivot = m_raw.gather(-2, idx_pivot[..., None].expand(-1, -1, dim))
+        del metric_norm
+        # metric_norm = None
 
-    # select pivot tokens, there will be (bsz, num_pivot) indices
-    idx_pivot = metric_norm.squeeze(-1).topk(num_pivot, sorted=False).indices
-    tokens_pivot = m_raw.gather(-2, idx_pivot[..., None].expand(-1, -1, dim))
+        # calculate redundancy
+        # score_dup, idx_dup_tar = (m_raw @ tokens_pivot.transpose(-2, -1)).max(-1)
+        score_dup, idx_dup_tar = batch_matmul_large_n_wrapper(m_raw, tokens_pivot.transpose(-2, -1))
+        idx_dup_tar = idx_dup_tar.to(dtype=torch.long)
 
-    # calculate redundancy
-    score_dup, idx_dup_tar = (m_raw @ tokens_pivot.transpose(-2, -1)).max(-1)
+        # regard top r tokens as duplicate tokens
+        idx_tmp = score_dup.scatter(-1, idx_pivot, -torch.inf).sort(descending=True).indices
+        idx_dup = idx_tmp[:, :r]
+        left_idx = idx_tmp[:, r:].sort().values
 
-    # regard top r tokens as duplicate tokens
-    idx_tmp = score_dup.scatter(-1, idx_pivot, -torch.inf).sort(descending=True).indices
-    idx_dup = idx_tmp[:, :r]
-    left_idx = idx_tmp[:, r:].sort().values
+        # now we assign tar_idx and src_idx, note that they are not filtered by importance yet
+        tar_idx = idx_pivot.gather(-1, idx_dup_tar).gather(-1, idx_dup)
+        src_idx = idx_dup
 
-    # now we assign tar_idx and src_idx, note that they are not filtered by importance yet
-    tar_idx = idx_pivot.gather(-1, idx_dup_tar).gather(-1, idx_dup)
-    src_idx = idx_dup
+        # calculate importance now
+        score_imp = (m_raw @ tokens_base.view(bsz, dim, 1)).squeeze(-1) # (bsz, seq)
+        idx_imp = score_imp.topk(num_imp, -1, True, False).indices
 
-    # calculate importance now
-    score_imp = (m_raw @ tokens_base.view(bsz, dim, 1)).squeeze(-1) # (bsz, seq)
-    idx_imp = score_imp.topk(num_imp, -1, True, False).indices
+        mask_imp = torch.zeros_like(score_imp, dtype=torch.bool)
+        mask_imp.scatter_(-1, idx_imp, True)
+        mask_imp = mask_imp.gather(-1, idx_dup)
 
-    mask_imp = torch.zeros_like(score_imp, dtype=torch.bool)
-    mask_imp.scatter_(-1, idx_imp, True)
-    mask_imp = mask_imp.gather(-1, idx_dup)
+        # now only those important tokens have a target, others should be assigned to indices which are not in left_idx
+        tar_idx[~mask_imp] = src_idx[~mask_imp]
 
-    # now only those important tokens have a target, others should be assigned to indices which are not in left_idx
-    tar_idx[~mask_imp] = src_idx[~mask_imp]
+        # shrunk the array from seq to min(num_imp, r)
+        idx_imp_dup = mask_imp.to(dtype=torch.int).topk(num_imp_dup, sorted=False).indices
 
-    # shrunk the array from seq to min(num_imp, r)
-    idx_imp_dup = mask_imp.to(dtype=torch.int).topk(num_imp_dup, sorted=False).indices
-
-    tar_idx = tar_idx.gather(-1, idx_imp_dup)
-    src_idx = src_idx.gather(-1, idx_imp_dup)
+        tar_idx = tar_idx.gather(-1, idx_imp_dup)
+        src_idx = src_idx.gather(-1, idx_imp_dup)
 
     def merge(x : torch.Tensor, reduce = 'sum'):
         x_prot, x_raw = spliter(x)
@@ -1149,62 +1156,63 @@ def kidd_left(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter :
     # cal improtance by attention score with mean
     bsz, seq, dim = m_raw.shape
 
-    # the number of important tokens should depend on the number of remaining tokens and reducing tokens.
-    # if the number of removing tokens is too large and remaining tokens is too small
-    # then most of tokens should be merged rather than pruned, but the number of merging tokens is constrained 
-    # by the smaller one of important number and reducing number.
-    num_imp = max(r, seq - r)
-    num_imp_dup = min(num_imp, r)
-    num_pivot = math.ceil(seq / 20)
-    # num_pivot = math.ceil((seq - r) / 20)
-    # num_non_imp = seq - num_imp
-    # num_non_pivot_non_imp = min(seq - num_pivot, num_non_imp)
+    with torch.no_grad():
+        # the number of important tokens should depend on the number of remaining tokens and reducing tokens.
+        # if the number of removing tokens is too large and remaining tokens is too small
+        # then most of tokens should be merged rather than pruned, but the number of merging tokens is constrained 
+        # by the smaller one of important number and reducing number.
+        num_imp = max(r, seq - r)
+        num_imp_dup = min(num_imp, r)
+        num_pivot = math.ceil(seq / 20)
+        # num_pivot = math.ceil((seq - r) / 20)
+        # num_non_imp = seq - num_imp
+        # num_non_pivot_non_imp = min(seq - num_pivot, num_non_imp)
 
-    if pinfo['class_token']:
-        tokens_base = m_prot[:, 0:1]
-    else:
-        tokens_base = m_raw.mean(-2, True) # (bsz, 1, dim)
-    tokens_base = tokens_base / tokens_base.norm(2, -1, True)
+        if pinfo['class_token']:
+            tokens_base = m_prot[:, 0:1]
+        else:
+            tokens_base = m_raw.mean(-2, True) # (bsz, 1, dim)
+        tokens_base = tokens_base / tokens_base.norm(2, -1, True)
 
-    # scale the metric matrix
-    metric_norm = m_raw.norm(2, -1, True) # (bsz, seq, 1)
-    m_raw = m_raw / metric_norm
+        # scale the metric matrix
+        metric_norm = m_raw.norm(2, -1, True) # (bsz, seq, 1)
+        m_raw = m_raw / metric_norm
 
-    # select pivot tokens, there will be (bsz, num_pivot) indices
-    idx_pivot = metric_norm.squeeze(-1).topk(num_pivot, sorted=False).indices
-    tokens_pivot = m_raw.gather(-2, idx_pivot[..., None].expand(-1, -1, dim))
+        # select pivot tokens, there will be (bsz, num_pivot) indices
+        idx_pivot = metric_norm.squeeze(-1).topk(num_pivot, sorted=False).indices
+        tokens_pivot = m_raw.gather(-2, idx_pivot[..., None].expand(-1, -1, dim))
 
-    # calculate redundancy
-    score_dup, idx_dup_tar = (m_raw @ tokens_pivot.transpose(-2, -1)).max(-1)
-    idx_tmp = score_dup.scatter(-1, idx_pivot, -torch.inf).sort(descending=True).indices
+        # calculate redundancy
+        score_dup, idx_dup_tar = (m_raw @ tokens_pivot.transpose(-2, -1)).max(-1)
+        idx_tmp = score_dup.scatter(-1, idx_pivot, -torch.inf).sort(descending=True).indices
 
-    # regard top r tokens as duplicate tokens
-    src_idx = idx_tmp[:, :r]
-    left_idx = idx_tmp[:, r:].sort().values
+        # regard top r tokens as duplicate tokens
+        src_idx = idx_tmp[:, :r]
+        left_idx = idx_tmp[:, r:].sort().values
 
-    # find merging target basing on similarity, again, with whole left set
-    tokens_src = m_raw.gather(-2, src_idx[..., None].expand(-1, -1, dim))
-    tokens_left = m_raw.gather(-2, left_idx[..., None].expand(-1, -1, dim))
-    idx_sim = (tokens_left @ tokens_src.transpose(-2, -1)).argmax(-2)
-    # assert idx_sim.size(1) == r
-    tar_idx = left_idx.gather(-1, idx_sim)
+        # find merging target basing on similarity, again, with whole left set
+        tokens_src = m_raw.gather(-2, src_idx[..., None].expand(-1, -1, dim))
+        tokens_left = m_raw.gather(-2, left_idx[..., None].expand(-1, -1, dim))
+        _, idx_sim = batch_matmul_large_n_wrapper(tokens_src, tokens_left.transpose(-2, -1)) #.argmax(-1)
+        # assert idx_sim.size(1) == r
+        tar_idx = left_idx.gather(-1, idx_sim)
 
-    # calculate importance now
-    score_imp = (m_raw @ tokens_base.view(bsz, dim, 1)).squeeze(-1) # (bsz, seq)
-    idx_imp = score_imp.topk(num_imp, -1, True, False).indices
+        # calculate importance now
+        score_imp = (m_raw @ tokens_base.view(bsz, dim, 1)).squeeze(-1) # (bsz, seq)
+        idx_imp = score_imp.topk(num_imp, -1, True, False).indices
 
-    mask_imp = torch.zeros_like(score_imp, dtype=torch.bool)
-    mask_imp.scatter_(-1, idx_imp, True)
-    mask_imp = mask_imp.gather(-1, src_idx)
+        mask_imp = torch.zeros_like(score_imp, dtype=torch.bool)
+        mask_imp.scatter_(-1, idx_imp, True)
+        mask_imp = mask_imp.gather(-1, src_idx)
 
-    # now only those important tokens have a target, others should be assigned to indices which are not in left_idx
-    tar_idx[~mask_imp] = src_idx[~mask_imp]
+        # now only those important tokens have a target, others should be assigned to indices which are not in left_idx
+        tar_idx[~mask_imp] = src_idx[~mask_imp]
 
-    # shrunk the array from seq to min(num_imp, r)
-    idx_imp_dup = mask_imp.to(dtype=torch.int).topk(num_imp_dup, sorted=False).indices
+        # shrunk the array from seq to min(num_imp, r)
+        idx_imp_dup = mask_imp.to(dtype=torch.int).topk(num_imp_dup, sorted=False).indices
 
-    tar_idx = tar_idx.gather(-1, idx_imp_dup)
-    src_idx = src_idx.gather(-1, idx_imp_dup)
+        tar_idx = tar_idx.gather(-1, idx_imp_dup)
+        src_idx = src_idx.gather(-1, idx_imp_dup)
 
     def merge(x : torch.Tensor, reduce = 'sum'):
         x_prot, x_raw = spliter(x)
@@ -1242,3 +1250,155 @@ def kidd_left(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter :
     # x = merge(x)
     # x = x / x.norm(2, -1, True) * length_
     # return x
+
+@triton.jit
+def fused_batch_matmul_large_n_kernel(
+    a_ptr, b_ptr, out_max_val_ptr, out_max_idx_ptr,
+    M, N, K,
+    stride_ab, stride_am, stride_ak,
+    stride_bb, stride_bk, stride_bn,
+    stride_ob, stride_om,
+    BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
+):
+    # 这里的 pid_m 和 pid_n 共同定位 C 矩阵的一个 Tile
+    pid_m = tl.program_id(0)
+    pid_n = tl.program_id(1)
+    pid_b = tl.program_id(2)
+
+    rm = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+    rn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+    rk = tl.arange(0, BLOCK_SIZE_K)
+
+    # 指针定位
+    curr_a_ptr = a_ptr + pid_b * stride_ab
+    curr_b_ptr = b_ptr + pid_b * stride_bb
+
+    acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
+
+    # 1. 正常的分块 Matmul
+    for k in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
+        k_offsets = k * BLOCK_SIZE_K + rk
+        a_ptrs = curr_a_ptr + (rm[:, None] * stride_am + k_offsets[None, :] * stride_ak)
+        b_ptrs = curr_b_ptr + (k_offsets[:, None] * stride_bk + rn[None, :] * stride_bn)
+        
+        a = tl.load(a_ptrs, mask=(rm[:, None] < M) & (k_offsets[None, :] < K), other=0.0)
+        b = tl.load(b_ptrs, mask=(k_offsets[:, None] < K) & (rn[None, :] < N), other=0.0)
+        acc = tl.dot(a, b, acc, out_dtype=tl.float32)
+
+    # --- 修复逻辑开始 ---
+    # 计算当前列是否越界
+    global_n_indices = pid_n * BLOCK_SIZE_N + rn
+    # 对 acc 进行屏蔽，越界列填充极小值
+    acc = tl.where(global_n_indices[None, :] < N, acc, -float('inf'))
+    # --- 修复逻辑结束 ---
+
+    # 2. 局部规约：找当前 Tile 每一行的最大值
+    local_max_vals, local_max_idx_in_tile = tl.max(acc, axis=1, return_indices=True)
+    # 将 Tile 内索引转换为全局列索引
+    global_max_idx = pid_n * BLOCK_SIZE_N + local_max_idx_in_tile
+
+    # 3. 原子跨块规约 (Atomic Reduction)
+    # 由于 Triton 目前对浮点数 atomic_max 的原生支持在某些硬件上有局限，
+    # 我们这里演示一种通用的写回策略：如果 N 被切分，则需要使用 atomic 操作
+    # 为了简化演示且保证精度，我们使用 tl.atomic_max 配合 fp32->int32 转换（仅限正数）
+    # 或者直接写回中间 buffer 并在主机端/第二个 kernel 做规约。
+    
+    # 这里采用“中间结果写回”策略，因为 atomic_argmax 在原生 Triton 中较复杂
+    # 我们将每个 pid_n 的结果存入中间张量 [B, M, num_n_blocks]
+    num_n_blocks = tl.num_programs(1)
+    res_val_ptr = out_max_val_ptr + (pid_b * stride_ob + rm * num_n_blocks + pid_n)
+    res_idx_ptr = out_max_idx_ptr + (pid_b * stride_ob + rm * num_n_blocks + pid_n)
+    
+    tl.store(res_val_ptr, local_max_vals, mask=rm < M)
+    tl.store(res_idx_ptr, global_max_idx.to(tl.int32), mask=rm < M)
+
+# 第二阶段：极简的规约 Kernel，处理中间结果
+@triton.jit
+def reduce_argmax_kernel(
+    intermediate_val_ptr, intermediate_idx_ptr,
+    final_val_ptr, final_idx_ptr,
+    M, num_n_blocks,
+    stride_ob, stride_om,
+    BLOCK_SIZE_R: tl.constexpr,
+):
+    pid_m = tl.program_id(0)
+    pid_b = tl.program_id(1)
+    
+    # 读取该行在所有 N-blocks 中的局部最大值
+    row_start = pid_b * (M * num_n_blocks) + pid_m * num_n_blocks
+    offsets = tl.arange(0, BLOCK_SIZE_R)
+    mask = offsets < num_n_blocks
+    
+    vals = tl.load(intermediate_val_ptr + row_start + offsets, mask=mask, other=-float('inf'))
+    idxs = tl.load(intermediate_idx_ptr + row_start + offsets, mask=mask, other=0)
+    
+    # 找到最终最大值
+    final_max_val, best_block_idx = tl.max(vals, axis=0, return_indices=True)
+    # 根据最佳 block 找到对应的全局原始索引
+    # 注意：这里需要通过索引取值
+    final_max_idx = tl.load(intermediate_idx_ptr + row_start + best_block_idx)
+    
+    # 写回最终结果
+    out_offset = pid_b * M + pid_m
+    tl.store(final_val_ptr + out_offset, final_max_val)
+    tl.store(final_idx_ptr + out_offset, final_max_idx)
+
+def batch_matmul_large_n_wrapper(a: torch.Tensor, b: torch.Tensor):
+
+    if not a.is_cuda or not b.is_cuda:
+        return (a @ b).max(-1)
+
+    # 1. 基础维度检查
+    assert a.is_cuda and b.is_cuda, "Tensors must be on CUDA"
+    B, M, K = a.shape
+    _, _, N = b.shape
+    
+    # 2. 超参数配置
+    BLOCK_SIZE_M = 32
+    BLOCK_SIZE_N = 128  # 将 N 维度切成 128 大小的块
+    BLOCK_SIZE_K = 32
+    
+    # 计算 N 维度被分成了多少个块
+    num_n_blocks = triton.cdiv(N, BLOCK_SIZE_N)
+    
+    # 3. 分配中间存储空间 (B, M, num_n_blocks)
+    # 每个 N 方向的 Block 都会产出一个局部最大值和索引
+    intermediate_vals = torch.empty((B, M, num_n_blocks), device=a.device, dtype=torch.float32)
+    intermediate_idxs = torch.empty((B, M, num_n_blocks), device=a.device, dtype=torch.int32)
+    
+    # 4. 第一阶段：分块计算矩阵乘法并提取局部 Max/Argmax
+    # Grid 维度: (M分块数, N分块数, Batch数)
+    grid_1 = (triton.cdiv(M, BLOCK_SIZE_M), num_n_blocks, B)
+    
+    fused_batch_matmul_large_n_kernel[grid_1](
+        a, b, intermediate_vals, intermediate_idxs,
+        M, N, K,
+        a.stride(0), a.stride(1), a.stride(2),
+        b.stride(0), b.stride(1), b.stride(2),
+        intermediate_vals.stride(0), intermediate_vals.stride(1),
+        BLOCK_SIZE_M=BLOCK_SIZE_M,
+        BLOCK_SIZE_N=BLOCK_SIZE_N,
+        BLOCK_SIZE_K=BLOCK_SIZE_K,
+    )
+
+    # 5. 第二阶段：终极规约
+    # 最终输出结果 (B, M)
+    final_max_val = torch.empty((B, M), device=a.device, dtype=a.dtype)
+    final_max_idx = torch.empty((B, M), device=a.device, dtype=torch.int32)
+    
+    # 第二阶段的 BLOCK_SIZE_R 必须是 2 的幂且覆盖 num_n_blocks
+    BLOCK_SIZE_R = triton.next_power_of_2(num_n_blocks)
+    
+    # Grid 维度: (M行数, Batch数) —— 每一行启动一个程序进行最终比较
+    grid_2 = (M, B)
+    
+    reduce_argmax_kernel[grid_2](
+        intermediate_vals, intermediate_idxs,
+        final_max_val, final_max_idx,
+        M, num_n_blocks,
+        intermediate_vals.stride(0), intermediate_vals.stride(1),
+        BLOCK_SIZE_R=BLOCK_SIZE_R,
+    )
+
+    # print(N, final_max_idx)
+    return final_max_val, final_max_idx.long()
