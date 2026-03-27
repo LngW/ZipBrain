@@ -1,4 +1,5 @@
 from .utils import parse_r, parse_variant
+import torch
 
 def apply_merge(pinfo, x):
     q, k, v = pinfo['qkv']
@@ -22,8 +23,15 @@ def apply_merge(pinfo, x):
     if variant is not None:
         metric = _find_metric(variant)
 
+    embed_num = pinfo['embed_num']
+    x_raw, x_summary = x[:, :-embed_num], x[:, -embed_num:]
+    metric_raw, metric_summary = metric[:, :-embed_num], metric[:, -embed_num:]
+
     from merges import apply_merge_impl
-    return apply_merge_impl(pinfo, r, variant, x, metric)
+    x_raw = apply_merge_impl(pinfo, r, variant, x_raw, metric_raw)
+
+    import torch
+    return torch.cat([x_raw, x_summary], dim=-2)
 
 
 def make_attention_class(klass):
@@ -103,12 +111,13 @@ def apply_patch(model, trace_source = False):
     pinfo = {
         'r': 0,
         'variant': '',
-        'class_token': True,
+        'class_token': False,
         'distill_token': False,
         "prop_attn": False,
         'size': None,
         'trace_source': trace_source,
         'source': None,
+        'embed_num': model.target_encoder.embed_num,
     }
 
     model.__class__ = PatchedClassifier
@@ -123,7 +132,7 @@ def apply_patch(model, trace_source = False):
         blk.attn.__class__ = PatchedAttention
         blk.attn._pinfo = pinfo
 
-    print('Patched EEGPT')
+    print('Patched EEGPT, Layers = {}'.format(len(model.target_encoder.blocks)))
 
 if __name__ == '__main__':
     from thirdparty.EEGPT.downstream_tueg.Modules.models.EEGPT_mcae_finetune_change import EEGPTClassifier

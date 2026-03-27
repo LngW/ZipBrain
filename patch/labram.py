@@ -56,7 +56,7 @@ def create_block_class(klass):
 
 def create_transformer_class(klass):
     class PatchedNeuralTransformer(klass):
-        def forward(self, *args, **kwargs):
+        def forward(self, x, *args, **kwargs):
             # handle pinfo related thing here
 
             depth = len(self.blocks)
@@ -67,11 +67,15 @@ def create_transformer_class(klass):
             self._pinfo["source"] = None
             self._pinfo["qkv"] = None
 
+            bsz, chs, ts, dim = x.shape
+            self._pinfo['raw_raw_data'] = x.reshape(bsz, chs * ts, dim)
+            self._pinfo['raw_data'] = None
+
             # self._pinfo["pe_score"] = None
             # self._pinfo["alibi"] = None
             # self._pinfo["attn_score"] = None
 
-            return super().forward(*args, **kwargs)
+            return super().forward(x = x, *args, **kwargs)
     return PatchedNeuralTransformer
 
 def apply_patch(model, trace_source = False):
@@ -112,7 +116,7 @@ def apply_patch(model, trace_source = False):
         blk.__class__ = PatchedBlock
         blk._pinfo = pinfo
 
-    print('Patched LaBraM')
+    print('Patched LaBraM. Layers={}'.format(len(model.blocks)))
 
 if __name__ == '__main__':
     from timm.models import create_model
