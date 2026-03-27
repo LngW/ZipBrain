@@ -1488,6 +1488,11 @@ def raw_data_tome(pinfo, r:int, x : torch.Tensor, spliter : Spliter):
     if raw is None:
         return x
 
+    x_prot, x_raw = spliter(x)
+    r = min(x_raw.size(-2) // 2, r)
+
+    if r <= 0:
+        return x
     # x_prot, x_raw = spliter(x)
 
     # # now we expect that the number of raw data matches the number of tokens
