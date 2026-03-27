@@ -1042,6 +1042,8 @@ def merge_prune1(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, splite
 #     # return merge(x * size) / size_
 #     # return merge(x)
 
+use_cls = True
+
 def kidd_pivot(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter : Spliter):
 
     m_prot, m_raw = spliter(metric)
@@ -1067,7 +1069,7 @@ def kidd_pivot(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter 
     # num_non_imp = seq - num_imp
     # num_non_pivot_non_imp = min(seq - num_pivot, num_non_imp)
     with torch.no_grad():
-        if pinfo['class_token']:
+        if use_cls and pinfo['class_token']:
             tokens_base = m_prot[:, 0:1]
         else:
             tokens_base = m_raw.mean(-2, True) # (bsz, 1, dim)
@@ -1170,7 +1172,7 @@ def kidd_left(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter :
         # num_non_imp = seq - num_imp
         # num_non_pivot_non_imp = min(seq - num_pivot, num_non_imp)
 
-        if pinfo['class_token']:
+        if use_cls and pinfo['class_token']:
             tokens_base = m_prot[:, 0:1]
         else:
             tokens_base = m_raw.mean(-2, True) # (bsz, 1, dim)
@@ -1268,12 +1270,12 @@ def kidd_non_pivot(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spli
         # by the smaller one of important number and reducing number.
         num_imp = max(r, seq - r)
         num_imp_dup = min(num_imp, r)
-        num_pivot = math.ceil(seq / 20)
-        # num_pivot = math.ceil((seq - r) / 20)
+        # num_pivot = math.ceil(seq / 20)
+        num_pivot = math.ceil((seq - r) / 20)
         # num_non_imp = seq - num_imp
         # num_non_pivot_non_imp = min(seq - num_pivot, num_non_imp)
 
-        if pinfo['class_token']:
+        if use_cls and pinfo['class_token']:
             tokens_base = m_prot[:, 0:1]
         else:
             tokens_base = m_raw.mean(-2, True) # (bsz, 1, dim)
@@ -1301,7 +1303,7 @@ def kidd_non_pivot(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spli
         tokens_non_pivot = m_raw.gather(-2, idx_non_pivot[..., None].expand(-1, -1, dim))
         _, idx_sim = batch_matmul_large_n_wrapper(tokens_src, tokens_non_pivot.transpose(-2, -1)) #.argmax(-1)
         # assert idx_sim.size(1) == r
-        tar_idx = left_idx.gather(-1, idx_sim)
+        tar_idx = idx_non_pivot.gather(-1, idx_sim)
 
         # calculate importance now
         score_imp = (m_raw @ tokens_base.view(bsz, dim, 1)).squeeze(-1) # (bsz, seq)
