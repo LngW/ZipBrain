@@ -63,6 +63,8 @@ def apply_merge(pinfo, r : int, variant : str, x, metric):
     #     return merge_prune1(pinfo, r_, x, metric, split)
     elif variant.startswith('kiddl'): # Keep Important Drop Duplicated, merge to left
         return kidd_left(pinfo, r_, x, metric, split)
+    elif variant.startswith('kiddbp'): # Keep Important Drop Duplicated, merge to left
+        return kidd_bipartite(pinfo, r_, x, metric, split)
 
     return x
 
@@ -1297,6 +1299,112 @@ def kidd_non_pivot(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spli
         src_idx = idx_tmp[:, :r]
         left_idx = idx_tmp[:, r:].sort().values
         idx_non_pivot = idx_tmp[:, r:-num_pivot]
+
+        # find merging target basing on similarity, again, with whole left set
+        tokens_src = m_raw.gather(-2, src_idx[..., None].expand(-1, -1, dim))
+        tokens_non_pivot = m_raw.gather(-2, idx_non_pivot[..., None].expand(-1, -1, dim))
+        _, idx_sim = batch_matmul_large_n_wrapper(tokens_src, tokens_non_pivot.transpose(-2, -1)) #.argmax(-1)
+        # assert idx_sim.size(1) == r
+        tar_idx = idx_non_pivot.gather(-1, idx_sim)
+
+        # calculate importance now
+        score_imp = (m_raw @ tokens_base.view(bsz, dim, 1)).squeeze(-1) # (bsz, seq)
+        idx_imp = score_imp.topk(num_imp, -1, True, False).indices
+
+        mask_imp = torch.zeros_like(score_imp, dtype=torch.bool)
+        mask_imp.scatter_(-1, idx_imp, True)
+        mask_imp = mask_imp.gather(-1, src_idx)
+
+        # now only those important tokens have a target, others should be assigned to indices which are not in left_idx
+        tar_idx[~mask_imp] = src_idx[~mask_imp]
+
+        # shrunk the array from seq to min(num_imp, r)
+        idx_imp_dup = mask_imp.to(dtype=torch.int).topk(num_imp_dup, sorted=False).indices
+
+        tar_idx = tar_idx.gather(-1, idx_imp_dup)
+        src_idx = src_idx.gather(-1, idx_imp_dup)
+
+    def merge(x : torch.Tensor, reduce = 'sum'):
+        x_prot, x_raw = spliter(x)
+        bsz, seq, dim = x_raw.shape
+
+        src = x_raw.gather(-2, src_idx[..., None].expand(-1, -1, dim))
+        x_raw = x_raw.scatter_reduce(-2, tar_idx[..., None].expand(-1, -1, dim), src, reduce)
+        left = x_raw.gather(-2, left_idx[..., None].expand(-1, -1, dim))
+
+        return torch.cat([x_prot, left], dim = -2)
+    
+    handle_source(pinfo, x, merge)
+
+    # slerp
+    # size, size_ = handle_size(pinfo, x, merge)
+    # return merge(x * size) / size_
+
+    # mlerp
+    length = x.norm(2, -1, True)
+    length_ = merge(length, 'amax')
+    x = merge(x)
+    x = x / x.norm(2, -1, True)
+    x = x * length_
+    return x
+
+    # avg
+    # size = torch.ones_like(x[..., :1])
+    # size_ = merge(size)
+    # return merge(x) / merge(size)
+
+    # length_avg
+    # length = x.norm(2, -1, True)
+    # size, size_ = handle_size(pinfo, x, merge)
+    # length_ = merge(length * size) / size_
+    # x = merge(x)
+    # x = x / x.norm(2, -1, True) * length_
+    # return x
+
+def kidd_bipartite(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter : Spliter):
+
+    m_prot, m_raw = spliter(metric)
+
+    # cal improtance by attention score with mean
+    bsz, seq, dim = m_raw.shape
+
+    layer = pinfo.get('cur_layer', 0)
+    pinfo['cur_layer'] = layer + 1
+
+    with torch.no_grad():
+        # the number of important tokens should depend on the number of remaining tokens and reducing tokens.
+        # if the number of removing tokens is too large and remaining tokens is too small
+        # then most of tokens should be merged rather than pruned, but the number of merging tokens is constrained 
+        # by the smaller one of important number and reducing number.
+        num_imp = max(r, seq - r)
+        num_imp_dup = min(num_imp, r)
+        # num_pivot = math.ceil(seq / 20)
+        num_pivot = math.ceil((seq - r) / 20)
+        # num_non_imp = seq - num_imp
+        # num_non_pivot_non_imp = min(seq - num_pivot, num_non_imp)
+
+        if use_cls and pinfo['class_token']:
+            tokens_base = m_prot[:, 0:1]
+        else:
+            tokens_base = m_raw.mean(-2, True) # (bsz, 1, dim)
+        tokens_base = tokens_base / tokens_base.norm(2, -1, True)
+
+        # scale the metric matrix
+        metric_norm = m_raw.norm(2, -1, True) # (bsz, seq, 1)
+        m_raw = m_raw / metric_norm
+
+        # select pivot tokens, there will be (bsz, num_pivot) indices
+        idx_pivot = metric_norm.squeeze(-1).topk(num_pivot, sorted=False).indices
+        tokens_pivot = m_raw.gather(-2, idx_pivot[..., None].expand(-1, -1, dim))
+
+        # calculate redundancy
+        score_dup, idx_dup_tar = (m_raw @ tokens_pivot.transpose(-2, -1)).max(-1)
+        idx_tmp = score_dup.scatter(-1, idx_pivot, -torch.inf).sort(descending=True).indices
+
+        # regard top r tokens as duplicate tokens
+        src_idx = idx_tmp[:, :r]
+        left_idx = idx_tmp[:, r:].sort().values
+        idx_non_pivot = idx_tmp[:, r + (layer % 2)::2]
 
         # find merging target basing on similarity, again, with whole left set
         tokens_src = m_raw.gather(-2, src_idx[..., None].expand(-1, -1, dim))
