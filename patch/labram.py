@@ -55,6 +55,7 @@ def create_block_class(klass):
     return PatchedBlock
 
 def create_transformer_class(klass):
+    import torch
     class PatchedNeuralTransformer(klass):
         def forward(self, x, *args, **kwargs):
             # handle pinfo related thing here
@@ -70,6 +71,9 @@ def create_transformer_class(klass):
             bsz, chs, ts, dim = x.shape
             self._pinfo['raw_raw_data'] = x.reshape(bsz, chs * ts, dim)
             self._pinfo['raw_data'] = None
+
+            self._pinfo['raw_dft_data'] = torch.fft.rfft(x.reshape(bsz, chs * ts, dim), dim=-1)[..., :81]
+            self._pinfo['dft_data'] = None
 
             # self._pinfo["pe_score"] = None
             # self._pinfo["alibi"] = None

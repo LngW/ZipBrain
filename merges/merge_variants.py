@@ -31,6 +31,8 @@ def apply_merge(pinfo, r : int, variant : str, x, metric):
         return tome_merge(pinfo, r, x, metric)
     if variant.startswith('rawtome'):
         return raw_data_tome(pinfo, r_, x, split)
+    if variant.startswith('dfttome'):
+        return dft_data_tome(pinfo, r_, x, split)
     elif variant.startswith('full'):
         return full_merge(pinfo, r, x, metric)
     elif variant.startswith('rpe'):
@@ -1540,6 +1542,103 @@ def raw_data_tome(pinfo, r:int, x : torch.Tensor, spliter : Spliter):
 
     pinfo['raw_data'] = merge(torch.cat([torch.empty_like(raw[..., 0:1, :]), raw], dim = -2))[..., 1:, :]
     return merge(x * size, 'sum') / size_
+
+def dft_data_tome(pinfo, r:int, x : torch.Tensor, spliter : Spliter):
+    raw = pinfo.get('dft_data', None)
+    if raw is None:
+        raw = pinfo.get('raw_dft_data', None)
+    
+    if raw is None:
+        return x
+
+    x_prot, x_raw = spliter(x)
+    r = min(x_raw.size(-2) // 2, r)
+
+    if r <= 0:
+        return x
+    # x_prot, x_raw = spliter(x)
+
+    # # now we expect that the number of raw data matches the number of tokens
+    # assert raw.shape[1] == x_raw.shape[1]
+
+    with torch.no_grad():
+        # split raw data into two groups
+        raw_ = raw - raw.mean(-1, True)
+        raw_ = raw_ / raw_.norm(2, -1, True)
+
+        # calc similarity using dft
+        # batch_size, n, dim = raw.shape
+        raw_a, raw_b = raw_[..., ::2, :], raw_[..., 1::2, :]
+        scores = compute_power_correlation(raw_a, raw_b) # (bsz, ta, tb)
+
+        node_max, node_idx = scores.max(dim=-1) # (bsz, ta)
+        edge_idx = node_max.argsort(dim=-1, descending=True)[..., None] # (bsz, ta, 1)
+
+        unm_idx = edge_idx[..., r:, :]  # Unmerged Tokens # (bsz, ta - r, 1)
+        src_idx = edge_idx[..., :r, :]  # Merged Tokens # (bsz, r, 1)
+        dst_idx = node_idx[..., None].gather(dim=-2, index=src_idx)
+
+        # if class_token:
+        #     # Sort to ensure the class token is at the start
+        #     unm_idx = unm_idx.sort(dim=1)[0]
+
+    def merge(x: torch.Tensor, mode="mean") -> torch.Tensor:
+        x_prot, x_raw = spliter(x)
+        src, dst = x_raw[..., ::2, :], x_raw[..., 1::2, :]
+        n, t1, c = src.shape
+        unm = src.gather(dim=-2, index=unm_idx.expand(n, t1 - r, c))
+        src = src.gather(dim=-2, index=src_idx.expand(n, r, c))
+        dst = dst.scatter_reduce(-2, dst_idx.expand(n, r, c), src, reduce=mode)
+
+        return torch.cat([x_prot, unm, dst], dim = -2)
+
+        # if distill_token:
+        #     return torch.cat([unm[:, :1], dst[:, :1], unm[:, 1:], dst[:, 1:]], dim=1)
+        # else:
+        #     return torch.cat([unm, dst], dim=1)
+
+    handle_source(pinfo, x, lambda it: merge(it, 'sum'))
+    size, size_ = handle_size(pinfo, x, lambda it: merge(it, 'sum'))
+
+    pinfo['dft_data'] = merge(torch.cat([torch.empty_like(raw[..., 0:1, :]), raw], dim = -2))[..., 1:, :]
+    return merge(x * size, 'sum') / size_
+
+def compute_power_correlation(dft1, dft2):
+    """
+    计算两个DFT结果之间的能量强度相关系数（忽略相位）。
+    
+    参数:
+    dft1: (bsz, n1, d) - 复数DFT结果
+    dft2: (bsz, n2, d) - 复数DFT结果
+    
+    返回:
+    score: (bsz, n1, n2) 范围在 [0, 1] 之间 (因为幅值为正，结果不为负)
+    """
+    # 1. 提取幅值（能量强度）
+    # .abs() 得到的是每个频率点的幅值
+    amp1 = dft1.abs() # shape: (bsz, n1, d)
+    amp2 = dft2.abs() # shape: (bsz, n2, d)
+    
+    # 2. 中心化（可选，但推荐用于严格的皮尔逊系数）
+    # 如果不减均值，计算的是“余弦相似度”；减去均值后才是针对频率分布的“皮尔逊相关系数”
+    amp1 = amp1 - amp1.mean(dim=-1, keepdim=True)
+    amp2 = amp2 - amp2.mean(dim=-1, keepdim=True)
+
+    # 3. 计算分子：幅值向量的点积
+    # (bsz, n1, d) @ (bsz, d, n2) -> (bsz, n1, n2)
+    inner_product = torch.einsum('bid, bjd -> bij', amp1, amp2)
+
+    # 4. 计算分母：各自幅值向量的 L2 范数
+    norm1 = torch.norm(amp1, p=2, dim=-1) # (bsz, n1)
+    norm2 = torch.norm(amp2, p=2, dim=-1) # (bsz, n2)
+
+    # 5. 归一化
+    sigma_matrix = norm1.unsqueeze(-1) * norm2.unsqueeze(1)
+    
+    eps = 1e-9
+    score = inner_product / (sigma_matrix + eps)
+
+    return score
 
 def compute_batch_cross_correlation_dft(data1, data2, k=15):
     """
