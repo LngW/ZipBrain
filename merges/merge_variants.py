@@ -1073,7 +1073,10 @@ def kidd_pivot(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter 
 
     num_imp = max(r, seq - r) # min(r, seq // 2)
     num_imp_dup = min(num_imp, r)
-    num_pivot = math.ceil((seq - r) * pivot_factor)
+    if 'pivot_const' in pinfo:
+        num_pivot = pinfo['pivot_const']
+    else:
+        num_pivot = math.ceil((seq - r) * pivot_factor)
     # num_pivot = math.ceil(seq / 20)
     # num_non_imp = seq - num_imp
     # num_non_pivot_non_imp = min(seq - num_pivot, num_non_imp)

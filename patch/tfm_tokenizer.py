@@ -15,7 +15,9 @@ def make_PL_class(klass):
             self._pinfo["qkv"] = None
 
             self._pinfo["pivot_factor"] = self.pivot_factor
-            self._pinfo["use_class"] = self.use_class
+            if hasattr(self, 'pivot_const'):
+                self._pinfo['pivot_const'] = self.pivot_const
+            self._pinfo["use_cls"] = self.use_cls
             # self._pinfo["pe_score"] = None
             # self._pinfo["alibi"] = None
             # self._pinfo["attn_score"] = None
@@ -51,6 +53,8 @@ def apply_patch(model, trace_source = True):
     model.r = 0
     model.variant = ''
     model._pinfo = pinfo
+    model.pivot_factor = 0.05
+    model.use_cls = True
 
     lat = model.tfm_token.LAT
     lat.layers.__class__ = PatchedSequence

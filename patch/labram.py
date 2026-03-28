@@ -69,7 +69,9 @@ def create_transformer_class(klass):
             self._pinfo["qkv"] = None
 
             self._pinfo['pivot_factor'] = self.pivot_factor
-            self._pinfo["use_class"] = self.use_class
+            self._pinfo["use_cls"] = self.use_cls
+            if hasattr(self, 'pivot_const'):
+                self._pinfo['pivot_const'] = self.pivot_const
 
             # bsz, chs, ts, dim = x.shape
             # self._pinfo['raw_raw_data'] = x.reshape(bsz, chs * ts, dim)
@@ -112,6 +114,8 @@ def apply_patch(model, trace_source = False):
     model._pinfo = pinfo
     model.r = 0
     model.variant = ''
+    model.pivot_factor = 0.05
+    model.use_cls = True
 
     PatchedNeuralTransformer = create_transformer_class(model.__class__)
     PatchedBlock = create_block_class(model.blocks[0].__class__)

@@ -105,39 +105,71 @@ def main(args):
 
     return metrics['accuracy']
 
-def call_model(pivot_factor, use_cls, variant, metric):
+def call_model(pivot_factor, use_cls, variant, r, metric):
     from types import SimpleNamespace
     args = SimpleNamespace()
     args.pivot_factor = pivot_factor
     args.use_cls = use_cls
-    args.tome_variant = f"{variant}[{metric}]"
+    args.tome_variant = [f"{variant}[{metric}]"]
+    args.tome_r = r
 
-    args.model = 'LaBraM'
+    args.model = 'TFM'
     args.dataset = 'TUAB'
-    args.workspace = 'optuna_hyper'
+    args.workspace = 'optuna_hyper_2'
     args.test = True
-    args.debug = False
-    args.log_dir = 'LaBraM'
+    args.debug = True
+    args.log_dir = 'TFM'
     args.seed = 0
     args.subset = 0
+    args.batch_size = 1024
+    args.num_workers = 4
+    args.lr = 1e-5
+    args.weight_decay = 0
+
+    return main(args)
+
+
+    # num = []
+    # for r in [[3], [7], [11], [15], [19] * 11 + [10]]:
+    #     num.append(main(args))
+
+    # # num = [it0 / it1 for it0, it1 in zip(num, base)]
+
+    # return num, base
+
+def objective(trail : optuna.Trial):
+    import math
+    pivot_factor = trail.suggest_float('pivot_factor', 0, 1)
+    # use_cls = trail.suggest_categorical('use_cls', [True, False])
+    variant = trail.suggest_categorical('variant', ['kiddp', 'kiddl'])
+    # metric = trail.suggest_categorical('metric', ['q', 'k'])
+
+    trail.set_user_attr('r', 3)
+    trail.set_user_attr('metric', 'q')
+
+    base = [0.83139801, 0.83158749, 0.8275274 , 0.82465827, 0.81743133, 0.80086613]
+    base = base[1:]
+
+    rs = [[3], [7], [11], [15], [19] * 11 + [10]]
+
+    idx = 0
+    acc = call_model(pivot_factor, True, variant, rs[0], 'q')
+    return acc / base[idx]
 
     num = []
-    for r in [[3], [7], [11], [15], [19] * 11 + [10]]:
-        args.tome_r = r
-        num.append(main(args))
+    for idx, r in enumerate():
+        acc = call_model(pivot_factor, True, variant, r, 'q')
+
+        trail.report(acc, idx)
+
+        if acc > base[idx]:
+            num.append(acc / base[idx])
+        else:
+            return math.nan
 
     return sum(num) / len(num)
 
-def objective(trail : optuna.Trial):
-    pivot_factor = trail.suggest_float('pivot_factor', 0.01, 1)
-    use_cls = trail.suggest_categorical('use_cls', [True, False])
-    variant = trail.suggest_categorical('variant', ['kiddp', 'kiddl'])
-    metric = trail.suggest_categorical('metric', ['q', 'k', 'v', 'x'])
-
-    return call_model(pivot_factor, use_cls, variant, metric)
-
-
 if __name__ == '__main__':
-    # study = optuna.create_study(storage="sqlite:///db.sqlite3", direction='maximize')
-    # study.optimize(objective, n_trials=100)
-    call_model(0.05, True, 'kiddp', 'q')
+    study = optuna.create_study(storage="sqlite:///db.sqlite3", direction='maximize')
+    study.optimize(objective, n_trials=200)
+    # print(call_model(0.05, True, 'kiddp', 'q'))
