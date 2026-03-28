@@ -46,7 +46,7 @@ def prepare_dataloader(args, hooks):
         elif model == 'LaBraM':
             from thirdparty.LaBraM.utils import prepare_TUAB_dataset, get_input_chans
             # train_dataset, test_dataset, val_dataset = prepare_TUAB_dataset("./datasets/tuab/labrama/")
-            train_dataset, test_dataset, val_dataset = prepare_TUAB_dataset("./models/LaBraM/datasets/tuab/processed/")
+            train_dataset, test_dataset, val_dataset = prepare_TUAB_dataset("./datasets/tuab/labram/")
             ch_names = ['EEG FP1', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
                         'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
             ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
@@ -266,7 +266,7 @@ def prepare_model(args): # -> 'torch.nn.Module':
             import thirdparty.LaBraM.modeling_finetune
             from timm.models import create_model
 
-            state_dict = torch.load('./models/LaBraM/checkpoints/finetune_tuab_base/checkpoint-best.pth', weights_only=False)
+            state_dict = torch.load('./finetune/LaBraM/checkpoints/finetune_tuab_base_256/checkpoint-best.pth', weights_only=False)
             args = state_dict['args']
             model_dict = state_dict['model']
 
@@ -310,7 +310,7 @@ def prepare_model(args): # -> 'torch.nn.Module':
                 use_chan_conv=True,
             )
 
-            state_dict = torch.load('./finetunes/EEGPT/downstream_tueg/checkpoints/finetune_tuab_eegpt/checkpoint-best.pth', weights_only=False)
+            state_dict = torch.load('./finetune/EEGPT/downstream_tueg/checkpoints/finetune_tuab_eegpt/checkpoint-best.pth', weights_only=False)
             model.load_state_dict(state_dict['model'])
 
             patch.eegpt(model)
