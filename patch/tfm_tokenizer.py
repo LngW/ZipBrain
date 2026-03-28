@@ -13,6 +13,9 @@ def make_PL_class(klass):
             self._pinfo["size"] = None
             self._pinfo["source"] = None
             self._pinfo["qkv"] = None
+
+            self._pinfo["pivot_factor"] = self.pivot_factor
+            self._pinfo["use_class"] = self.use_class
             # self._pinfo["pe_score"] = None
             # self._pinfo["alibi"] = None
             # self._pinfo["attn_score"] = None

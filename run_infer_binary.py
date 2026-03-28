@@ -418,6 +418,8 @@ def pre_main():
     # parser.add_argument("--top_k", type=int, default=0)
     parser.add_argument("--tome_r", type=int, nargs='+', default=[])
     parser.add_argument("--tome_variant", type=str, nargs='+', default=[])
+    parser.add_argument("--pivot_factor", type=float, default=0.05)
+    parser.add_argument("--use_cls", type=bool, default=True)
     # parser.add_argument("--linear", action='store_true', default=False)
     # parser.add_argument("--flash", action='store_true', default=False)
 
@@ -459,7 +461,7 @@ def pre_main():
 def main(args):
 
     version = f"{args.dataset}-{args.model}-{args.lr}-{args.batch_size}-{args.sampling_rate}-{args.token_size}-{args.hop_length}-{args.seed}"
-    version = f"{args.dataset}-{'_'.join(args.tome_variant)}-{'_'.join([str(it) for it in args.tome_r])}"
+    version = f"{args.dataset}-{'_'.join(args.tome_variant)}-{'cls' if args.use_cls else 'mean'}-{args.pivot_factor}-{'_'.join([str(it) for it in args.tome_r])}"
     logdir : str = args.log_dir
     workspace = Path('.', 'workspace', args.workspace)
     log_dir = workspace / 'logs' / logdir / version
@@ -489,6 +491,8 @@ def main(args):
     # patch.biot(model, True)
     model.r = args.tome_r
     model.variant = args.tome_variant
+    model.pivot_factor = args.pivot_factor
+    model.use_cls = args.use_cls
 
     # define optimizer and scheduler
     optimizer = torch.optim.AdamW(

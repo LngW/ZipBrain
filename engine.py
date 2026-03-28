@@ -563,6 +563,8 @@ def _inference_loop(
     pbar.close()
     ctx_global.logger.flush()
 
+    return metrics2
+
 def valid_loop(
         ctx_global : __GlobalContext,
         # hooks: Hooks,
@@ -639,7 +641,7 @@ def test(
         hooks : Hooks,
         **kwargs
 ):
-    _inference_loop(
+    return _inference_loop(
         ctx_global=ctx_global, model=model, test_dataloader=test_dataloader, hooks=hooks, prefix = 'Test', **kwargs
     )
 
@@ -672,6 +674,6 @@ def valid(
         pin_memory=test_dataloader.pin_memory,
     )
     
-    _inference_loop(
+    return _inference_loop(
         ctx_global=ctx_global, model=model, test_dataloader=loader, hooks=hooks, prefix = 'Valid', **kwargs
     )

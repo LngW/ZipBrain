@@ -1048,7 +1048,7 @@ def merge_prune1(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, splite
 #     # return merge(x * size) / size_
 #     # return merge(x)
 
-use_cls = True
+# use_cls = True
 
 def kidd_pivot(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter : Spliter):
 
@@ -1056,6 +1056,9 @@ def kidd_pivot(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter 
 
     # cal improtance by attention score with mean
     bsz, seq, dim = m_raw.shape
+
+    use_cls = pinfo.get('use_cls', True)
+    pivot_factor = pinfo.get('pivot_factor', 0.05)
 
     # the number of important tokens should depend on the number of remaining tokens and reducing tokens.
     # if the number of removing tokens is too large and remaining tokens is too small
@@ -1070,7 +1073,7 @@ def kidd_pivot(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter 
 
     num_imp = max(r, seq - r) # min(r, seq // 2)
     num_imp_dup = min(num_imp, r)
-    num_pivot = math.ceil((seq - r) / 20)
+    num_pivot = math.ceil((seq - r) * pivot_factor)
     # num_pivot = math.ceil(seq / 20)
     # num_non_imp = seq - num_imp
     # num_non_pivot_non_imp = min(seq - num_pivot, num_non_imp)
@@ -1163,6 +1166,9 @@ def kidd_left(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter :
 
     m_prot, m_raw = spliter(metric)
 
+    use_cls = pinfo.get('use_cls', True)
+    pivot_factor = pinfo.get('pivot_factor', 0.05)
+
     # cal improtance by attention score with mean
     bsz, seq, dim = m_raw.shape
 
@@ -1174,7 +1180,7 @@ def kidd_left(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter :
         num_imp = max(r, seq - r)
         num_imp_dup = min(num_imp, r)
         # num_pivot = math.ceil(seq / 20)
-        num_pivot = math.ceil((seq - r) / 20)
+        num_pivot = math.ceil((seq - r) * pivot_factor)
         # num_non_imp = seq - num_imp
         # num_non_pivot_non_imp = min(seq - num_pivot, num_non_imp)
 
