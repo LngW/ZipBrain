@@ -1,22 +1,24 @@
 
 from typing import NamedTuple
 
-from .utils import parse_r, parse_variant
+from .utils import reset_common_pinfo
 
 def make_PL_class(klass):
     class PatchInference(klass):
         def forward(self, *args, **kwargs):
             depth = len(self.tfm_token.LAT.layers.layers)
-            self._pinfo["r"] = parse_r(depth, self.r)
-            self._pinfo["variant"] = parse_variant(depth, self.variant)
-            self._pinfo['shape'] = None
-            self._pinfo["size"] = None
-            self._pinfo["source"] = None
-            self._pinfo["qkv"] = None
+            pinfo = self._pinfo
+            reset_common_pinfo(self, pinfo, depth)
+            # pinfo["r"] = parse_r(depth, self.r)
+            # pinfo["variant"] = parse_variant(depth, self.variant)
+            pinfo['shape'] = None
+            pinfo["size"] = None
+            pinfo["source"] = None
+            pinfo["qkv"] = None
 
-            self._pinfo["pivot_factor"] = self.pivot_factor
-            if hasattr(self, 'pivot_const'):
-                self._pinfo['pivot_const'] = self.pivot_const
+            # self._pinfo["pivot_factor"] = self.pivot_factor
+            # if hasattr(self, 'pivot_const'):
+            #     self._pinfo['pivot_const'] = self.pivot_const
             self._pinfo["use_cls"] = self.use_cls
             # self._pinfo["pe_score"] = None
             # self._pinfo["alibi"] = None

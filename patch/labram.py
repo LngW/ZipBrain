@@ -1,5 +1,5 @@
 
-from patch.utils import parse_r, parse_variant
+from patch.utils import reset_common_pinfo
 
 def apply_merge(pinfo, r, variant, x, q, k, v):
 
@@ -61,17 +61,21 @@ def create_transformer_class(klass):
             # handle pinfo related thing here
 
             depth = len(self.blocks)
-            self._pinfo["r"] = parse_r(depth, self.r)
-            self._pinfo["variant"] = parse_variant(depth, self.variant)
-            self._pinfo['shape'] = None
-            self._pinfo["size"] = None
-            self._pinfo["source"] = None
-            self._pinfo["qkv"] = None
+            pinfo = self._pinfo
 
-            self._pinfo['pivot_factor'] = self.pivot_factor
+            reset_common_pinfo(self, pinfo, depth)
+
+            # self._pinfo["r"] = parse_r(depth, self.r)
+            # self._pinfo["variant"] = parse_variant(depth, self.variant)
+            pinfo['shape'] = None
+            pinfo["size"] = None
+            pinfo["source"] = None
+            pinfo["qkv"] = None
+
+            # self._pinfo['pivot_factor'] = self.pivot_factor
             self._pinfo["use_cls"] = self.use_cls
-            if hasattr(self, 'pivot_const'):
-                self._pinfo['pivot_const'] = self.pivot_const
+            # if hasattr(self, 'pivot_const'):
+            #     self._pinfo['pivot_const'] = self.pivot_const
 
             # bsz, chs, ts, dim = x.shape
             # self._pinfo['raw_raw_data'] = x.reshape(bsz, chs * ts, dim)

@@ -1,3 +1,25 @@
+def reset_common_pinfo(model, pinfo, depth):
+    r = getattr(model, 'r', 0)
+    variant = getattr(model, 'variant', '')
+    pivot_factor = getattr(model, 'pivot_factor', 0.)
+    imp_factor = getattr(model, 'imp_factor', 0.5)
+
+    pinfo['r'] = parse_r(depth, r)
+    pinfo['variant'] = parse_variant(depth, variant)
+    pinfo['pivot_factor'] = repeat_or_pad(pivot_factor, depth, None)
+    pinfo['imp_factor'] = repeat_or_pad(imp_factor, depth, None)
+
+def repeat_or_pad(it, depth, pad):
+    if not isinstance(it, list):
+        return [it] * depth
+    
+    size = len(it)
+
+    if size == 1:
+        return it * depth
+    
+    return it + [pad] * (depth - size)
+
 def parse_r(depth, r):
     if r is None:
         return [0] * depth
