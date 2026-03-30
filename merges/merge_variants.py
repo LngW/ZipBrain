@@ -1181,12 +1181,19 @@ def kidd_left(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter :
     num_imp_dup = min(num_imp, r)
     num_pivot = math.ceil((seq - r) * 0.05)
 
-    if 'imp_factor' in pinfo:
+    if 'imp_num' in pinfo:
+        imp_num = pinfo['imp_num'].pop(0)
+        if imp_num is not None:
+            num_imp = imp_num
+    elif 'imp_factor' in pinfo:
         imp_factor = pinfo['imp_factor'].pop(0)
         if imp_factor is not None:
             num_imp = math.floor((seq + 1) * imp_factor)
-
-    if 'pivot_factor' in pinfo:
+    if 'pivot_num' in pinfo:
+        pivot_num = pinfo['pivot_num'].pop(0)
+        if pivot_num is not None:
+            num_pivot = pivot_num
+    elif 'pivot_factor' in pinfo:
         pivot_factor = pinfo['pivot_factor'].pop(0)
         if pivot_factor is not None:
             num_pivot = math.ceil((seq - r) * pivot_factor)
@@ -1289,12 +1296,19 @@ def kidd_left2(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter 
     num_imp_dup = min(num_imp, r)
     num_pivot = math.ceil((seq - r) * 0.05)
 
-    if 'imp_factor' in pinfo:
+    if 'imp_num' in pinfo:
+        imp_num = pinfo['imp_num'].pop(0)
+        if imp_num is not None:
+            num_imp = imp_num
+    elif 'imp_factor' in pinfo:
         imp_factor = pinfo['imp_factor'].pop(0)
         if imp_factor is not None:
             num_imp = math.floor((seq + 1) * imp_factor)
-
-    if 'pivot_factor' in pinfo:
+    if 'pivot_num' in pinfo:
+        pivot_num = pinfo['pivot_num'].pop(0)
+        if pivot_num is not None:
+            num_pivot = pivot_num
+    elif 'pivot_factor' in pinfo:
         pivot_factor = pinfo['pivot_factor'].pop(0)
         if pivot_factor is not None:
             num_pivot = math.ceil((seq - r) * pivot_factor)
