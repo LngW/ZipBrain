@@ -45,8 +45,17 @@ def objective(trail : optuna.Trial, model, dataset, hooks):
     for idx in range(4):
         adj_pivot = 1 if variant == 'kiddl' else 0
 
-        pivot_num = trail.suggest_int(f'pivot_number_{idx}', 1, seq - (idx + adj_pivot) * r)
-        imp_num = trail.suggest_int(f'imp_number_{idx}', 0, seq - idx * r)
+        pivot_factor = trail.suggest_float(f'pivot_factor_{idx}', 0, 1)
+        imp_factor = trail.suggest_float(f'imp_factor_{idx}', 0, 1)
+
+        # pivot_num = trail.suggest_int(f'pivot_number_{idx}', 1, seq - (idx + adj_pivot) * r)
+        # imp_num = trail.suggest_int(f'imp_number_{idx}', 0, seq - idx * r)
+
+        pivot_num = math.ceil(pivot_factor * (seq - (idx + adj_pivot) * r))
+        imp_num = math.floor(imp_factor * (seq - idx * r))
+
+        trail.set_user_attr(f'pivot_number_{idx}', pivot_num)
+        trail.set_user_attr(f'imp_number_{idx}', imp_num)
 
         pivot_nums.append(pivot_num)
         imp_nums.append(imp_num)
@@ -77,14 +86,16 @@ def run_optuna():
     model, threshold = prepare_model(args)
     hooks = Hooks(calc_metric=partial(calculate_metrics, threshold=threshold))
     _, dataset, _ = prepare_dataloader(args, hooks)
-    
+
     study = optuna.create_study(
         storage="sqlite:///db.sqlite3", 
         direction='maximize', 
-        study_name='labram_all_hyper_1',
+        study_name='tfm_all_hyper_2',
         load_if_exists=True,
+        sampler=optuna.samplers.TPESampler(n_startup_trials=120, multivariate=True, group=True)
     )
-    study.optimize(partial(objective, model = model, dataset = dataset, hooks = hooks), n_trials=200)
+
+    study.optimize(partial(objective, model = model, dataset = dataset, hooks = hooks), n_trials=1200)
 
 
 if __name__ == '__main__':
