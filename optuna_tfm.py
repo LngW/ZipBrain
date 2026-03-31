@@ -20,7 +20,7 @@ def call_model(model, dataset, hooks, r, variant, use_cls, pivot_num, imp_num):
     device = torch.device('cuda:0')
     from engine import create_global_context, destructure_global_context, test
     # define the model
-    ctx = create_global_context(device, log_dir, cp_dir, 1)
+    ctx = create_global_context(device, log_dir, cp_dir, 2)
 
     model.r = r
     model.variant = variant
@@ -36,17 +36,17 @@ def call_model(model, dataset, hooks, r, variant, use_cls, pivot_num, imp_num):
     return metrics['accuracy']
 
 def objective(trail : optuna.Trial, model, dataset, hooks):
-    r = trail.suggest_int('r', 1, 75)
     variant = trail.suggest_categorical('variant', ['kiddl', 'kiddl2'])
-    use_cls = trail.suggest_categorical('use_cls', [True, False])
+    r = trail.suggest_int(f'{variant}_r', 1, 75)
+    # use_cls = trail.suggest_categorical('use_cls', [True, False])
     seq = 304
     pivot_nums = []
     imp_nums = []
     for idx in range(4):
         adj_pivot = 1 if variant == 'kiddl' else 0
 
-        pivot_factor = trail.suggest_float(f'pivot_factor_{idx}', 0, 1)
-        imp_factor = trail.suggest_float(f'imp_factor_{idx}', 0, 1)
+        pivot_factor = trail.suggest_float(f'{variant}_pivot_factor_{idx}', 0, 1)
+        imp_factor = trail.suggest_float(f'{variant}_imp_factor_{idx}', 0, 1)
 
         # pivot_num = trail.suggest_int(f'pivot_number_{idx}', 1, seq - (idx + adj_pivot) * r)
         # imp_num = trail.suggest_int(f'imp_number_{idx}', 0, seq - idx * r)
@@ -54,14 +54,14 @@ def objective(trail : optuna.Trial, model, dataset, hooks):
         pivot_num = math.ceil(pivot_factor * (seq - (idx + adj_pivot) * r))
         imp_num = math.floor(imp_factor * (seq - idx * r))
 
-        trail.set_user_attr(f'pivot_number_{idx}', pivot_num)
-        trail.set_user_attr(f'imp_number_{idx}', imp_num)
+        trail.set_user_attr(f'{variant}_pn_{idx}', pivot_num)
+        trail.set_user_attr(f'{variant}_in_{idx}', imp_num)
 
         pivot_nums.append(pivot_num)
         imp_nums.append(imp_num)
 
     # acc = call_model(model, dataset, hooks, variant, 'q', [r], use_cls, pivot_nums, imp_nums)
-    acc = call_model(model, dataset, hooks, [r], f"{variant}[q]", use_cls, pivot_nums, imp_nums)
+    acc = call_model(model, dataset, hooks, [r], f"{variant}[q]", False, pivot_nums, imp_nums)
     return acc / 0.820842
 
 def run_optuna():
@@ -74,8 +74,8 @@ def run_optuna():
         log_dir = 'TFM',
         seed = 0,
         subset = 0,
-        batch_size = 1,
-        num_workers = 4,
+        batch_size = 256,
+        num_workers = 8,
     )
 
     if args.model == 'TFM':
@@ -90,7 +90,7 @@ def run_optuna():
     study = optuna.create_study(
         storage="sqlite:///db.sqlite3", 
         direction='maximize', 
-        study_name='tfm_all_hyper_2',
+        study_name='tfm_all_hyper_3',
         load_if_exists=True,
         sampler=optuna.samplers.TPESampler(n_startup_trials=120, multivariate=True, group=True)
     )
