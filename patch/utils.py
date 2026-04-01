@@ -1,4 +1,4 @@
-def reset_common_pinfo(model, pinfo, depth):
+def reset_common_pinfo(model, pinfo : dict, depth):
     r = getattr(model, 'r', 0)
     variant = getattr(model, 'variant', '')
 
@@ -6,6 +6,7 @@ def reset_common_pinfo(model, pinfo, depth):
     pinfo['variant'] = parse_variant(depth, variant)
 
     def optional_set(key):
+        pinfo.pop(key, None)
         if hasattr(model, key):
             pinfo[key] = repeat_or_pad(getattr(model, key), depth, None)
 

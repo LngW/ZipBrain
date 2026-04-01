@@ -9,7 +9,7 @@ import math
 
 def call_model(model, dataset, hooks, r, variant, use_cls, pivot_num, imp_num):
     # version = f"{args.dataset}-{args.model}-{args.lr}-{args.batch_size}-{args.sampling_rate}-{args.token_size}-{args.hop_length}-{args.seed}"
-    version = f"{'_'.join(variant)}-{'cls' if use_cls else 'mean'}-{'_'.join([str(it) for it in pivot_num])}-{'_'.join([str(it) for it in imp_num])}-{'_'.join([str(it) for it in r])}"
+    version = f"{'_'.join(variant)}-{'cls' if use_cls else 'mean'}-{'_'.join([str(it) for it in pivot_num])}-{'_'.join([str(it) for it in imp_num])}-{r}"
     logdir : str = 'hyper_optune'
     workspace = Path('.', 'workspace', 'hyper_optune')
     log_dir = workspace / 'logs' / logdir / version
@@ -36,23 +36,20 @@ def call_model(model, dataset, hooks, r, variant, use_cls, pivot_num, imp_num):
     return metrics['accuracy']
 
 def objective(trail : optuna.Trial, model, dataset, hooks):
-    variant = trail.suggest_categorical('variant', ['kiddl', 'kiddl2'])
+    variant = trail.suggest_categorical('variant', ['kiddp', 'kiddl', 'kiddl2'])
     r = trail.suggest_int(f'{variant}_r', 1, 75)
     # use_cls = trail.suggest_categorical('use_cls', [True, False])
     seq = 304
     pivot_nums = []
     imp_nums = []
     for idx in range(4):
-        adj_pivot = 1 if variant == 'kiddl' else 0
+        adj_pivot = 0 if variant == 'kiddl2' else 1
 
         pivot_factor = trail.suggest_float(f'{variant}_pivot_factor_{idx}', 0, 1)
         imp_factor = trail.suggest_float(f'{variant}_imp_factor_{idx}', 0, 1)
 
-        # pivot_num = trail.suggest_int(f'pivot_number_{idx}', 1, seq - (idx + adj_pivot) * r)
-        # imp_num = trail.suggest_int(f'imp_number_{idx}', 0, seq - idx * r)
-
-        pivot_num = math.ceil(pivot_factor * (seq - (idx + adj_pivot) * r))
-        imp_num = math.floor(imp_factor * (seq - idx * r))
+        pivot_num = max(math.ceil(pivot_factor * (seq - (idx + adj_pivot) * r)), 1)
+        imp_num = min(math.floor(imp_factor * (seq - idx * r + 1)), seq - idx * r)
 
         trail.set_user_attr(f'{variant}_pn_{idx}', pivot_num)
         trail.set_user_attr(f'{variant}_in_{idx}', imp_num)
@@ -61,7 +58,7 @@ def objective(trail : optuna.Trial, model, dataset, hooks):
         imp_nums.append(imp_num)
 
     # acc = call_model(model, dataset, hooks, variant, 'q', [r], use_cls, pivot_nums, imp_nums)
-    acc = call_model(model, dataset, hooks, [r], f"{variant}[q]", False, pivot_nums, imp_nums)
+    acc = call_model(model, dataset, hooks, r, f"{variant}[q]", False, pivot_nums, imp_nums)
     return acc / 0.820842
 
 def run_optuna():
@@ -84,13 +81,16 @@ def run_optuna():
         sys.modules['models.tfm_token'] = importlib.import_module('thirdparty.TFM_Tokenizer.models.tfm_token')
 
     model, threshold = prepare_model(args)
-    hooks = Hooks(calc_metric=partial(calculate_metrics, threshold=threshold))
+    hooks = Hooks(
+        calc_metric=partial(calculate_metrics, threshold=threshold), 
+        handle_post_infer_result=lambda pred, label: (pred.sigmoid().flatten(), label)
+    )
     _, dataset, _ = prepare_dataloader(args, hooks)
 
     study = optuna.create_study(
         storage="sqlite:///db.sqlite3", 
         direction='maximize', 
-        study_name='tfm_all_hyper_3',
+        study_name='tfm_all_hyper_12',
         load_if_exists=True,
         sampler=optuna.samplers.TPESampler(n_startup_trials=120, multivariate=True, group=True)
     )
