@@ -37,9 +37,9 @@ def call_model(model, dataset, hooks, r, variant, use_cls, pivot_num, imp_num):
 
 def objective(trail : optuna.Trial, model, dataset, hooks):
     variant = trail.suggest_categorical('variant', ['kiddp', 'kiddl', 'kiddl2'])
-    r = trail.suggest_int(f'{variant}_r', 1, 75)
+    r = trail.suggest_int(f'{variant}_r', 1, 57)
     # use_cls = trail.suggest_categorical('use_cls', [True, False])
-    seq = 304
+    seq = 230
     pivot_nums = []
     imp_nums = []
     for idx in range(4):
@@ -58,17 +58,19 @@ def objective(trail : optuna.Trial, model, dataset, hooks):
         imp_nums.append(imp_num)
 
     # acc = call_model(model, dataset, hooks, variant, 'q', [r], use_cls, pivot_nums, imp_nums)
-    acc = call_model(model, dataset, hooks, r, f"{variant}[q]", False, pivot_nums, imp_nums)
+    acc = call_model(model, dataset, hooks, [r, 0, 0] * 4, f"{variant}[q]", False, pivot_nums, imp_nums)
+    return acc / 0.83139801, r
+    
     return acc / 0.820842, r
 
 def run_optuna():
     from run_infer_binary import calculate_metrics, prepare_dataloader, prepare_model
     from engine import Hooks
     args = SimpleNamespace(
-        model = 'TFM',
+        model = 'LaBraM',
         dataset = 'TUAB',
         workspace = 'optuna_hyper_2',
-        log_dir = 'TFM',
+        log_dir = 'LaBraM',
         seed = 0,
         subset = 0,
         batch_size = 64,
@@ -92,9 +94,10 @@ def run_optuna():
     study = optuna.create_study(
         storage="sqlite:///db.sqlite3", 
         directions=['maximize'] * 2, 
-        study_name='tfm_all_hyper_mo',
+        study_name='labram_all_hyper_mo',
         load_if_exists=True,
-        sampler=optuna.samplers.TPESampler(n_startup_trials=30, multivariate=True, group=True)
+        sampler=optuna.samplers.TPESampler(n_startup_trials=60, multivariate=True, group=True)
+        # sampler=optuna.samplers.NSGAIISampler()
     )
 
     study.optimize(partial(objective, model = model, dataset = dataset, hooks = hooks), n_trials=1200)
