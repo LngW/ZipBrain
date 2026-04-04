@@ -1,28 +1,17 @@
-**/datasets/**/*.*
-checkpoints*/
-logs*/
-.venv/
+.vscode/
+
+.venv*/
 .venv.biot/
 **/__pycache__/
 
-*.csv
-**/workspace
+finetune/
+datasets/*
+models/
+logs*/
+workspace/*
 
 # For offline git repo migration
 *.pack
-
-LaBraM/log/
-LaBraM/logs/
-
-**/log*/
-
-.vscode/
-
-# BIOT
-!models/BIOT2/datasets/*/*.py
-
-# CBraMod
-!models/CBraMod/datasets/
-models/CBraMod/datas
-
+*.csv
 *.ipynb
+*.sqlite3

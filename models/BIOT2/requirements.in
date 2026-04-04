@@ -1,9 +1,0 @@
-# python==3.9
-torch # with cu117
-numpy<2
-linear_attention_transformer
-einops
-pytorch_lightning==1.6.4
-tqdm
-pyhealth
-scipy
