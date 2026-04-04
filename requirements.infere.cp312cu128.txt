@@ -8,6 +8,10 @@ aiohttp==3.13.5
     # via fsspec
 aiosignal==1.4.0
     # via aiohttp
+alembic==1.18.4
+    # via optuna
+asttokens==3.0.1
+    # via stack-data
 attrs==26.1.0
     # via aiohttp
 axial-positional-embedding==0.3.12
@@ -16,8 +20,12 @@ certifi==2026.2.25
     # via requests
 charset-normalizer==3.4.7
     # via requests
+colorlog==6.10.1
+    # via optuna
 colt5-attention==0.11.1
     # via product-key-memory
+comm==0.2.3
+    # via ipykernel
 contourpy==1.3.3
     # via matplotlib
 cuda-bindings==12.9.6
@@ -28,8 +36,12 @@ cuda-toolkit==12.8.1
     # via torch
 cycler==0.12.1
     # via matplotlib
+debugpy==1.8.20
+    # via ipykernel
 decorator==5.2.1
-    # via mne
+    # via
+    #   ipython
+    #   mne
 einops==0.8.2
     # via
     #   -r requirements.infere.in
@@ -40,6 +52,8 @@ einops==0.8.2
     #   local-attention
     #   product-key-memory
     #   torch-einops-utils
+executing==2.2.1
+    # via stack-data
 filelock==3.25.2
     # via torch
 fonttools==4.62.1
@@ -53,6 +67,8 @@ fsspec==2024.12.0
     #   lightning
     #   pytorch-lightning
     #   torch
+greenlet==3.3.2
+    # via sqlalchemy
 grpcio==1.80.0
     # via tensorboard
 h5py==3.16.0
@@ -63,12 +79,26 @@ idna==3.11
     # via
     #   requests
     #   yarl
+ipykernel==7.2.0
+    # via -r requirements.infere.in
+ipython==9.12.0
+    # via ipykernel
+ipython-pygments-lexers==1.1.1
+    # via ipython
+jedi==0.19.2
+    # via ipython
 jinja2==3.1.6
     # via
     #   mne
     #   torch
 joblib==1.5.3
     # via scikit-learn
+jupyter-client==8.8.0
+    # via ipykernel
+jupyter-core==5.9.1
+    # via
+    #   ipykernel
+    #   jupyter-client
 kiwisolver==1.5.0
     # via matplotlib
 lightning==2.2.3
@@ -86,14 +116,21 @@ local-attention==1.11.2
     # via
     #   colt5-attention
     #   linear-attention-transformer
+mako==1.3.10
+    # via alembic
 markdown==3.10.2
     # via tensorboard
 markupsafe==3.0.3
     # via
     #   jinja2
+    #   mako
     #   werkzeug
 matplotlib==3.10.8
     # via mne
+matplotlib-inline==0.2.1
+    # via
+    #   ipykernel
+    #   ipython
 mne==1.4.2
     # via -r requirements.infere.in
 mpmath==1.3.0
@@ -102,6 +139,8 @@ multidict==6.7.1
     # via
     #   aiohttp
     #   yarl
+nest-asyncio==1.6.0
+    # via ipykernel
 networkx==3.6.1
     # via
     #   pyhealth
@@ -114,6 +153,7 @@ numpy==2.4.4
     #   lightning
     #   matplotlib
     #   mne
+    #   optuna
     #   pandas
     #   rdkit
     #   scikit-learn
@@ -161,13 +201,17 @@ nvidia-nvshmem-cu12==3.4.5
     # via torch
 nvidia-nvtx-cu12==12.8.90
     # via cuda-toolkit
+optuna==4.8.0
+    # via -r requirements.infere.in
 packaging==24.2
     # via
     #   colt5-attention
+    #   ipykernel
     #   lightning
     #   lightning-utilities
     #   matplotlib
     #   mne
+    #   optuna
     #   pooch
     #   pytorch-lightning
     #   tensorboard
@@ -177,6 +221,10 @@ pandas==3.0.2
     # via
     #   -r requirements.infere.in
     #   pyhealth
+parso==0.8.6
+    # via jedi
+pexpect==4.9.0
+    # via ipython
 pillow==12.2.0
     # via
     #   -r requirements.infere.in
@@ -185,11 +233,15 @@ pillow==12.2.0
     #   tensorboard
     #   torchvision
 platformdirs==4.9.4
-    # via pooch
+    # via
+    #   jupyter-core
+    #   pooch
 pooch==1.9.0
     # via mne
 product-key-memory==0.3.0
     # via linear-attention-transformer
+prompt-toolkit==3.0.52
+    # via ipython
 propcache==0.4.1
     # via
     #   aiohttp
@@ -198,12 +250,23 @@ protobuf==7.34.1
     # via
     #   tensorboard
     #   tensorboardx
+psutil==7.2.2
+    # via ipykernel
+ptyprocess==0.7.0
+    # via pexpect
+pure-eval==0.2.3
+    # via stack-data
+pygments==2.20.0
+    # via
+    #   ipython
+    #   ipython-pygments-lexers
 pyhealth==1.1.3
     # via -r requirements.infere.in
 pyparsing==3.3.2
     # via matplotlib
 python-dateutil==2.9.0.post0
     # via
+    #   jupyter-client
     #   matplotlib
     #   pandas
 pytorch-lightning==2.6.1
@@ -212,7 +275,12 @@ pyyaml==6.0.2
     # via
     #   -r requirements.infere.in
     #   lightning
+    #   optuna
     #   pytorch-lightning
+pyzmq==27.1.0
+    # via
+    #   ipykernel
+    #   jupyter-client
 rdkit==2025.9.6
     # via pyhealth
 requests==2.33.1
@@ -233,6 +301,12 @@ setuptools==80.10.2
     #   torch
 six==1.17.0
     # via python-dateutil
+sqlalchemy==2.0.49
+    # via
+    #   alembic
+    #   optuna
+stack-data==0.6.3
+    # via ipython
 sympy==1.14.0
     # via torch
 tensorboard==2.20.0
@@ -274,25 +348,41 @@ torchvision==0.26.0+cu128
     # via
     #   -r requirements.infere.in
     #   timm
+tornado==6.5.5
+    # via
+    #   ipykernel
+    #   jupyter-client
 tqdm==4.67.3
     # via
     #   -r requirements.infere.in
     #   lightning
     #   mne
+    #   optuna
     #   pyhealth
     #   pytorch-lightning
+traitlets==5.14.3
+    # via
+    #   ipykernel
+    #   ipython
+    #   jupyter-client
+    #   jupyter-core
+    #   matplotlib-inline
 triton==3.6.0
     # via torch
 typing-extensions==4.15.0
     # via
     #   aiosignal
+    #   alembic
     #   grpcio
     #   lightning
     #   lightning-utilities
     #   pytorch-lightning
+    #   sqlalchemy
     #   torch
 urllib3==2.6.3
     # via requests
+wcwidth==0.6.0
+    # via prompt-toolkit
 werkzeug==3.1.8
     # via tensorboard
 yarl==1.23.0
