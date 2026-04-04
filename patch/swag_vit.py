@@ -15,7 +15,7 @@ from typing import Tuple
 import torch
 
 # from tome.merge import bipartite_soft_matching, merge_source, merge_wavg
-from .utils import parse_r, parse_variant
+from .utils import reset_common_pinfo
 # from tome.merge_adaptor import apply_merge
 # Since we don't necessarily have the swag code available, this patch is a little bit more involved
 
@@ -147,8 +147,8 @@ def make_transformer_class(transformer_class):
         """
 
         def forward(self, *args, **kwdargs) -> torch.Tensor:
-            self._tome_info["r"] = parse_r(len(self.encoder.layers), self.r)
-            self._tome_info["variant"] = parse_variant(len(self.encoder.layers), self.variant)
+            
+            reset_common_pinfo(self, self._tome_info, len(self.encoder.layers))
             self._tome_info["size"] = None
             self._tome_info["source"] = None
 
