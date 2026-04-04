@@ -79,7 +79,7 @@ def run_optuna():
         log_dir = 'b16_swag',
         seed = 0,
         subset = 0,
-        batch_size = 64,
+        batch_size = 128,
         num_workers = 8,
         tome_r = [],
         tome_variant = [],
@@ -109,7 +109,9 @@ def run_optuna():
 
     study.sampler = optuna.samplers.QMCSampler(scramble=True, seed=0)
 
-    study.optimize(partial(objective, args = args, model = model, dataset = dataset, hooks = hooks), n_trials=10)
+    study.optimize(partial(objective, args = args, model = model, dataset = dataset, hooks = hooks), n_trials=256)
+    study.sampler = tpe
+    study.optimize(partial(objective, args = args, model = model, dataset = dataset, hooks = hooks), n_trials=256)
 
 
 if __name__ == '__main__':
