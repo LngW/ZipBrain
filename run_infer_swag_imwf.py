@@ -102,7 +102,7 @@ def prepare_dataloader(args, input_size, mean, std):
         raise NotImplementedError()
 
     from torch.utils.data import DataLoader
-    batch_size=  args.batch_size
+    batch_size = args.batch_size
     num_workers = args.num_workers
     train_loader = DataLoader(
         dataset=train_set,
@@ -222,11 +222,11 @@ def run(args):
     )
 
     # define optimizer and scheduler
-    optimizer = torch.optim.AdamW(
-        model.parameters(), 
-        lr=args.lr, 
-        weight_decay=args.weight_decay,
-    )
+    # optimizer = torch.optim.AdamW(
+    #     model.parameters(), 
+    #     lr=args.lr, 
+    #     weight_decay=args.weight_decay,
+    # )
 
     def infer_post_fn(pred, label):
         pred = torch.argmax(pred, -1, True)#.flatten(-2, -1)
@@ -267,8 +267,6 @@ def run(args):
                 model=model,
                 test_dataloader=test_loader,
                 hooks=hooks
-                # infer_post_fn=infer_post_fn,
-                # metric_fn=calculate_metrics,
             )
     
 
@@ -314,15 +312,15 @@ if __name__ == "__main__":
     parser.add_argument("--log_dir", type=str, default='test')
     # parser.add_argument("--workspace", type=str, required=True)
     parser.add_argument("--workspace", type=str, default='test')
-    parser.add_argument("--dataset_dir", type=str, default="./models/ToMeViT/datasets/imagewoof2/")
+    parser.add_argument("--dataset_dir", type=str, default="./datasets/imagewoof2/")
     parser.add_argument("--subset", type=str, default='')
 
-    parser.add_argument("--top_k", type=int, default=0)
+    # parser.add_argument("--top_k", type=int, default=0)
     parser.add_argument("--tome_r", type=str, nargs='+', default=[])
     parser.add_argument("--tome_variant", type=str, nargs='+', default=[])
     parser.add_argument("--pivot_factor", type=float, default=None)
-    parser.add_argument("--linear", action='store_true', default=False)
-    parser.add_argument("--flash", action='store_true', default=False)
+    # parser.add_argument("--linear", action='store_true', default=False)
+    # parser.add_argument("--flash", action='store_true', default=False)
 
     # parser.add_argument("--load_from_checkpoint", type=str, default=None)
     parser.add_argument("--train", action='store_true', default=False)
