@@ -113,7 +113,15 @@ def tome_merge(pinfo, r, x, metric):
     if r <= 0:
         return x
 
-    from tome.merge import bipartite_soft_matching, merge_wavg, merge_source
+    # from importlib import util
+    import sys
+    if 'tome' not in sys.modules:
+        import importlib
+        tome_spec = importlib.util.spec_from_file_location('thirdparty.ToMe.tome', 'thirdparty/ToMe/tome/__init__.py')
+        tome_spec = importlib.util.module_from_spec(tome_spec)
+        sys.modules['tome'] = tome_spec
+
+    from thirdparty.ToMe.tome.merge import bipartite_soft_matching, merge_wavg, merge_source
     merge, _ = bipartite_soft_matching(
         metric,
         r,
