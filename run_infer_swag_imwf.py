@@ -143,10 +143,8 @@ def prepare_model(args) -> 'torch.nn.Module':
         raise NotImplementedError()
 
     import torch
-    import tome
     import patch
 
-    # model_name = 'vit_b16_in1k'
     model = torch.hub.load(repo_or_dir=repo, model=model_name)
     model.eval()
     patch.swag_vit(model)
@@ -176,6 +174,9 @@ def prepare_model(args) -> 'torch.nn.Module':
 
     model.r = r
     model.variant = variant
+    if hasattr(args, 'pivot_factor'):
+        model.pivot_factor = args.pivot_factor
+    # model._tome_info['pivot_factor'] = args.pivot_factor
     return model
 
 def calculate_metrics(y_hat, y_ground):
@@ -319,6 +320,7 @@ if __name__ == "__main__":
     parser.add_argument("--top_k", type=int, default=0)
     parser.add_argument("--tome_r", type=str, nargs='+', default=[])
     parser.add_argument("--tome_variant", type=str, nargs='+', default=[])
+    parser.add_argument("--pivot_factor", type=float, default=None)
     parser.add_argument("--linear", action='store_true', default=False)
     parser.add_argument("--flash", action='store_true', default=False)
 

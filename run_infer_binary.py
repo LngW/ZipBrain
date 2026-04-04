@@ -23,6 +23,8 @@ def prepare_dataloader(args, hooks):
     seed = args.seed
     model = args.model
 
+    import sys
+    import importlib
     import torch
     from torch.utils.data import Dataset, DataLoader
 
@@ -44,6 +46,9 @@ def prepare_dataloader(args, hooks):
             test_set = TUABLoader(os.path.join(root, "test"), test_files, args.sampling_rate)
             val_set = TUABLoader(os.path.join(root, "val"), val_files, args.sampling_rate)
         elif model == 'LaBraM':
+
+            sys.modules['data_processor'] = importlib.import_module('thirdparty.LaBraM.data_processor')
+
             from thirdparty.LaBraM.utils import prepare_TUAB_dataset, get_input_chans
             # train_dataset, test_dataset, val_dataset = prepare_TUAB_dataset("./datasets/tuab/labrama/")
             train_dataset, test_dataset, val_dataset = prepare_TUAB_dataset("./datasets/tuab/labram/")
@@ -84,6 +89,10 @@ def prepare_dataloader(args, hooks):
             
             train_set, test_set, val_set = prepare_TUAB_dataset('./datasets/tuab/eegpt/')
         elif model == 'TFM':
+            sys.modules['utils'] = importlib.import_module('thirdparty.TFM_Tokenizer.utils')
+            sys.modules['datasets.data_loaders'] = importlib.import_module('thirdparty.TFM_Tokenizer.datasets.data_loaders')
+            sys.modules['models.tfm_token'] = importlib.import_module('thirdparty.TFM_Tokenizer.models.tfm_token')
+
             from thirdparty.TFM_Tokenizer.datasets.data_loaders import TUABloader
             train_set = TUABloader('./datasets/tuab/tfm_tokenizer/', 'train', 200, None)
             test_set = TUABloader('./datasets/tuab/tfm_tokenizer/', 'test', 200, None)
@@ -383,9 +392,9 @@ def pre_main():
                         default=512, help="batch size")
     parser.add_argument("--num_workers", type=int,
                         default=4, help="number of workers")
-    parser.add_argument("--dataset", type=str, default="TUAB", help="dataset")
+    parser.add_argument("--dataset", type=str, help="dataset", required=True)
     parser.add_argument(
-        "--model", type=str, default="SPaRCNet", help="which supervised model to use"
+        "--model", type=str, help="which supervised model to use", required=True
     )
     parser.add_argument(
         "--in_channels", type=int, default=16, help="number of input channels"
