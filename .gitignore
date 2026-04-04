@@ -9,6 +9,7 @@ datasets/*
 models/
 logs*/
 workspace/*
+checkpoints/*
 
 # For offline git repo migration
 *.pack
