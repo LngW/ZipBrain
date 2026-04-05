@@ -1,11 +1,11 @@
 #!/bin/bash
 
-if [ ! -e thirdparty/BIOT/ ]; then
+if [ ! -e finetune/BIOT/ ]; then
     echo Copying BIOT from ./thirdparty/ to ./finetune/
     cp -r thirdparty/BIOT/ finetune/
 fi
 
-if [ ! -e thirdparty/LaBraM/ ]; then
+if [ ! -e finetune/LaBraM/ ]; then
     echo Copying LaBraM from ./thirdparty/ to ./finetune/
     cp -r thirdparty/LaBraM/ finetune/
 fi
@@ -30,3 +30,4 @@ uv venv -p 312 --clear
 uv pip sync ../requirements.labram.txt --torch-backend cu118
 
 cd $cur_dir
+
