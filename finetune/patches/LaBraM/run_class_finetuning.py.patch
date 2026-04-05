@@ -1,0 +1,28 @@
+--- thirdparty/LaBraM/run_class_finetuning.py	2026-04-06 00:53:40.086809828 +0900
++++ finetune/LaBraM/run_class_finetuning.py	2026-04-06 00:52:40.737655544 +0900
+@@ -212,14 +212,14 @@
+ 
+ def get_dataset(args):
+     if args.dataset == 'TUAB':
+-        train_dataset, test_dataset, val_dataset = utils.prepare_TUAB_dataset("path/to/TUAB")
++        train_dataset, test_dataset, val_dataset = utils.prepare_TUAB_dataset("../../datasets/tuab/labram")
+         ch_names = ['EEG FP1', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
+                     'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
+         ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
+         args.nb_classes = 1
+         metrics = ["pr_auc", "roc_auc", "accuracy", "balanced_accuracy"]
+     elif args.dataset == 'TUEV':
+-        train_dataset, test_dataset, val_dataset = utils.prepare_TUEV_dataset("path/to/TUEV")
++        train_dataset, test_dataset, val_dataset = utils.prepare_TUEV_dataset("../../datasets/tuev/labram")
+         ch_names = ['EEG FP1-REF', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
+                     'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
+         ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
+@@ -336,7 +336,7 @@
+             checkpoint = torch.hub.load_state_dict_from_url(
+                 args.finetune, map_location='cpu', check_hash=True)
+         else:
+-            checkpoint = torch.load(args.finetune, map_location='cpu')
++            checkpoint = torch.load(args.finetune, weights_only=False, map_location='cpu')
+ 
+         print("Load ckpt from %s" % args.finetune)
+         checkpoint_model = None

@@ -1,0 +1,11 @@
+--- thirdparty/BIOT/run_binary_supervised.py	2026-01-08 15:46:45.832706321 +0900
++++ finetune/BIOT/run_binary_supervised.py	2026-04-06 06:07:57.447059521 +0900
+@@ -132,7 +132,7 @@
+     torch.cuda.manual_seed_all(seed)
+     np.random.seed(seed)
+ 
+-    root = "/srv/local/data/TUH/tuh3/tuh_eeg_abnormal/v3.0.0/edf/processed"
++    root = "../../datasets/tuab/biot/"
+ 
+     train_files = os.listdir(os.path.join(root, "train"))
+     np.random.shuffle(train_files)

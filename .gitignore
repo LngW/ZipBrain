@@ -4,7 +4,8 @@
 .venv.biot/
 **/__pycache__/
 
-/finetune/
+/finetune/*/
+!/finetune/patches/
 /datasets/*
 /models/
 /logs*/

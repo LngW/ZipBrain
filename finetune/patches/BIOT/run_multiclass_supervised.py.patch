@@ -1,0 +1,50 @@
+--- thirdparty/BIOT/run_multiclass_supervised.py	2026-04-06 00:53:48.967679945 +0900
++++ finetune/BIOT/run_multiclass_supervised.py	2026-04-06 06:02:22.779199674 +0900
+@@ -105,18 +105,20 @@
+     torch.cuda.manual_seed_all(seed)
+     np.random.seed(seed)
+ 
+-    root = "/srv/local/data/TUH/tuh_eeg_events/v2.0.0/edf"
++    root = "../../datasets/tuev/biot"
+ 
+     train_files = os.listdir(os.path.join(root, "processed_train"))
+-    train_sub = list(set([f.split("_")[0] for f in train_files]))
+-    print("train sub", len(train_sub))
+-    test_files = os.listdir(os.path.join(root, "processed_eval"))
++    test_files = os.listdir(os.path.join(root, "processed_test"))
++    val_files = os.listdir(os.path.join(root, "processed_eval"))
++    # train_sub = list(set([f.split("_")[0] for f in train_files]))
++    # print("train sub", len(train_sub))
++    # test_files = os.listdir(os.path.join(root, "processed_eval"))
+ 
+-    val_sub = np.random.choice(train_sub, size=int(
+-        len(train_sub) * 0.1), replace=False)
+-    train_sub = list(set(train_sub) - set(val_sub))
+-    val_files = [f for f in train_files if f.split("_")[0] in val_sub]
+-    train_files = [f for f in train_files if f.split("_")[0] in train_sub]
++    # val_sub = np.random.choice(train_sub, size=int(
++    #     len(train_sub) * 0.1), replace=False)
++    # train_sub = list(set(train_sub) - set(val_sub))
++    # val_files = [f for f in train_files if f.split("_")[0] in val_sub]
++    # train_files = [f for f in train_files if f.split("_")[0] in train_sub]
+ 
+     # prepare training and test data loader
+     train_loader = torch.utils.data.DataLoader(
+@@ -133,7 +135,7 @@
+     test_loader = torch.utils.data.DataLoader(
+         TUEVLoader(
+             os.path.join(
+-                root, "processed_eval"), test_files, args.sampling_rate
++                root, "processed_test"), test_files, args.sampling_rate
+         ),
+         batch_size=args.batch_size,
+         shuffle=False,
+@@ -143,7 +145,7 @@
+     val_loader = torch.utils.data.DataLoader(
+         TUEVLoader(
+             os.path.join(
+-                root, "processed_train"), val_files, args.sampling_rate
++                root, "processed_eval"), val_files, args.sampling_rate
+         ),
+         batch_size=args.batch_size,
+         shuffle=False,
