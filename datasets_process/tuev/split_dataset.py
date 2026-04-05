@@ -33,7 +33,7 @@ def main(root : Path, seed, out):
     rnd_state = np.random.RandomState(seed=seed)
     files_train_ = []
     files_eval_ = []
-    eval_sample_counts = [3, 5, 5, 5, 16, 21]
+    eval_sample_counts = [3, 5, 5, 5, 16, 21] # choose 1/10 files in train set as eval set
     for i in range(1, 7):
         tmp = labels_train[labels_train.type == i].file.unique().to_numpy()
         rnd_state.shuffle(tmp)

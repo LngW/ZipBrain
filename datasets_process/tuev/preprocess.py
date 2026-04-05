@@ -9,9 +9,9 @@ def preprocess(root : Path, config : dict, handle, outdir):
 
     outdir = Path(outdir)
 
-    train_outdir = outdir / 'train'
-    val_outdir = outdir / 'val'
-    test_outdir = outdir / 'test'
+    train_outdir = outdir / 'processed_train'
+    val_outdir = outdir / 'processed_eval'
+    test_outdir = outdir / 'processed_test'
 
     train_outdir.mkdir(parents=True, exist_ok=True)
     val_outdir.mkdir(parents=True, exist_ok=True)
