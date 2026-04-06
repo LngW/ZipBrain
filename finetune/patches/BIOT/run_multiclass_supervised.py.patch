@@ -1,5 +1,5 @@
 --- thirdparty/BIOT/run_multiclass_supervised.py	2026-04-06 00:53:48.967679945 +0900
-+++ finetune/BIOT/run_multiclass_supervised.py	2026-04-06 23:24:49.122503640 +0900
++++ finetune/BIOT/run_multiclass_supervised.py	2026-04-07 00:17:53.707438416 +0900
 @@ -107,14 +107,16 @@
  
 -    root = "/srv/local/data/TUH/tuh_eeg_events/v2.0.0/edf"
@@ -40,7 +40,7 @@
 @@ -290,2 +292,6 @@
  
 +    cp_callback = ModelCheckpoint(
-+        monitor='val_auroc', mode='max', save_top_k=2, save_last=True
++        monitor='val_cohen', mode='max', save_top_k=2, save_last=True
 +    )
 +
      trainer = pl.Trainer(
