@@ -1,38 +1,24 @@
 --- thirdparty/LaBraM/engine_for_finetuning.py	2026-01-19 14:47:38.540255299 +0900
 +++ finetune/LaBraM/engine_for_finetuning.py	2026-04-06 21:07:10.077052382 +0900
-@@ -73,7 +73,7 @@
-             loss, output = train_class_batch(
-                 model, samples, targets, criterion, input_chans)
+@@ -75,3 +75,3 @@
          else:
 -            with torch.cuda.amp.autocast():
 +            with torch.amp.autocast('cuda'):
                  loss, output = train_class_batch(
-                     model, samples, targets, criterion, input_chans)
- 
-@@ -177,7 +177,7 @@
-             target = target.float().unsqueeze(-1)
-         
+@@ -179,3 +179,3 @@
          # compute output
 -        with torch.cuda.amp.autocast():
 +        with torch.amp.autocast('cuda'):
              output = model(EEG, input_chans=input_chans)
-             loss = criterion(output, target)
-         
-@@ -187,14 +187,14 @@
-             output = output.cpu()
-         target = target.cpu()
+@@ -189,3 +189,3 @@
  
 -        results = utils.get_metrics(output.numpy(), target.numpy(), metrics, is_binary)
 +        # results = utils.get_metrics(output.numpy(), target.numpy(), metrics, is_binary)
          pred.append(output)
-         true.append(target)
- 
-         batch_size = EEG.shape[0]
+@@ -195,4 +195,4 @@
          metric_logger.update(loss=loss.item())
 -        for key, value in results.items():
 -            metric_logger.meters[key].update(value, n=batch_size)
 +        # for key, value in results.items():
 +        #     metric_logger.meters[key].update(value, n=batch_size)
          #metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
-     # gather the stats from all processes
-     metric_logger.synchronize_between_processes()
