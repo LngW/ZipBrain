@@ -28,21 +28,17 @@ def main(root : Path, seed, out):
         return df
     
     labels_train = load_all_rec_adjacent_edf(root, files_train)
-    # labels_test = load_all_rec_adjacent_edf(files_test)
 
-    rnd_state = np.random.RandomState(seed=seed)
-    files_train_ = []
     files_eval_ = []
     eval_sample_counts = [3, 5, 5, 5, 16, 21] # choose 1/10 files in train set as eval set
+    rnd_state = np.random.RandomState(seed=seed)
     for i in range(1, 7):
         tmp = labels_train[labels_train.type == i].file.unique().to_numpy()
         rnd_state.shuffle(tmp)
-
         files_eval_.extend(tmp[:eval_sample_counts[i - 1]])
-        files_train_.extend(tmp[eval_sample_counts[i-1]:])
 
-    files_train_ = np.unique(files_train_).tolist()
     files_eval_ = np.unique(files_eval_).tolist()
+    files_train_ = np.setdiff1d(labels_train.file.unique(), files_eval_).tolist()
 
     records = {
         'train': [],
