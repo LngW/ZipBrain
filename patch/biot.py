@@ -1,4 +1,4 @@
-from .utils import parse_r, parse_variant
+from .utils import reset_common_pinfo
 
 # def apply_merge(pinfo, r, variant, x):
 #     pinfo['qkv'] = None
@@ -11,8 +11,11 @@ def make_classifier_class(klass):
             # generate _pinfo here
 
             depth = len(self.biot.transformer.layers.layers)
-            self._pinfo["r"] = parse_r(depth, self.r)
-            self._pinfo["variant"] = parse_variant(depth, self.variant)
+
+            reset_common_pinfo(self, self._pinfo, depth)
+
+            # self._pinfo["r"] = parse_r(depth, self.r)
+            # self._pinfo["variant"] = parse_variant(depth, self.variant)
             self._pinfo['shape'] = None
             self._pinfo["size"] = None
             self._pinfo["source"] = None
@@ -43,8 +46,8 @@ def make_biot_encoder_class(klass):
         def forward(self, x, n_channel_offset=0, perturb=False):
             emb_size = self.patch_embedding.projection.out_features
             bsz, chs, seq = x.shape
-            seq = (seq - self.n_fft) / self.hop_length + 1
-            self._pinfo['shape'] = [bsz, chs, int(seq), emb_size]
+            seq = (seq - self.n_fft) // self.hop_length + 1
+            self._pinfo['shape'] = [bsz, chs, seq, emb_size]
 
             return super().forward(x, n_channel_offset, perturb)
     
@@ -59,7 +62,7 @@ def make_biot_encoder_class(klass):
         #     self.layers.
 
 
-def apply_patch(model, trace_source: bool = False):
+def apply_patch(model, trace_source: bool = False, show_shape = False):
     if model.__class__.__name__ != 'BIOTClassifier':
         # we can only apply to BIOTClassifier
         return
@@ -91,6 +94,7 @@ def apply_patch(model, trace_source: bool = False):
         "distill_token": False,
         "pe" : model.biot.positional_encoding.pe,
         "pe_score": None,
+        "show_shape": show_shape,
     }
 
     biot.__class__ = PatchedEncoder
@@ -105,7 +109,7 @@ def apply_patch(model, trace_source: bool = False):
             sub[0].fn.__class__ = PatchedAttention
             sub[0].fn._pinfo = _pinfo
     
-    print("Patched BIOTClassifier")
+    print("Patched BIOTClassifier, Layers = {}".format(len(sequential.layers)))
 
 
 if __name__ == '__main__':

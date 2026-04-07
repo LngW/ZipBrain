@@ -28,8 +28,12 @@ def apply_merge(pinfo, r, variant, x, q, k, v):
 def create_block_class(klass):
     class PatchedBlock(klass):
         def forward(self, x, rel_pos_bias=None, return_attention=False, return_qkv=False):
+
+            # Modifications here
             r = self._pinfo['r'].pop(0)
             variant = self._pinfo['variant'].pop(0)
+            if self._pinfo['show_shape']: print(x.shape, self._pinfo['class_token'])
+
             if return_attention:
                 return self.attn(self.norm1(x), rel_pos_bias=rel_pos_bias, return_attention=True)
             if return_qkv:
@@ -91,15 +95,7 @@ def create_transformer_class(klass):
             return super().forward(x = x, *args, **kwargs)
     return PatchedNeuralTransformer
 
-def apply_patch(model, trace_source = False):
-    '''
-    Note that LaBraM do not provide an official implementation of downstream model for classification.
-    So in this method, we only apply patches to the encoder part.
-    '''
-
-    # if not isinstance(model, 'NeuralTransformer'):
-    #     return # do nothing here
-
+def apply_patch(model, trace_source = False, show_shape = False):
     if model.__class__.__name__ != 'NeuralTransformer':
         return
     
@@ -113,6 +109,7 @@ def apply_patch(model, trace_source = False):
         "prop_attn": False,
         "class_token": True,
         "distill_token": False,
+        "show_shape": show_shape,
     }
 
     model._pinfo = pinfo

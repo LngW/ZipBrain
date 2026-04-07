@@ -39,6 +39,7 @@ def make_sequential_class(klass):
 
             # modified this line: add r and variant
             for (f, g), (f_args, g_args), r, variant in layers_and_args:
+                if self._pinfo['show_shape']: print(x.shape, self._pinfo['class_token'])
                 x = x + f(x, **f_args)
                 # insertation here
                 x = apply_merge(self._pinfo, r, variant, x)

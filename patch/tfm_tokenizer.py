@@ -28,7 +28,7 @@ def make_PL_class(klass):
 
     return PatchInference
 
-def apply_patch(model, trace_source = True):
+def apply_patch(model, trace_source = False, show_shape = False):
     if model.__class__.__name__ != 'Pl_tfm_tokenizer_inference':
         return
     
@@ -49,6 +49,7 @@ def apply_patch(model, trace_source = True):
         "prop_attn": False,
         "class_token": True,
         "distill_token": False,
+        "show_shape": show_shape
     }
 
     model.__class__ = PatchedInference
@@ -66,7 +67,7 @@ def apply_patch(model, trace_source = True):
         it[0].fn.__class__ = PatchedSelfAttention
         it[0].fn._pinfo = pinfo
 
-    print('Patched TFM-Tokenizer')
+    print('Patched TFM-Tokenizer, Layers = {}'.format(len(lat.layers.layers)))
 
 if __name__ == '__main__':
     from thirdparty.TFM_Tokenizer.tfm_tokenizer_inference import Pl_tfm_tokenizer_inference

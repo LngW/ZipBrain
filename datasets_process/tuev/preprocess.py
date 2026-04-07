@@ -2,16 +2,16 @@ import argparse
 from pathlib import Path
 from multiprocessing import Pool
 
-def preprocess(root : Path, config : dict, handle, outdir):
+def preprocess(root : Path, config : dict, handle, outdir, out_cfg):
     train_files = config['train']
     val_files = config['val']
     test_files = config['test']
 
     outdir = Path(outdir)
 
-    train_outdir = outdir / 'processed_train'
-    val_outdir = outdir / 'processed_eval'
-    test_outdir = outdir / 'processed_test'
+    train_outdir = outdir / out_cfg['train']
+    val_outdir = outdir / out_cfg['val']
+    test_outdir = outdir / out_cfg['test']
 
     train_outdir.mkdir(parents=True, exist_ok=True)
     val_outdir.mkdir(parents=True, exist_ok=True)
@@ -43,9 +43,11 @@ def main():
 
     model : str = args.model
 
+    out_cfg = {'train': 'processed_train', 'val': 'processed_eval', 'test': 'processed_test'}
     if model == 'tfm_tokenizer':
         # from .models.tfm import 
         from .models.tfm import load_up_objects
+        out_cfg = {'train': 'processed_train/processed_train_split', 'val': 'processed_train/processed_val_split', 'test': 'processed_eval'}
     elif model == 'biot':
         from .models.biot import load_up_objects
     elif model == 'labram':
@@ -62,7 +64,7 @@ def main():
         config['train'] = []
         config['val'] = []
 
-    preprocess(Path(args.root), config, load_up_objects, args.outdir)
+    preprocess(Path(args.root), config, load_up_objects, args.outdir, out_cfg)
 
 if __name__ == '__main__':
     main()
