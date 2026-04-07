@@ -408,9 +408,9 @@ def objective(trial : optuna.Trial, args, model, dataloader, hooks):
 def optuna_main(args):
     from engine import Hooks
     from functools import partial
-    model = prepare_model(args)
     hooks = Hooks(calc_metric=calculate_metrics, handle_post_infer_result=lambda pred, label: (pred.argmax(-1), label))
     _, dataloader, _ = prepare_dataloader(args, hooks)
+    model = prepare_model(args)
 
     study = optuna.create_study(
         storage=getattr(args, 'storage', 'sqlite:///db.sqlite3'),
