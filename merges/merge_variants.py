@@ -1073,6 +1073,13 @@ def kidd_pivot(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter 
 
     # cal improtance by attention score with mean
     bsz, seq, dim = m_raw.shape
+
+    if pinfo['tome_scheme']:
+        r = min(r, seq // 2)
+
+        if r <= 0:
+            return x
+
     num_imp = max(r, seq - r)
     num_imp_dup = min(num_imp, r)
     num_pivot = math.ceil((seq - r) * 0.05)
@@ -1188,6 +1195,13 @@ def kidd_left(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter :
 
     # cal improtance by attention score with mean
     bsz, seq, dim = m_raw.shape
+
+    if pinfo['tome_scheme']:
+        r = min(r, seq // 2)
+
+        if r <= 0:
+            return x
+
     num_imp = max(r, seq - r)
     num_imp_dup = min(num_imp, r)
     num_pivot = math.ceil((seq - r) * 0.05)
@@ -1303,6 +1317,13 @@ def kidd_left2(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter 
 
     # cal improtance by attention score with mean
     bsz, seq, dim = m_raw.shape
+
+    if pinfo['tome_scheme']:
+        r = min(r, seq // 2)
+
+        if r <= 0:
+            return x
+
     num_imp = max(r, seq - r)
     num_imp_dup = min(num_imp, r)
     num_pivot = math.ceil((seq - r) * 0.05)

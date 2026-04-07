@@ -28,7 +28,7 @@ def make_PL_class(klass):
 
     return PatchInference
 
-def apply_patch(model, trace_source = False, show_shape = False):
+def apply_patch(model, trace_source = False, show_shape = False, tome_scheme = False):
     if model.__class__.__name__ != 'Pl_tfm_tokenizer_inference':
         return
     
@@ -49,7 +49,8 @@ def apply_patch(model, trace_source = False, show_shape = False):
         "prop_attn": False,
         "class_token": True,
         "distill_token": False,
-        "show_shape": show_shape
+        "show_shape": show_shape,
+        "tome_scheme": tome_scheme,
     }
 
     model.__class__ = PatchedInference

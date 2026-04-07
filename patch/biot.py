@@ -62,7 +62,7 @@ def make_biot_encoder_class(klass):
         #     self.layers.
 
 
-def apply_patch(model, trace_source: bool = False, show_shape = False):
+def apply_patch(model, trace_source: bool = False, show_shape = False, tome_scheme = False):
     if model.__class__.__name__ != 'BIOTClassifier':
         # we can only apply to BIOTClassifier
         return
@@ -95,6 +95,7 @@ def apply_patch(model, trace_source: bool = False, show_shape = False):
         "pe" : model.biot.positional_encoding.pe,
         "pe_score": None,
         "show_shape": show_shape,
+        "tome_scheme": tome_scheme,
     }
 
     biot.__class__ = PatchedEncoder

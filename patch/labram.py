@@ -95,7 +95,7 @@ def create_transformer_class(klass):
             return super().forward(x = x, *args, **kwargs)
     return PatchedNeuralTransformer
 
-def apply_patch(model, trace_source = False, show_shape = False):
+def apply_patch(model, trace_source = False, show_shape = False, tome_scheme = False):
     if model.__class__.__name__ != 'NeuralTransformer':
         return
     
@@ -110,6 +110,7 @@ def apply_patch(model, trace_source = False, show_shape = False):
         "class_token": True,
         "distill_token": False,
         "show_shape": show_shape,
+        "tome_scheme": tome_scheme,
     }
 
     model._pinfo = pinfo

@@ -11,6 +11,7 @@
 /logs*/
 /workspace/*
 /checkpoints/*
+/runs/
 
 # For offline git repo migration
 *.pack
