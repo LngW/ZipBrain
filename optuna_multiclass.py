@@ -403,7 +403,7 @@ def objective(trial : optuna.Trial, args, model, dataloader, hooks):
     for k, v in metrics.items():
         trial.set_user_attr(k, v)
 
-    return metrics['balanced_accuracy'], metrics['kohen_kappa'], metrics['f1_weighted']
+    return metrics['balanced_accuracy'], metrics['cohen_kappa'], metrics['f1_weighted']
 
 def optuna_main(args):
     from engine import Hooks
