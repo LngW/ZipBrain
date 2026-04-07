@@ -403,7 +403,7 @@ def objective(trial : optuna.Trial, args, model, dataloader, hooks):
     for k, v in metrics.items():
         trial.set_user_attr(k, v)
 
-    return metrics['balanced_accuracy']
+    return metrics['balanced_accuracy'], metrics['kohen_kappa'], metrics['f1_weighted']
 
 def optuna_main(args):
     from engine import Hooks
@@ -415,7 +415,7 @@ def optuna_main(args):
     study = optuna.create_study(
         storage=getattr(args, 'storage', 'sqlite:///db.sqlite3'),
         study_name=getattr(args, 'study_name', 'accuracy_{}-{}-{}-{}-{}'.format(args.model, args.dataset, args.tome_variant[0], args.tome_r[0], args.suffix)),
-        directions=['maximize'] * 1,
+        directions=['maximize'] * 3,
         load_if_exists=True,
         sampler=optuna.samplers.QMCSampler(scramble=True)
     )
