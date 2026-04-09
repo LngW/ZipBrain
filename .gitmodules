@@ -25,3 +25,6 @@
 [submodule "thirdparty/FasterVLM"]
 	path = thirdparty/FasterVLM
 	url = https://github.com/Theia-4869/FasterVLM.git
+[submodule "thirdparty/DART"]
+	path = thirdparty/DART
+	url = https://github.com/ZichenWen1/DART.git
