@@ -18,9 +18,11 @@ from .utils import select_metric, handle_size, handle_source, clamp, do_nothing,
 def apply_merge(pinfo, r : int, variant : str, x, q, k, v): # we expect q, k, v are all (B, H, N, HD)
 
     # we use lower case for case-irrelevant
-    variant = variant.lower()
+    variant = variant.lower().strip()
 
-    if variant.startswith('kidd'):
+    if len(variant) == 0:
+        return x
+    elif variant.startswith('kidd'):
         from .kidds import apply_kidd
         return apply_kidd(pinfo, r, variant, x, q, k, v)
     elif variant.startswith('cls'):
