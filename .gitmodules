@@ -22,3 +22,6 @@
 [submodule "thirdparty/TFM-Tokenizer"]
 	path = thirdparty/TFM_Tokenizer
 	url = https://github.com/Jathurshan0330/TFM-Tokenizer.git
+[submodule "thirdparty/FasterVLM"]
+	path = thirdparty/FasterVLM
+	url = https://github.com/Theia-4869/FasterVLM.git

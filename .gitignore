@@ -9,7 +9,7 @@
 /datasets/*
 /models/
 /logs*/
-/workspace/*
+/workspace*/*
 /checkpoints/*
 /runs/
 
