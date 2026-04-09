@@ -6,23 +6,23 @@ def apply_merge(pinfo, r, variant, x, q, k, v):
     # q, k, v = pinfo['qkv']
     # pinfo['qkv'] = None
 
-    if r <= 0:
-        return x
+    # if r <= 0:
+    #     return x
 
-    fast_dict = {'q': q, 'k': k, 'v': v, 'x': x}
-    def _find_metric(variant):
-        left = variant.find('[')
-        right = variant.find(']')
-        if left > 0 and right > left:
-            return fast_dict.get(variant[left + 1 : right], k)
-        else:
-            return k
+    # metrics = {'q': q, 'k': k, 'v': v, 'x': x}
+    # def _find_metric(variant):
+    #     left = variant.find('[')
+    #     right = variant.find(']')
+    #     if left > 0 and right > left:
+    #         return fast_dict.get(variant[left + 1 : right], k)
+    #     else:
+    #         return k
     
-    if variant is not None:
-        metric = _find_metric(variant)
+    # if variant is not None:
+    #     metric = _find_metric(variant)
 
     from merges import apply_merge_impl
-    return apply_merge_impl(pinfo, r, variant, x, metric)
+    return apply_merge_impl(pinfo, r, variant, x, q, k, v)
 
 
 def create_block_class(klass):
@@ -44,7 +44,7 @@ def create_block_class(klass):
 
             # Modifications here
             y, qkv = self.attn(self.norm1(x), rel_pos_bias=rel_pos_bias, return_qkv=True)
-            qkv = qkv.detach().mean(2)
+            qkv = qkv.detach() #.mean(2)
             q, k, v = qkv[0], qkv[1], qkv[2]
 
             if self.gamma_1 is None:

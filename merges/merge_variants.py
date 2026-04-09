@@ -8,27 +8,53 @@ import triton.language as tl
 
 from einops import rearrange
 
+from .utils import select_metric, handle_size, handle_source, clamp, do_nothing, Spliter
+
 # from tome.merge import merge_source
 
-Spliter = Callable[[torch.Tensor], tuple[torch.Tensor, torch.Tensor]]
+# Spliter = Callable[[torch.Tensor], tuple[torch.Tensor, torch.Tensor]]
 
-def apply_merge(pinfo, r : int, variant : str, x, metric):
 
-    protected = 0
-    if pinfo['class_token']:
-        protected += 1
-    if pinfo['distill_token']:
-        protected += 1
-    t = metric.size(1) - protected
-    r_ = min(r, t - 1)
-    if r_ <= 0:
+def apply_merge(pinfo, r : int, variant : str, x, q, k, v): # we expect q, k, v are all (B, H, N, HD)
+
+    # we use lower case for case-irrelevant
+    variant = variant.lower()
+
+    if variant.startswith('kidd'):
+        from .kidds import apply_kidd
+        return apply_kidd(pinfo, r, variant, x, q, k, v)
+    elif variant.startswith('cls'):
+        from .cls import apply_cls
+        return apply_cls(pinfo, r, variant, x, q, k, v)
+    elif variant.startswith('mean'):
+        from .means import apply_means
+        return apply_means(pinfo, r, variant, x, q, k, v)
+    elif variant.startswith('dart'):
+        from .darts import apply_dart
+        return apply_dart(pinfo, r, variant, x, q, k, v)
+    elif variant.startswith('tome'):
+        return tome_merge(pinfo, r, x, select_metric(variant, x, q.mean(1), k.mean(1), v.mean(1)))
+    elif variant.startswith('tofu'):
+        return tofu_merge(pinfo, r, x, select_metric(variant, x, q.mean(1), k.mean(1), v.mean(1)))
+    else:
+        print('Warning: un-recorgnized token compression method: {}'.format(variant))
         return x
-    
-    def split(input):
-        return input[..., :protected, :], input[..., protected:, :]
 
-    if variant is None or variant == '' or variant.startswith('tome'):
-        return tome_merge(pinfo, r, x, metric)
+    # protected = 0
+    # if pinfo['class_token']:
+    #     protected += 1
+    # if pinfo['distill_token']:
+    #     protected += 1
+    # t = metric.size(1) - protected
+    # r_ = min(r, t - 1)
+    # if r_ <= 0:
+    #     return x
+    
+    # def split(input):
+    #     return input[..., :protected, :], input[..., protected:, :]
+
+    # if variant is None or variant == '' or variant.startswith('tome'):
+    #     return tome_merge(pinfo, r, x, metric)
     # if variant.startswith('rawtome'):
     #     return raw_data_tome(pinfo, r_, x, split)
     # if variant.startswith('dfttome'):
@@ -41,72 +67,72 @@ def apply_merge(pinfo, r : int, variant : str, x, metric):
     #     return alibi_merge(pinfo, r, x, metric, split)
     # elif variant.startswith('fch'):
     #     return fch_merge(pinfo, r, x, metric)
-    elif variant.startswith('meann'):
-        return mean_merge(pinfo, r, x, metric, True)
-    elif variant.startswith('meanm'):
-        return mean_merge(pinfo, r, x, metric, False)
-    elif variant.startswith('meanp'):
-        return mean_prune(pinfo, r_, x, metric, split)
-    elif variant.startswith('clsp'):
-        return cls_prune(pinfo, r, x, metric)
-    elif variant.startswith('clsm'):
-        return cls_merge(pinfo, r, x, metric)
-    elif variant.startswith('dartm'):
-        return dart_merge(pinfo, r, x, metric)
-    elif variant.startswith('dartp'):
-        return dart_prune(pinfo, r, x, metric)
-    elif variant.startswith('rndm'):
-        return random_merge(pinfo, r_, x, metric, split)
-    elif variant.startswith('rndp'):
-        return random_prune(pinfo, r_, x, metric, split)
-    elif variant.startswith('kiddp'): # Keep Important Drop Duplicated, merge to pivot
-        return kidd_pivot(pinfo, r_, x, metric, split)
+    # elif variant.startswith('meann'):
+    #     return mean_merge(pinfo, r, x, metric, True)
+    # elif variant.startswith('meanm'):
+    #     return mean_merge(pinfo, r, x, metric, False)
+    # elif variant.startswith('meanp'):
+    #     return mean_prune(pinfo, r_, x, metric, split)
+    # elif variant.startswith('clsp'):
+    #     return cls_prune(pinfo, r, x, metric)
+    # elif variant.startswith('clsm'):
+    #     return cls_merge(pinfo, r, x, metric)
+    # elif variant.startswith('dartm'):
+    #     return dart_merge(pinfo, r, x, metric)
+    # elif variant.startswith('dartp'):
+    #     return dart_prune(pinfo, r, x, metric)
+    # elif variant.startswith('rndm'):
+    #     return random_merge(pinfo, r_, x, metric, split)
+    # elif variant.startswith('rndp'):
+    #     return random_prune(pinfo, r_, x, metric, split)
+    # elif variant.startswith('kiddp'): # Keep Important Drop Duplicated, merge to pivot
+    #     return kidd_pivot(pinfo, r_, x, metric, split)
     # elif variant.startswith('kiddnp'): # Keep Important Drop Duplicated, merge to left but non-pivot
     #     return kidd_non_pivot(pinfo, r_, x, metric, split)
     # elif variant.startswith('dartd'): # DART Combined
     #     return merge_prune1(pinfo, r_, x, metric, split)
-    elif variant.startswith('kiddl2'): # Keep Important Drop Duplicated, merge to left
-        return kidd_left2(pinfo, r_, x, metric, split)
-    elif variant.startswith('kiddl'): # Keep Important Drop Duplicated, merge to left
-        return kidd_left(pinfo, r_, x, metric, split)
+    # elif variant.startswith('kiddl2'): # Keep Important Drop Duplicated, merge to left
+    #     return kidd_left2(pinfo, r_, x, metric, split)
+    # elif variant.startswith('kiddl'): # Keep Important Drop Duplicated, merge to left
+    #     return kidd_left(pinfo, r_, x, metric, split)
     # elif variant.startswith('kiddbp'): # Keep Important Drop Duplicated, merge to left
     #     return kidd_bipartite(pinfo, r_, x, metric, split)
 
-    return x
+    # return x
 
 # =============== #
 #     helpers     #
 # =============== #
 
-def handle_source(pinfo, x, merge):
-    if not pinfo['trace_source']:
-        return
+# def handle_source(pinfo, x, merge):
+#     if not pinfo['trace_source']:
+#         return
     
-    source = pinfo['source']
-    if source is None:
-        bsz, seq, _ = x.shape
-        source = torch.eye(seq, device=x.device)[None, ...].repeat(bsz, 1, 1)
+#     source = pinfo['source']
+#     if source is None:
+#         bsz, seq, _ = x.shape
+#         source = torch.eye(seq, device=x.device)[None, ...].repeat(bsz, 1, 1)
 
-    pinfo['source'] = merge(source)
+#     pinfo['source'] = merge(source)
 
-def handle_size(pinfo, x, merge):
-    size = pinfo['size']
-    if size is None:
-        size = torch.ones_like(x[..., 0:1])
+# def handle_size(pinfo, x, merge):
+#     size = pinfo['size']
+#     if size is None:
+#         size = torch.ones_like(x[..., 0:1])
 
-    size_ = merge(size)
-    pinfo['size'] = size_
-    return size, size_
+#     size_ = merge(size)
+#     pinfo['size'] = size_
+#     return size, size_
 
-def do_nothing(x, mode = 'ignored'):
-    return x
+# def do_nothing(x, mode = 'ignored'):
+#     return x
 
-def clamp(x, left, right):
-    return max(left, min(x, right))
+# def clamp(x, left, right):
+#     return max(left, min(x, right))
 
-# =============== #
-# implementations #
-# =============== #
+# # =============== #
+# # implementations #
+# # =============== #
 
 def tome_merge(pinfo, r, x, metric):
 
@@ -139,6 +165,37 @@ def tome_merge(pinfo, r, x, metric):
         merge, x, pinfo["size"]
     )
 
+    return x
+
+def tofu_merge(pinfo, r, x, metric):
+    if r <= 0:
+        return x
+
+    # from importlib import util
+    import sys
+    if 'tome' not in sys.modules:
+        import importlib
+        tome_spec = importlib.util.spec_from_file_location('thirdparty.ToMe.tome', 'thirdparty/ToMe/tome/__init__.py')
+        tome_spec = importlib.util.module_from_spec(tome_spec)
+        sys.modules['tome'] = tome_spec
+
+    from thirdparty.ToMe.tome.merge import bipartite_soft_matching, merge_wavg, merge_source
+    merge, _ = bipartite_soft_matching(
+        metric,
+        r,
+        pinfo["class_token"],
+        pinfo["distill_token"],
+    )
+
+    handle_source(pinfo, x, merge)
+    size, size_ = handle_size(pinfo, x, merge)
+
+    # The only different of tome and tofu is the MLERP
+    length = x.norm(2, -1, True)
+    length_ = merge(length, 'amax')
+    x = merge(x)
+    x = x / x.norm(2, -1, True)
+    x = x * length_
     return x
 
 def random_merge(pinfo, r, x, metric, split : Spliter):
@@ -1136,9 +1193,9 @@ def kidd_pivot(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter 
         score_imp = (m_raw @ tokens_base.view(bsz, dim, 1)).squeeze(-1) # (bsz, seq)
         idx_imp = score_imp.topk(num_imp, -1, True, False).indices
 
-        mask_imp = torch.zeros_like(score_imp, dtype=torch.bool)
-        mask_imp.scatter_(-1, idx_imp, True)
-        mask_imp = mask_imp.gather(-1, idx_dup)
+        mask_imp = torch.zeros_like(score_imp)
+        mask_imp.scatter_(-1, idx_imp, 0)
+        mask_imp = mask_imp.gather(-1, idx_dup).to(dtype=torch.bool)
 
         # now only those important tokens have a target, others should be assigned to indices which are not in left_idx
         tar_idx[~mask_imp] = src_idx[~mask_imp]

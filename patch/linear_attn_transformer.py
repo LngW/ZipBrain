@@ -7,20 +7,20 @@ def apply_merge(pinfo, r : int, variant : str, x):
     if r <= 0:
         return x
 
-    fast_dict = {'q': q, 'k': k, 'v': v, 'x': x}
-    def _find_metric(variant):
-        left = variant.find('[')
-        right = variant.find(']')
-        if left > 0 and right > left:
-            return fast_dict.get(variant[left + 1 : right], k)
-        else:
-            return k
+    # fast_dict = {'q': q, 'k': k, 'v': v, 'x': x}
+    # def _find_metric(variant):
+    #     left = variant.find('[')
+    #     right = variant.find(']')
+    #     if left > 0 and right > left:
+    #         return fast_dict.get(variant[left + 1 : right], k)
+    #     else:
+    #         return k
     
-    if variant is not None:
-        metric = _find_metric(variant)
+    # if variant is not None:
+    #     metric = _find_metric(variant)
 
     from merges import apply_merge_impl
-    return apply_merge_impl(pinfo, r, variant, x, metric)
+    return apply_merge_impl(pinfo, r, variant, x, q, k, v)
 
 def make_sequential_class(klass):
     class PatchedSequentialSequence(klass):
@@ -94,7 +94,7 @@ def make_self_attention_class(klass):
             attn = attn.transpose(1, 2).reshape(b, t, -1)
 
             # modification
-            self._pinfo['qkv'] = [q.mean(1), k.mean(1), v.mean(1)]
+            self._pinfo['qkv'] = [q, k, v]
             # modification End
 
             return self.dropout(self.to_out(attn))
