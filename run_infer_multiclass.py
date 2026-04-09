@@ -284,11 +284,12 @@ def calculate_metrics(y_hat, y_ground, threshold = None):
 
 def main(args):
     # version = f"{args.model}-{args.dataset}-{'_'.join(args.tome_variant)}-{'_'.join([str(it) for it in args.tome_r])}-{'cls' if getattr(args, 'use_cls', False) else 'mean'}-{args.pivot_factor}"
-    version = "{}-{}-{}-{}-{}-{}".format(
+    version = "{}-{}-{}-{}-{}-{}-{}".format(
         args.model,
         args.dataset,
-        '_'.join(args.tome_variant),
-        '_'.join([str(it) for it in args.tome_r]),
+        '_'.join(args.tome_variant) if args.tome_variant else 'baseline',
+        '_'.join([str(it) for it in args.tome_r]) if args.tome_r else '0',
+        'tome' if getattr(args, 'tome_scheme', False) else 'full',
         'cls' if getattr(args, 'use_cls', False) else 'mean',
         getattr(args, 'pivot_factor', 0.)
     )
@@ -328,7 +329,7 @@ def main(args):
         return pred, label
     
     hooks.handle_post_infer_result = infer_post_fn
-    ctx = create_global_context(device, log_dir, cp_dir, 1)
+    ctx = create_global_context(device, log_dir, cp_dir, 2)
 
     from contextlib import ExitStack
     with ExitStack() as stack:
@@ -346,7 +347,7 @@ def main(args):
         if args.valid:
             valid(ctx, model, test_loader, hooks)
 
-        # if not args.no_train:
+        # if args.train:
         #     train(ctx, args.epochs, model, train_loader, val_loader, optimizer, hooks, scheduler)
 
         if args.test:
@@ -399,13 +400,14 @@ def pre_main():
     parser.add_argument("--tome_r", type=int, nargs='+', default=[])
     parser.add_argument("--tome_variant", type=str, nargs='+', default=[])
     parser.add_argument("--pivot_factor", type=float, default=0.05)
+    parser.add_argument("--tome-scheme", action='store_true', default=False, dest='tome_scheme')
     
     # parser.add_argument("--use_cls", type=bool, default=False)
     # parser.add_argument("--linear", action='store_true', default=False)
     # parser.add_argument("--flash", action='store_true', default=False)
 
     # parser.add_argument("--load_from_checkpoint", type=str, default=None)
-    parser.add_argument("--no_train", action='store_true', default=False)
+    parser.add_argument("--train", action='store_true', default=False)
     parser.add_argument("--test", action='store_true', default=False)
     parser.add_argument("--valid", action='store_true', default=False)
     parser.add_argument("--debug", action='store_true', default=False)
@@ -435,7 +437,7 @@ def pre_main():
             parser.error('the following arguments are required: ' + ', '.join(['--' + it for it in required]))
 
     if args.seed is None:
-        if not args.no_train:
+        if args.train:
             parser.error('the following arguments are required: --seed')
         else:
             args.seed = 0
