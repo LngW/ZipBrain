@@ -1,3 +1,4 @@
+from functools import partial
 import os
 import argparse
 from pathlib import Path
@@ -19,7 +20,7 @@ def prepare_dataloader(args, hooks):
     set_seeds(args)
     # from utils import TUABLoader, CHBMITLoader, PTBLoader
     dataset = args.dataset
-    subset = args.subset
+    # subset = args.subset
     seed = args.seed
     model = args.model
 
@@ -31,7 +32,7 @@ def prepare_dataloader(args, hooks):
     if dataset == 'TUAB':
         if model == 'BIOT':
             from thirdparty.BIOT.utils import TUABLoader
-            root = './datasets/tuab/biot/' + subset
+            # root = './datasets/tuab/biot/' + subset
             root = './datasets/tuab/biot/'
 
             train_files = os.listdir(os.path.join(root, "train"))
@@ -149,110 +150,18 @@ def prepare_dataloader(args, hooks):
     print(len(train_loader), len(val_loader), len(test_loader))
     return train_loader, test_loader, val_loader
 
-def prepare_CHB_MIT_dataloader(args):
-    import torch
-    from torch.utils.data import DataLoader
-    import numpy as np
-    from thirdparty.BIOT.utils import CHBMITLoader
-
-    # set random seed
-    seed = 12345
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-
-    root = "/srv/local/data/physionet.org/files/chbmit/1.0.0/clean_segments"
-
-    train_files = os.listdir(os.path.join(root, "train"))
-    val_files = os.listdir(os.path.join(root, "val"))
-    test_files = os.listdir(os.path.join(root, "test"))
-
-    print(len(train_files), len(val_files), len(test_files))
-
-    # prepare training and test data loader
-    train_loader = torch.utils.data.DataLoader(
-        CHBMITLoader(os.path.join(root, "train"),
-                     train_files, args.sampling_rate),
-        batch_size=args.batch_size,
-        shuffle=True,
-        drop_last=True,
-        num_workers=args.num_workers,
-        persistent_workers=True,
-    )
-    test_loader = torch.utils.data.DataLoader(
-        CHBMITLoader(os.path.join(root, "test"),
-                     test_files, args.sampling_rate),
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.num_workers,
-        persistent_workers=True,
-    )
-    val_loader = torch.utils.data.DataLoader(
-        CHBMITLoader(os.path.join(root, "val"), val_files, args.sampling_rate),
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.num_workers,
-        persistent_workers=True,
-    )
-    print(len(train_loader), len(val_loader), len(test_loader))
-    return train_loader, test_loader, val_loader
-
-
-def prepare_PTB_dataloader(args):
-    import torch
-    from torch.utils.data import DataLoader
-    import numpy as np
-    from thirdparty.BIOT.utils import PTBLoader
-
-    # set random seed
-    seed = 12345
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-
-    root = "/srv/local/data/WFDB/processed2"
-
-    train_files = os.listdir(os.path.join(root, "train"))
-    val_files = os.listdir(os.path.join(root, "val"))
-    test_files = os.listdir(os.path.join(root, "test"))
-
-    print(len(train_files), len(val_files), len(test_files))
-
-    # prepare training and test data loader
-    train_loader = torch.utils.data.DataLoader(
-        PTBLoader(os.path.join(root, "train"),
-                  train_files, args.sampling_rate),
-        batch_size=args.batch_size,
-        shuffle=True,
-        drop_last=True,
-        num_workers=args.num_workers,
-        persistent_workers=True,
-    )
-    test_loader = torch.utils.data.DataLoader(
-        PTBLoader(os.path.join(root, "test"), test_files, args.sampling_rate),
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.num_workers,
-        persistent_workers=True,
-    )
-    val_loader = torch.utils.data.DataLoader(
-        PTBLoader(os.path.join(root, "val"), val_files, args.sampling_rate),
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.num_workers,
-        persistent_workers=True,
-    )
-    print(len(train_loader), len(val_loader), len(test_loader))
-    return train_loader, test_loader, val_loader
-
 def prepare_model(args): # -> 'torch.nn.Module':
     import torch
     import patch
     threshold = 0.5
     with torch.random.fork_rng():
         if args.model == "BIOT":
+
+            args.n_classes = 1
+            args.in_channels = 18
+            args.token_size = 200
+            args.hop_length = 100
+
             from thirdparty.BIOT.model import BIOTClassifier
             model = BIOTClassifier(
                 n_classes=args.n_classes,
@@ -262,41 +171,45 @@ def prepare_model(args): # -> 'torch.nn.Module':
                 hop_length=args.hop_length,
             )
 
-            state_dict = torch.load('models/BIOT2/checkpoints/prest-tuab100.pt', weights_only=True)
-            model_dict = state_dict['model']
-            threshold = state_dict['threshold']
+            cp_path = 'finetune/BIOT/log/TUAB-BIOT-0.0005-512-200-200-100/checkpoints/epoch=0-step=577.ckpt'
+            state_dict = torch.load(cp_path, weights_only=False) # Warning! This may cause Arbitary Code Execution!
+            model_dict = state_dict['state_dict']
 
-            if 'biot.window' in model_dict:
-                model_dict.pop('biot.window')
-
-            model.load_state_dict(model_dict)
-            patch.biot(model)
+            class wrapper(torch.nn.Module):
+                def __init__(self, model):
+                    super().__init__()
+                    self.model = model
+            
+            wp = wrapper(model)
+            wp.load_state_dict(model_dict)
+            model = wp.model
+            patch.biot(model, trace_source=getattr(args, 'trace_source', False), show_shape=getattr(args, 'show_shape', False))
         elif args.model == 'LaBraM':
             import thirdparty.LaBraM.modeling_finetune
             from timm.models import create_model
 
             state_dict = torch.load('./finetune/LaBraM/checkpoints/finetune_tuab_base_256/checkpoint-best.pth', weights_only=False)
-            args = state_dict['args']
+            saved_args = state_dict['args']
             model_dict = state_dict['model']
 
             model = create_model(
-                args.model,
+                saved_args.model,
                 pretrained=False,
-                num_classes=args.nb_classes,
-                drop_rate=args.drop,
-                drop_path_rate=args.drop_path,
-                attn_drop_rate=args.attn_drop_rate,
+                num_classes=saved_args.nb_classes,
+                drop_rate=saved_args.drop,
+                drop_path_rate=saved_args.drop_path,
+                attn_drop_rate=saved_args.attn_drop_rate,
                 drop_block_rate=None,
-                use_mean_pooling=args.use_mean_pooling,
-                init_scale=args.init_scale,
-                use_rel_pos_bias=args.rel_pos_bias,
-                use_abs_pos_emb=args.abs_pos_emb,
-                init_values=args.layer_scale_init_value,
-                qkv_bias=args.qkv_bias,
+                use_mean_pooling=saved_args.use_mean_pooling,
+                init_scale=saved_args.init_scale,
+                use_rel_pos_bias=saved_args.rel_pos_bias,
+                use_abs_pos_emb=saved_args.abs_pos_emb,
+                init_values=saved_args.layer_scale_init_value,
+                qkv_bias=saved_args.qkv_bias,
             )
 
             model.load_state_dict(model_dict)
-            patch.labram(model)
+            patch.labram(model, trace_source=getattr(args, 'trace_source', False), show_shape=getattr(args, 'show_shape', False))
 
             return model, 0.5
 
@@ -331,20 +244,20 @@ def prepare_model(args): # -> 'torch.nn.Module':
         elif args.model == 'TFM':
             from thirdparty.TFM_Tokenizer.tfm_tokenizer_inference import Pl_tfm_tokenizer_inference
             from types import SimpleNamespace
-            args = SimpleNamespace()
-            args.vqvae_pretrained_path = 'thirdparty/TFM_Tokenizer/pretrained_weigths/single_dataset_settings/TUAB_tfm_tokenizer_2x2x8/tfm_tokenizer_last.pth'
-            args.code_book_size = 8192
-            args.emb_size = 64
-            args.finetuned_path = 'thirdparty/TFM_Tokenizer/pretrained_weigths/single_dataset_settings/TUAB_tfm_tokenizer_2x2x8/tfm_encoder_best_model.pth'
-            args.resampling_rate = 200
+            model_args = SimpleNamespace()
+            model_args.vqvae_pretrained_path = 'thirdparty/TFM_Tokenizer/pretrained_weigths/single_dataset_settings/TUAB_tfm_tokenizer_2x2x8/tfm_tokenizer_last.pth'
+            model_args.code_book_size = 8192
+            model_args.emb_size = 64
+            model_args.finetuned_path = 'thirdparty/TFM_Tokenizer/pretrained_weigths/single_dataset_settings/TUAB_tfm_tokenizer_2x2x8/tfm_encoder_best_model.pth'
+            model_args.resampling_rate = 200
 
             dataset_params = {
                 'classification_task': 'binary',
                 'num_classes': 1
             }
 
-            model = Pl_tfm_tokenizer_inference(args, None, 'workspace/debug/', 1, dataset_params)
-            patch.tfm_tokenizer(model)
+            model = Pl_tfm_tokenizer_inference(model_args, None, 'workspace/debug/', 1, dataset_params)
+            patch.tfm_tokenizer(model, trace_source=getattr(args, 'trace_source', False), show_shape=getattr(args, 'show_shape', False))
 
             # return model
         else:
@@ -422,18 +335,19 @@ def pre_main():
     parser.add_argument("--workspace", type=str, default=None)
     parser.add_argument("--log_dir", type=str, default=None)
 
-    parser.add_argument("--subset", type=str, default='')
+    # parser.add_argument("--subset", type=str, default='')
 
     # parser.add_argument("--top_k", type=int, default=0)
     parser.add_argument("--tome_r", type=int, nargs='+', default=[])
     parser.add_argument("--tome_variant", type=str, nargs='+', default=[])
     parser.add_argument("--pivot_factor", type=float, default=0.05)
-    parser.add_argument("--use_cls", type=bool, default=True)
+    # parser.add_argument("--use_cls", type=bool, default=True)
+    parser.add_argument("--tome-scheme", action='store_true', default=False, dest='tome_scheme')
     # parser.add_argument("--linear", action='store_true', default=False)
     # parser.add_argument("--flash", action='store_true', default=False)
 
     # parser.add_argument("--load_from_checkpoint", type=str, default=None)
-    parser.add_argument("--no_train", action='store_true', default=False)
+    parser.add_argument("--train", action='store_true', default=False)
     parser.add_argument("--test", action='store_true', default=False)
     parser.add_argument("--valid", action='store_true', default=False)
     parser.add_argument("--debug", action='store_true', default=False)
@@ -460,7 +374,7 @@ def pre_main():
             parser.error('the following arguments are required: ' + ', '.join(['--' + it for it in required]))
 
     if args.seed is None:
-        if not args.no_train:
+        if args.train:
             parser.error('the following arguments are required: --seed')
         else:
             args.seed = 0
@@ -469,8 +383,18 @@ def pre_main():
 
 def main(args):
 
-    version = f"{args.dataset}-{args.model}-{args.lr}-{args.batch_size}-{args.sampling_rate}-{args.token_size}-{args.hop_length}-{args.seed}"
-    version = f"{args.dataset}-{'_'.join(args.tome_variant)}-{'cls' if args.use_cls else 'mean'}-{args.pivot_factor}-{'_'.join([str(it) for it in args.tome_r])}"
+    # version = f"{args.dataset}-{args.model}-{args.lr}-{args.batch_size}-{args.sampling_rate}-{args.token_size}-{args.hop_length}-{args.seed}"
+    # version = f"{args.dataset}-{'_'.join(args.tome_variant)}-{'cls' if args.use_cls else 'mean'}-{args.pivot_factor}-{'_'.join([str(it) for it in args.tome_r])}"
+    version = "{}-{}-{}-{}-{}-{}-{}".format(
+        args.model,
+        args.dataset,
+        '_'.join(args.tome_variant) if args.tome_variant else 'baseline',
+        '_'.join([str(it) for it in args.tome_r]) if args.tome_r else '0',
+        'tome' if getattr(args, 'tome_scheme', False) else 'full',
+        'cls' if getattr(args, 'use_cls', False) else 'mean',
+        getattr(args, 'pivot_factor', 0.)
+    )
+
     logdir : str = args.log_dir
     workspace = Path('.', 'workspace', args.workspace)
     log_dir = workspace / 'logs' / logdir / version
@@ -488,49 +412,52 @@ def main(args):
     # get data loaders
     device = torch.device('cuda:0')
     from engine import Hooks, create_global_context, destructure_global_context, train, test, valid
-    hooks = Hooks(calc_metric=lambda pred, label : calculate_metrics(pred, label, threshold))
+    hooks = Hooks(calc_metric=lambda pred, label : {})
 
     # prepare dataloaders
     train_loader, test_loader, val_loader = prepare_dataloader(args, hooks)
 
     # define the model
     model, threshold = prepare_model(args)
+    hooks.calc_metric = partial(calculate_metrics, threshold=threshold)
 
     # import patch
     # patch.biot(model, True)
     model.r = args.tome_r
     model.variant = args.tome_variant
     model.pivot_factor = args.pivot_factor
-    model.use_cls = args.use_cls
+    model.use_cls = getattr(args, 'use_cls', False)
 
     # define optimizer and scheduler
-    optimizer = torch.optim.AdamW(
-        model.parameters(), 
-        lr=args.lr, 
-        weight_decay=args.weight_decay,
-    )
+    optimizer = None
+    scheduler = None
+    # optimizer = torch.optim.AdamW(
+    #     model.parameters(), 
+    #     lr=args.lr, 
+    #     weight_decay=args.weight_decay,
+    # )
 
     def infer_post_fn(pred, label):
         pred = torch.sigmoid(pred).flatten()
         return pred, label
     
-    class FastStop:
-        tolerance: int
-        # cool_down: int
-        count_down: int
-        def __init__(self, t):
-            self.tolerance = t
-            # self.cool_down = cd
-            self.count_down = t
+    # class FastStop:
+    #     tolerance: int
+    #     # cool_down: int
+    #     count_down: int
+    #     def __init__(self, t):
+    #         self.tolerance = t
+    #         # self.cool_down = cd
+    #         self.count_down = t
         
-        def update(self, improved):
-            if improved:
-                self.count_down = self.tolerance
-            else:
-                self.count_down -= 1
+    #     def update(self, improved):
+    #         if improved:
+    #             self.count_down = self.tolerance
+    #         else:
+    #             self.count_down -= 1
             
-            return self.count_down <= 0
-    fast_stop = FastStop(5)
+    #         return self.count_down <= 0
+    # fast_stop = FastStop(5)
 
     def compare_metrics(best, current):
         improved = best is None or current['roc_auc'] > best['roc_auc']
@@ -539,29 +466,29 @@ def main(args):
 
     # from thirdparty.BIOT.utils import BCE
 
-    def loss_fn(model, preds, labels):
-        loss = torch.nn.BCEWithLogitsLoss(preds, labels)
-        for module in model.modules():
-            if hasattr(module, 'compression_loss'):
-                loss = loss + module.compression_loss
+    # def loss_fn(model, preds, labels):
+    #     loss = torch.nn.BCEWithLogitsLoss(preds, labels)
+    #     for module in model.modules():
+    #         if hasattr(module, 'compression_loss'):
+    #             loss = loss + module.compression_loss
 
-        return loss
+    #     return loss
     
-    def compose_custom_state(result, metrics):
-        result['threshold'] = metrics['threshold']
+    # def compose_custom_state(result, metrics):
+    #     result['threshold'] = metrics['threshold']
 
     # scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, args.lr, len(train_loader) * args.epochs)
     scheduler = None
 
 
-    hooks.calc_loss = loss_fn
+    # hooks.calc_loss = loss_fn
     hooks.handle_post_infer_result = infer_post_fn
     hooks.compare_metric = compare_metrics
-    hooks.compose_cp_custom_state = compose_custom_state
-    hooks.test_break = lambda better, *_: fast_stop.update(better)
-    hooks.schedule_step_batch = lambda it : it.step()
+    # hooks.compose_cp_custom_state = compose_custom_state
+    # hooks.test_break = lambda better, *_: fast_stop.update(better)
+    # hooks.schedule_step_batch = lambda it : it.step()
 
-    ctx = create_global_context(device, log_dir, cp_dir, 1)
+    ctx = create_global_context(device, log_dir, cp_dir, 2)
 
     from contextlib import ExitStack
     with ExitStack() as stack:
@@ -579,7 +506,7 @@ def main(args):
         if args.valid:
             valid(ctx, model, test_loader, hooks)
 
-        if not args.no_train:
+        if args.train:
             train(ctx, args.epochs, model, train_loader, val_loader, optimizer, hooks, scheduler)
 
         if args.test:
