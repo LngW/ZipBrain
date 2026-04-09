@@ -15,6 +15,10 @@
 
 # For offline git repo migration
 *.pack
-*.csv
+
+# notebooks for test
 *.ipynb
+
+# raw experiments results
+*.csv
 *.sqlite3
