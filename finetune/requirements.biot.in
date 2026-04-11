@@ -8,3 +8,7 @@ tqdm
 pyhealth
 scipy
 setuptools<81
+lmdb
+lz4
+pyarrow
+pyyaml

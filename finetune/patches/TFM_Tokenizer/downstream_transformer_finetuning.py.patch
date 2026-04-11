@@ -1,0 +1,95 @@
+--- thirdparty/TFM_Tokenizer/downstream_transformer_finetuning.py	2026-03-20 22:30:37.343285300 +0900
++++ finetune/TFM_Tokenizer/downstream_transformer_finetuning.py	2026-04-11 22:27:35.866395187 +0900
+@@ -247,2 +247,5 @@
+     parser.add_argument('--test_only', action='store_true', help='Test only mode')
++
++    parser.add_argument('--batch_size', type=int, default=-1, help='Batch Size', dest='batch_size')
++    parser.add_argument('--num_workers', type=int, default=-1, help='How many processes to use in loading datasets', dest='num_workers')
+     
+@@ -259,4 +262,8 @@
+     # read the dataset configuration file
+-    with open("./configs/dataset_configs.yaml", "r") as ymlfile:
+-        dataset_config = yaml.safe_load(ymlfile)
++    if args.dataset_name in ['WORKLOAD', 'EarEEG', 'ISRUC']:
++        with open("./dataset_configs.yaml", "r") as ymlfile:
++            dataset_config = yaml.safe_load(ymlfile)
++    else:
++        with open("./configs/dataset_configs.yaml", "r") as ymlfile:
++            dataset_config = yaml.safe_load(ymlfile)
+     # dataset parameters
+@@ -289,10 +296,17 @@
+     seed_everything(args.random_seed)
+-        
+-    train_loader = get_dataloaders(data_name= args.dataset_name,
+-                                   train_val_test='train',
+-                                   resampling_rate=args.resampling_rate,
+-                                   batch_size=training_params['batch_size'], 
+-                                   num_workers=8,
+-                                   signal_transform = None,
+-                                   random_seed=args.random_seed)
++    
++    if args.dataset_name in ['WORKLOAD', 'EarEEG', 'ISRUC']:
++        from data_loaders import get_dataloaders as get_dataloaders2
++        from torch.utils.data import DataLoader
++        train_set = get_dataloaders2(args.dataset_name, 'train', args.resampling_rate)
++        train_loader = DataLoader(train_set, args.batch_size, num_workers=args.num_workers, pin_memory=True, persistent_workers=args.num_workers>0, drop_last=True, shuffle=True)
++
++    else:
++        train_loader = get_dataloaders(data_name= args.dataset_name,
++                                    train_val_test='train',
++                                    resampling_rate=args.resampling_rate,
++                                    batch_size=training_params['batch_size'], 
++                                    num_workers=8,
++                                    signal_transform = None,
++                                    random_seed=args.random_seed)
+         
+@@ -307,17 +321,27 @@
+         
+-    val_loader = get_dataloaders(data_name= args.dataset_name,
+-                                   train_val_test='val',
+-                                   resampling_rate=args.resampling_rate,
+-                                   batch_size=training_params['batch_size'], 
+-                                   num_workers=8,
+-                                   signal_transform = None,
+-                                   random_seed=args.random_seed)
+-    
+-    test_loader = get_dataloaders(data_name= args.dataset_name,
+-                                   train_val_test='test',
+-                                   resampling_rate=args.resampling_rate,
+-                                   batch_size=training_params['batch_size'], 
+-                                   num_workers=8,
+-                                   signal_transform = None,
+-                                   random_seed=args.random_seed)
++
++    if args.dataset_name in ['WORKLOAD', 'EarEEG', 'ISRUC']:
++        from data_loaders import get_dataloaders as get_dataloaders2
++        from torch.utils.data import DataLoader
++        val_set = get_dataloaders2(args.dataset_name, 'val', args.resampling_rate)
++        val_loader = DataLoader(val_set, args.batch_size, num_workers=args.num_workers, persistent_workers=args.num_workers>0, pin_memory=True)
++
++        test_set = get_dataloaders2(args.dataset_name, 'test', args.resampling_rate)
++        test_loader = DataLoader(test_set, args.batch_size, num_workers=args.num_workers, persistent_workers=args.num_workers>0, pin_memory=True)
++    else:
++        val_loader = get_dataloaders(data_name= args.dataset_name,
++                                    train_val_test='val',
++                                    resampling_rate=args.resampling_rate,
++                                    batch_size=training_params['batch_size'], 
++                                    num_workers=8,
++                                    signal_transform = None,
++                                    random_seed=args.random_seed)
++        
++        test_loader = get_dataloaders(data_name= args.dataset_name,
++                                    train_val_test='test',
++                                    resampling_rate=args.resampling_rate,
++                                    batch_size=training_params['batch_size'], 
++                                    num_workers=8,
++                                    signal_transform = None,
++                                    random_seed=args.random_seed)
+     
+@@ -344,2 +368,6 @@
+     
++    if args.dataset_name in ['EarEEG', 'WORKLOAD', 'ISRUC']:
++        # since channels are not matched, reset the channel embedding for better training?
++        pl_finetune.tfm_token.channel_embed.reset_parameters()
++
+     # Callbacks

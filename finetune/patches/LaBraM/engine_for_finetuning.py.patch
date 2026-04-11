@@ -1,5 +1,10 @@
 --- thirdparty/LaBraM/engine_for_finetuning.py	2026-01-19 14:47:38.540255299 +0900
-+++ finetune/LaBraM/engine_for_finetuning.py	2026-04-06 21:07:10.077052382 +0900
++++ finetune/LaBraM/engine_for_finetuning.py	2026-04-11 21:24:58.045280139 +0900
+@@ -42,3 +42,3 @@
+     header = 'Epoch: [{}]'.format(epoch)
+-    print_freq = 10
++    print_freq = 1
+ 
 @@ -75,3 +75,3 @@
          else:
 -            with torch.cuda.amp.autocast():

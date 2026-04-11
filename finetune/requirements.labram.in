@@ -14,3 +14,7 @@ setuptools<81
 tensorboard
 tensorboardX
 torch
+lmdb
+lz4
+pyarrow
+pyyaml

@@ -1,7 +1,65 @@
 --- thirdparty/BIOT/run_binary_supervised.py	2026-01-08 15:46:45.832706321 +0900
-+++ finetune/BIOT/run_binary_supervised.py	2026-04-07 00:49:10.693823108 +0900
-@@ -134,3 +134,3 @@
++++ finetune/BIOT/run_binary_supervised.py	2026-04-11 21:24:58.045280139 +0900
+@@ -26,3 +26,2 @@
+ 
+-
+ class LitModel_finetune(pl.LightningModule):
+@@ -134,3 +133,3 @@
  
 -    root = "/srv/local/data/TUH/tuh3/tuh_eeg_abnormal/v3.0.0/edf/processed"
 +    root = "../../datasets/tuab/biot/"
  
+@@ -171,2 +170,43 @@
+ 
++def prepare_EEGMAT_dataloader(args):
++    # set random seed
++    seed = 12345
++    torch.manual_seed(seed)
++    torch.cuda.manual_seed(seed)
++    torch.cuda.manual_seed_all(seed)
++    np.random.seed(seed)
++
++    from data_loaders import get_dataloaders
++
++    train_set = get_dataloaders('WORKLOAD', 'train', 200)
++    val_set = get_dataloaders('WORKLOAD', 'val', 200)
++    test_set = get_dataloaders('WORKLOAD', 'test', 200)
++
++    # prepare training and test data loader
++    train_loader = torch.utils.data.DataLoader(
++        train_set,
++        batch_size=args.batch_size,
++        shuffle=True,
++        drop_last=True,
++        num_workers=args.num_workers,
++        persistent_workers=args.num_workers > 0,
++    )
++    test_loader = torch.utils.data.DataLoader(
++        # TUABLoader(os.path.join(root, "test"), test_files, args.sampling_rate),
++        test_set,
++        batch_size=args.batch_size,
++        shuffle=False,
++        num_workers=args.num_workers,
++        persistent_workers=args.num_workers > 0,
++    )
++    val_loader = torch.utils.data.DataLoader(
++        # TUABLoader(os.path.join(root, "val"), val_files, args.sampling_rate),
++        val_set,
++        batch_size=args.batch_size,
++        shuffle=False,
++        num_workers=args.num_workers,
++        persistent_workers=args.num_workers > 0,
++    )
++    print(len(train_loader), len(val_loader), len(test_loader))
++    return train_loader, test_loader, val_loader
+ 
+@@ -265,2 +305,4 @@
+         train_loader, test_loader, val_loader = prepare_TUAB_dataloader(args)
++    elif args.dataset == 'EEGMAT':
++        train_loader, test_loader, val_loader = prepare_EEGMAT_dataloader(args)
+ 
+@@ -335,2 +377,4 @@
+ 
++        if args.dataset == 'EEGMAT':
++            model.biot.channel_tokens.reset_parameters()
+     else:
