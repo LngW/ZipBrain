@@ -1,15 +1,28 @@
 --- thirdparty/BIOT/run_binary_supervised.py	2026-01-08 15:46:45.832706321 +0900
-+++ finetune/BIOT/run_binary_supervised.py	2026-04-11 21:24:58.045280139 +0900
++++ finetune/BIOT/run_binary_supervised.py	2026-04-12 06:18:26.470716982 +0900
 @@ -26,3 +26,2 @@
  
 -
  class LitModel_finetune(pl.LightningModule):
-@@ -134,3 +133,3 @@
+@@ -124,3 +123,12 @@
+         return [optimizer]  # , [scheduler]
++    
++    def on_save_checkpoint(self, checkpoint):
++        super().on_save_checkpoint(checkpoint)
++
++        checkpoint['threshold'] = float(self.threshold)
++
++    def on_load_checkpoint(self, checkpoint):
++        super().on_load_checkpoint(checkpoint)
+ 
++        self.threshold = checkpoint.get('threshold', self.threshold)
+ 
+@@ -134,3 +142,3 @@
  
 -    root = "/srv/local/data/TUH/tuh3/tuh_eeg_abnormal/v3.0.0/edf/processed"
 +    root = "../../datasets/tuab/biot/"
  
-@@ -171,2 +170,43 @@
+@@ -171,2 +179,43 @@
  
 +def prepare_EEGMAT_dataloader(args):
 +    # set random seed
@@ -53,13 +66,27 @@
 +    print(len(train_loader), len(val_loader), len(test_loader))
 +    return train_loader, test_loader, val_loader
  
-@@ -265,2 +305,4 @@
+@@ -265,2 +314,4 @@
          train_loader, test_loader, val_loader = prepare_TUAB_dataloader(args)
-+    elif args.dataset == 'EEGMAT':
++    elif args.dataset in ['EEGMAT', 'WORKLOAD']:
 +        train_loader, test_loader, val_loader = prepare_EEGMAT_dataloader(args)
  
-@@ -335,2 +377,4 @@
+@@ -335,2 +386,4 @@
  
-+        if args.dataset == 'EEGMAT':
++        if args.dataset in ['EEGMAT', 'WORKLOAD']:
 +            model.biot.channel_tokens.reset_parameters()
      else:
+@@ -347,3 +400,7 @@
+     early_stop_callback = EarlyStopping(
+-        monitor="val_auroc", patience=5, verbose=False, mode="max"
++        monitor="val_auroc", patience=10, verbose=False, mode="max"
++    )
++
++    cp_callback = ModelCheckpoint(
++        './checkpoint/' + version, monitor='val_auroc', save_last=True, save_top_k=1, mode='max'
+     )
+@@ -359,3 +416,3 @@
+         max_epochs=args.epochs,
+-        callbacks=[early_stop_callback],
++        callbacks=[cp_callback]#, early_stop_callback],
+     )

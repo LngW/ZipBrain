@@ -29,6 +29,7 @@ def prepare_dataloader(args, hooks):
     import torch
     from torch.utils.data import Dataset, DataLoader
 
+    train_set, val_set, test_set = None, None, None
     if dataset == 'TUAB':
         if model == 'BIOT':
             from thirdparty.BIOT.utils import TUABLoader
@@ -62,17 +63,6 @@ def prepare_dataloader(args, hooks):
             input_chs = get_input_chans(ch_names)
             from torch.utils.data import Dataset
 
-            # class Wrapper(Dataset):
-            #     def __init__(self, upstream):
-            #         self.upstream = upstream
-
-            #     def __getitem__(self, index):
-            #         return self.upstream[index], input_chs
-
-            #     def __len__(self):
-            #         return len(self.upstream)
-
-            # cds = ConstantDataset()
             train_set = train_dataset
             val_set = val_dataset
             test_set = test_dataset
@@ -98,7 +88,9 @@ def prepare_dataloader(args, hooks):
             train_set = TUABloader('./datasets/tuab/tfm_tokenizer/', 'train', 200, None)
             test_set = TUABloader('./datasets/tuab/tfm_tokenizer/', 'test', 200, None)
             val_set = TUABloader('./datasets/tuab/tfm_tokenizer/', 'val', 200, None)
-
+    elif dataset == 'WORKLOAD' or dataset == 'EEGMAT':
+        from data_loaders import get_dataloaders
+        test_set = get_dataloaders('WORKLOAD', 'test', 200)
     elif dataset == 'RANDOM':
         g = torch.Generator().manual_seed(seed)
         class RandomDataset(Dataset):
@@ -121,33 +113,29 @@ def prepare_dataloader(args, hooks):
         raise NotImplementedError("Unrecognized dataset: {}".format(dataset))
 
     # prepare training and test data loader
-    train_loader = DataLoader(
-        dataset=train_set,
-        batch_size=args.batch_size,
-        shuffle=True,
-        drop_last=True,
-        num_workers=args.num_workers,
-        persistent_workers=args.num_workers > 0,
-        pin_memory=True,
-    )
-    test_loader = DataLoader(
-        dataset=test_set,
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.num_workers,
-        persistent_workers=args.num_workers > 0,
-        pin_memory=True,
-    )
-    val_loader = DataLoader(
-        dataset=val_set,
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.num_workers,
-        persistent_workers=args.num_workers > 0,
-        pin_memory=True,
-    )
 
-    print(len(train_loader), len(val_loader), len(test_loader))
+    def ds2dl(ds, shuffle = False, drop_last = False):
+        if ds is None or len(ds) == 0:
+            return None
+        else:
+            return DataLoader(
+                dataset=ds, 
+                batch_size=args.batch_size, 
+                shuffle=shuffle, 
+                num_workers=args.num_workers, 
+                persistent_workers=args.num_workers > 0,
+                pin_memory=True,
+                drop_last=drop_last
+            )
+        
+    def olen(dl):
+        return 0 if dl is None else len(dl)
+
+    train_loader = ds2dl(train_set, True, True)
+    test_loader = ds2dl(test_set)
+    val_loader = ds2dl(val_set)
+    
+    print(olen(train_loader), olen(val_loader), olen(test_loader))
     return train_loader, test_loader, val_loader
 
 def prepare_model(args): # -> 'torch.nn.Module':
@@ -171,7 +159,10 @@ def prepare_model(args): # -> 'torch.nn.Module':
                 hop_length=args.hop_length,
             )
 
-            cp_path = 'finetune/BIOT/log/TUAB-BIOT-0.0005-512-200-200-100/checkpoints/epoch=0-step=577.ckpt'
+            if args.dataset == 'TUAB':
+                cp_path = 'finetune/BIOT/log/TUAB-BIOT-0.0005-512-200-200-100/checkpoints/epoch=0-step=577.ckpt'
+            elif args.dataset in ['WORKLOAD', 'EEGMAT']:
+                cp_path = 'finetune/BIOT/checkpoint/EEGMAT-BIOT-0.0005-754-200-200-100/epoch=1-step=4-v2.ckpt'
             state_dict = torch.load(cp_path, weights_only=False) # Warning! This may cause Arbitary Code Execution!
             model_dict = state_dict['state_dict']
 
@@ -210,9 +201,6 @@ def prepare_model(args): # -> 'torch.nn.Module':
 
             model.load_state_dict(model_dict)
             patch.labram(model, trace_source=getattr(args, 'trace_source', False), show_shape=getattr(args, 'show_shape', False))
-
-            return model, 0.5
-
         elif args.model == 'EEGPT':
             from thirdparty.EEGPT.downstream_tueg.Modules.models.EEGPT_mcae_finetune_change import EEGPTClassifier
             use_channels_names = [      
@@ -236,9 +224,6 @@ def prepare_model(args): # -> 'torch.nn.Module':
             model.load_state_dict(state_dict['model'])
 
             patch.eegpt(model)
-
-            return model, 0.5
-
         elif args.model == 'CBraMod':
             pass
         elif args.model == 'TFM':
@@ -258,8 +243,6 @@ def prepare_model(args): # -> 'torch.nn.Module':
 
             model = Pl_tfm_tokenizer_inference(model_args, None, 'workspace/debug/', 1, dataset_params)
             patch.tfm_tokenizer(model, trace_source=getattr(args, 'trace_source', False), show_shape=getattr(args, 'show_shape', False))
-
-            # return model
         else:
             raise NotImplementedError
         
