@@ -55,7 +55,7 @@ python run_class_finetuning.py \
 python run_class_finetuning.py \
     --dataset EarEEG \
     --output_dir ./checkpoints/finetune_eareeg_base_256/ \
-    --log_dir ./log/finetune_eareeg_base \
+    --log_dir ./log/finetune_eareeg_base_256 \
     --epochs 2 \
     --batch_size 256 \
     --lr 1e-4 \
@@ -64,21 +64,11 @@ python run_class_finetuning.py \
 
 # CLI to kickoff a finetune on ISRUC
 python run_class_finetuning.py \
+    --dataset ISRUC \
     --output_dir ./checkpoints/finetune_isruc_base_256/ \
-    --log_dir ./log/finetune_isruc_base \
-    --model labram_base_patch200_200 \
-    --finetune ./checkpoints/labram-base.pth \
-    --weight_decay 0.05 \
+    --log_dir ./log/finetune_isruc_base_256 \
+    --epochs 2 \
     --batch_size 256 \
     --lr 5e-4 \
-    --update_freq 1 \
-    --warmup_epochs 1 \
-    --epochs 2 \
+    --weight_decay 0.05 \
     --layer_decay 0.65 \
-    --drop_path 0.1 \
-    --save_ckpt_freq 5 \
-    --disable_rel_pos_bias \
-    --abs_pos_emb \
-    --dataset ISRUC \
-    --disable_qkv_bias \
-    --seed 0
