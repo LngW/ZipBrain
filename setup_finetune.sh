@@ -28,6 +28,7 @@ apply_patch()
 
 apply_patch LaBraM/run_class_finetuning.py
 apply_patch LaBraM/engine_for_finetuning.py
+apply_patch LaBraM/utils.py
 apply_patch BIOT/run_multiclass_supervised.py
 apply_patch BIOT/run_binary_supervised.py
 apply_patch TFM_Tokenizer/downstream_transformer_finetuning.py

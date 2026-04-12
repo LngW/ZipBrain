@@ -1,5 +1,5 @@
 --- thirdparty/LaBraM/run_class_finetuning.py	2026-04-06 00:53:40.086809828 +0900
-+++ finetune/LaBraM/run_class_finetuning.py	2026-04-11 21:24:58.045280139 +0900
++++ finetune/LaBraM/run_class_finetuning.py	2026-04-13 03:02:39.092023407 +0900
 @@ -214,3 +214,3 @@
      if args.dataset == 'TUAB':
 -        train_dataset, test_dataset, val_dataset = utils.prepare_TUAB_dataset("path/to/TUAB")
@@ -51,31 +51,51 @@
 +
 +    return train_set, test_set, val_set
  
-@@ -338,3 +373,3 @@
+@@ -257,3 +292,3 @@
+ 
+-    if True:  # args.distributed:
++    if args.distributed:  # args.distributed:
+         num_tasks = utils.get_world_size()
+@@ -281,4 +316,7 @@
+     else:
++        num_tasks = 1
++        global_rank = 0
+         sampler_train = torch.utils.data.RandomSampler(dataset_train)
+         sampler_val = torch.utils.data.SequentialSampler(dataset_val)
++        sampler_test = torch.utils.data.SequentialSampler(dataset_test)
+ 
+@@ -338,3 +376,3 @@
          else:
 -            checkpoint = torch.load(args.finetune, map_location='cpu')
 +            checkpoint = torch.load(args.finetune, weights_only=False, map_location='cpu')
  
-@@ -372,2 +407,22 @@
+@@ -372,2 +410,29 @@
  
++        if args.dataset in ['WORKLOAD', 'EEGMAT', 'EarEEG', 'ISRUC']:
++            pos_embed = model.pos_embed
++            if pos_embed is not None:
++                torch.nn.init.trunc_normal_(pos_embed, std=0.02) # we don't reset [cls] token
++                # pos_embed.require_grad = True
++                # Since it has been reset, the ch name will be not important
++                pass
++
++            time_embed = model.time_embed
++            if time_embed is not None:
++                torch.nn.init.trunc_normal_(time_embed, std=0.02)
++
 +    # For EarEEG and ISRUC, since the length of the signal is longer than 16, we need to patch that to at least 30
-+    # And for all EarEEG ISRUC Workload, channel names are not match, so we need to reset pos_embed
-+    if args.dataset in ['EarEEG', 'ISRUC']:
++    if args.dataset in ['WORKLOAD', 'EEGMAT', 'EarEEG', 'ISRUC']:
++        # model.require_grad = False
++        # A learnabel time_embed can be treated as an absolute encoding scheme, so maybe we need to reset it too.
 +        time_embed = model.time_embed # We always expand the time_embed to 60 seconds even though it may not been used
 +        time_shape = list(time_embed.shape)
 +        if time_shape[-2] < 60:
 +            time_shape[-2] = 60 - time_shape[-2]
 +            time_pending = torch.empty(time_shape, dtype=time_embed.dtype, device=time_embed.device)
++
 +            torch.nn.init.trunc_normal_(time_pending, std=0.02)
 +
 +            time_embed = torch.concat([time_embed, time_pending], dim = -2)
-+            time_embed.requires_grad_()
 +            model.time_embed = torch.nn.Parameter(time_embed, True)
-+
-+    if args.dataset in ['WORKLOAD', 'EarEEG', 'ISRUC']:
-+        pos_embed = model.pos_embed
-+        if pos_embed is not None:
-+            torch.nn.init.trunc_normal_(pos_embed, std=0.02) # we don't reset [cls] token
-+            # Since it has been reset, the ch name will be not important
 +
      model.to(device)
