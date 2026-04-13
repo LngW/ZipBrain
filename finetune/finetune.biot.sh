@@ -16,17 +16,17 @@ common_args=(
 common_args="${common_args[@]}"
 
 # CLI to kickoff a finetune on TUAB
-python run_binary_supervised.py $common_args --dataset TUAB --sample_length 10 --batch_size 512 --epoch 1 --lr 5e-4
-
-# CLI to kickoff a finetune on WorkLoad (EEGMAT)
-python run_binary_supervised.py $common_args --dataset EEGMAT --sample_length 4 --batch_size 1024 --epoch 10 --lr 5e-4
+python run_binary_supervised.py $common_args --dataset TUAB --sample_length 10 --batch_size 512 --epoch 25 --lr 5e-4
 
 # CLI to kickoff a finetune on TUEV
-python run_multiclass_supervised.py $common_args --dataset TUEV  --n_classes 6 -sample_length 5 --batch_size 512 --epoch 3 --lr 5e-4
+python run_multiclass_supervised.py $common_args --dataset TUEV  --n_classes 6 -sample_length 5 --batch_size 512 --epoch 25 --lr 5e-4
+
+# CLI to kickoff a finetune on WorkLoad (EEGMAT)
+python run_binary_supervised.py $common_args --dataset EEGMAT --sample_length 4 --batch_size 754 --epoch 25 --lr 5e-4
 
 # CLI to kickoff a finetune on EarEEG
-python run_multiclass_supervised.py $common_args --dataset EarEEG --n_classes 6 --sample_length 30 --batch_size 128 --epoch 10 --lr 2e-4
+python run_multiclass_supervised.py $common_args --dataset EarEEG --n_classes 6 --sample_length 30 --batch_size 128 --epoch 25 --lr 2e-4
 
 # CLI to kickoff a finetune on ISRUC
-python run_multiclass_supervised.py $common_args --dataset ISRUC --n_classes 5 --sample_length 30 --batch_size 128 --epoch 10 --lr 5e-4
+python run_multiclass_supervised.py $common_args --dataset ISRUC --n_classes 5 --sample_length 30 --batch_size 512 --epoch 25 --lr 5e-4
 
