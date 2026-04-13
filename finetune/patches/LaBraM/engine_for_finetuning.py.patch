@@ -1,36 +1,31 @@
 --- thirdparty/LaBraM/engine_for_finetuning.py	2026-01-19 14:47:38.540255299 +0900
-+++ finetune/LaBraM/engine_for_finetuning.py	2026-04-13 00:18:05.878918464 +0900
-@@ -17,2 +17,4 @@
- 
-+USE_AMP = True
-+
- def train_class_batch(model, samples, target, criterion, ch_names):
-@@ -42,3 +44,3 @@
++++ finetune/LaBraM/engine_for_finetuning.py	2026-04-14 03:56:00.357394914 +0900
+@@ -42,3 +42,3 @@
      header = 'Epoch: [{}]'.format(epoch)
 -    print_freq = 10
 +    print_freq = 1
  
-@@ -75,3 +77,3 @@
+@@ -75,3 +75,3 @@
          else:
 -            with torch.cuda.amp.autocast():
-+            with torch.amp.autocast('cuda', enabled=USE_AMP):
++            with torch.amp.autocast('cuda'):
                  loss, output = train_class_batch(
-@@ -108,3 +110,3 @@
+@@ -108,3 +108,3 @@
                      model_ema.update(model)
 -            loss_scale_value = loss_scaler.state_dict()["scale"]
 +            loss_scale_value = loss_scaler.state_dict().get("scale", 1)
  
-@@ -179,3 +181,3 @@
+@@ -179,3 +179,3 @@
          # compute output
 -        with torch.cuda.amp.autocast():
-+        with torch.amp.autocast('cuda', enabled=USE_AMP):
++        with torch.amp.autocast('cuda'):
              output = model(EEG, input_chans=input_chans)
-@@ -189,3 +191,3 @@
+@@ -189,3 +189,3 @@
  
 -        results = utils.get_metrics(output.numpy(), target.numpy(), metrics, is_binary)
 +        # results = utils.get_metrics(output.numpy(), target.numpy(), metrics, is_binary)
          pred.append(output)
-@@ -195,4 +197,4 @@
+@@ -195,4 +195,4 @@
          metric_logger.update(loss=loss.item())
 -        for key, value in results.items():
 -            metric_logger.meters[key].update(value, n=batch_size)

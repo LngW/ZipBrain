@@ -1,5 +1,5 @@
 --- thirdparty/LaBraM/run_class_finetuning.py	2026-04-06 00:53:40.086809828 +0900
-+++ finetune/LaBraM/run_class_finetuning.py	2026-04-13 03:02:39.092023407 +0900
++++ finetune/LaBraM/run_class_finetuning.py	2026-04-14 03:31:18.096777674 +0900
 @@ -214,3 +214,3 @@
      if args.dataset == 'TUAB':
 -        train_dataset, test_dataset, val_dataset = utils.prepare_TUAB_dataset("path/to/TUAB")
@@ -19,7 +19,7 @@
 -        train_dataset, test_dataset, val_dataset = utils.prepare_TUEV_dataset("path/to/TUEV")
 +        train_dataset, test_dataset, val_dataset = utils.prepare_TUEV_dataset("../../datasets/tuev/labram")
          ch_names = ['EEG FP1-REF', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
-@@ -227,4 +235,31 @@
+@@ -227,4 +235,47 @@
          metrics = ["accuracy", "balanced_accuracy", "cohen_kappa", "f1_weighted"]
 +    elif args.dataset == 'EarEEG':
 +        train_dataset, test_dataset, val_dataset = get_EEGMAT_EAREEG_ISRUC_dataset('EarEEG')
@@ -45,18 +45,34 @@
  
 +def get_EEGMAT_EAREEG_ISRUC_dataset(dataset):
 +    from data_loaders import get_dataloaders
-+    train_set = get_dataloaders(dataset, 'train', 200)
-+    test_set = get_dataloaders(dataset, 'test', 200)
-+    val_set = get_dataloaders(dataset, 'val', 200)
++    from torch.utils.data import Dataset
++
++    def get_dataloaders_wrapper(ds, t_v_t):
++        class Wrapper(Dataset):
++            def __init__(self, upper):
++                self.upper = upper
++            
++            def __getitem__(self, idx):
++                x, y = self.upper.__getitem__(idx)
++                return x * 100, y
++            
++            def __len__(self):
++                return self.upper.__len__()
++
++        return Wrapper(get_dataloaders(ds, t_v_t, 200))
++
++    train_set = get_dataloaders_wrapper(dataset, 'train')
++    test_set = get_dataloaders_wrapper(dataset, 'test')
++    val_set = get_dataloaders_wrapper(dataset, 'val')
 +
 +    return train_set, test_set, val_set
  
-@@ -257,3 +292,3 @@
+@@ -257,3 +308,3 @@
  
 -    if True:  # args.distributed:
 +    if args.distributed:  # args.distributed:
          num_tasks = utils.get_world_size()
-@@ -281,4 +316,7 @@
+@@ -281,4 +332,7 @@
      else:
 +        num_tasks = 1
 +        global_rank = 0
@@ -64,17 +80,17 @@
          sampler_val = torch.utils.data.SequentialSampler(dataset_val)
 +        sampler_test = torch.utils.data.SequentialSampler(dataset_test)
  
-@@ -338,3 +376,3 @@
+@@ -338,3 +392,3 @@
          else:
 -            checkpoint = torch.load(args.finetune, map_location='cpu')
 +            checkpoint = torch.load(args.finetune, weights_only=False, map_location='cpu')
  
-@@ -372,2 +410,29 @@
+@@ -372,2 +426,29 @@
  
 +        if args.dataset in ['WORKLOAD', 'EEGMAT', 'EarEEG', 'ISRUC']:
 +            pos_embed = model.pos_embed
 +            if pos_embed is not None:
-+                torch.nn.init.trunc_normal_(pos_embed, std=0.02) # we don't reset [cls] token
++                torch.nn.init.trunc_normal_(pos_embed, std=0.02)
 +                # pos_embed.require_grad = True
 +                # Since it has been reset, the ch name will be not important
 +                pass
@@ -84,7 +100,7 @@
 +                torch.nn.init.trunc_normal_(time_embed, std=0.02)
 +
 +    # For EarEEG and ISRUC, since the length of the signal is longer than 16, we need to patch that to at least 30
-+    if args.dataset in ['WORKLOAD', 'EEGMAT', 'EarEEG', 'ISRUC']:
++    if args.dataset in ['EarEEG', 'ISRUC']:
 +        # model.require_grad = False
 +        # A learnabel time_embed can be treated as an absolute encoding scheme, so maybe we need to reset it too.
 +        time_embed = model.time_embed # We always expand the time_embed to 60 seconds even though it may not been used

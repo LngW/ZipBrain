@@ -30,7 +30,7 @@ python run_class_finetuning.py $common_args \
     --layer_decay 0.65 \
 
 # CLI to kickoff a finetune on TUEV
-python run_class_finetuning.py \
+python run_class_finetuning.py $common_args \
     --dataset TUEV \
     --output_dir ./checkpoints/finetune_tuev_base_256/ \
     --log_dir ./log/finetune_tuev_base_256 \
@@ -41,33 +41,33 @@ python run_class_finetuning.py \
     --layer_decay 0.65 \
 
 # CLI to kickoff a finetune on EEGMAT/WORKLOAD
-python run_class_finetuning.py \
+python run_class_finetuning.py $common_args \
     --dataset WORKLOAD \
-    --output_dir ./checkpoints/finetune_eegmat_base_256/ \
-    --log_dir ./log/finetune_eegmat_base_256 \
-    --epochs 2 \
-    --batch_size 256 \
+    --output_dir ./checkpoints/finetune_eegmat_base_377/ \
+    --log_dir ./log/finetune_eegmat_base_377 \
+    --epochs 50 \
+    --batch_size 377 \
     --lr 5e-4 \
     --weight_decay 0.05 \
     --layer_decay 0.65 \
 
 # CLI to kickoff a finetune on EarEEG
-python run_class_finetuning.py \
+python run_class_finetuning.py $common_args \
     --dataset EarEEG \
     --output_dir ./checkpoints/finetune_eareeg_base_256/ \
     --log_dir ./log/finetune_eareeg_base_256 \
-    --epochs 2 \
+    --epochs 50 \
     --batch_size 256 \
-    --lr 1e-4 \
+    --lr 5e-4 \
     --weight_decay 0.05 \
     --layer_decay 0.65 \
 
 # CLI to kickoff a finetune on ISRUC
-python run_class_finetuning.py \
+python run_class_finetuning.py $common_args \
     --dataset ISRUC \
     --output_dir ./checkpoints/finetune_isruc_base_256/ \
     --log_dir ./log/finetune_isruc_base_256 \
-    --epochs 2 \
+    --epochs 50 \
     --batch_size 256 \
     --lr 5e-4 \
     --weight_decay 0.05 \

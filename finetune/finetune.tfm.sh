@@ -15,8 +15,8 @@ common_args="${common_args[@]}"
 # CLI to kickoff a finetune on EarEEG
 python downstream_transformer_finetuning.py $common_args \
     --dataset_name EarEEG \
-    --save_path ./log/finetune_eareeg_128 \
-    --batch_size 128
+    --save_path ./log/finetune_eareeg_256 \
+    --batch_size 256
 
 # CLI to kickoff a finetune on EEGMAT / WORKLOAD
 python downstream_transformer_finetuning.py $common_args \
@@ -26,6 +26,6 @@ python downstream_transformer_finetuning.py $common_args \
 
 # CLI to kickoff a finetune on ISRUC
 python downstream_transformer_finetuning.py $common_args \
-    --dataset_name ISRUC \
-    --save_path ./log/finetune_isruc_128 \
-    --batch_size 128
+   --dataset_name ISRUC \
+   --save_path ./log/finetune_isruc_256 \
+   --batch_size 256
