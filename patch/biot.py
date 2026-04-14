@@ -33,7 +33,7 @@ def make_biot_encoder_class(klass):
         def stft(self, sample):
             import torch
             spectral = torch.stft( 
-                input = sample.squeeze(1),
+                input = sample,
                 n_fft = self.n_fft,
                 hop_length = self.hop_length,
                 center = False,

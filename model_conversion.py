@@ -33,5 +33,5 @@ print(model(x.cuda()))
 
 torch.onnx.export(
     model, x.cuda(), "model.onnx", opset_version=18, input_names=['x'], output_names=['output'],
-    dynamo=True, optimize=True, external_data=False
+    dynamo=True, external_data=False
 )
