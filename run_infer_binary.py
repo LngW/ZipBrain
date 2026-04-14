@@ -16,6 +16,19 @@ def set_seeds(args):
     torch.use_deterministic_algorithms(True)
     # pass
 
+def import_models(args):
+    import sys
+    import importlib
+
+    if args.model == 'BIOT':
+        pass
+    elif args.model == 'LaBraM':
+        sys.modules['data_processor'] = importlib.import_module('thirdparty.LaBraM.data_processor')
+    elif args.model == 'TFM':
+        sys.modules['utils'] = importlib.import_module('thirdparty.TFM_Tokenizer.utils')
+        sys.modules['datasets.data_loaders'] = importlib.import_module('thirdparty.TFM_Tokenizer.datasets.data_loaders')
+        sys.modules['models.tfm_token'] = importlib.import_module('thirdparty.TFM_Tokenizer.models.tfm_token')
+
 def prepare_dataloader(args, hooks):
     set_seeds(args)
     # from utils import TUABLoader, CHBMITLoader, PTBLoader
@@ -49,7 +62,6 @@ def prepare_dataloader(args, hooks):
             val_set = TUABLoader(os.path.join(root, "val"), val_files, args.sampling_rate)
         elif model == 'LaBraM':
 
-            sys.modules['data_processor'] = importlib.import_module('thirdparty.LaBraM.data_processor')
 
             from thirdparty.LaBraM.utils import prepare_TUAB_dataset, get_input_chans
             # train_dataset, test_dataset, val_dataset = prepare_TUAB_dataset("./datasets/tuab/labrama/")
@@ -80,17 +92,27 @@ def prepare_dataloader(args, hooks):
             
             train_set, test_set, val_set = prepare_TUAB_dataset('./datasets/tuab/eegpt/')
         elif model == 'TFM':
-            sys.modules['utils'] = importlib.import_module('thirdparty.TFM_Tokenizer.utils')
-            sys.modules['datasets.data_loaders'] = importlib.import_module('thirdparty.TFM_Tokenizer.datasets.data_loaders')
-            sys.modules['models.tfm_token'] = importlib.import_module('thirdparty.TFM_Tokenizer.models.tfm_token')
 
             from thirdparty.TFM_Tokenizer.datasets.data_loaders import TUABloader
             train_set = TUABloader('./datasets/tuab/tfm_tokenizer/', 'train', 200, None)
             test_set = TUABloader('./datasets/tuab/tfm_tokenizer/', 'test', 200, None)
             val_set = TUABloader('./datasets/tuab/tfm_tokenizer/', 'val', 200, None)
-    elif dataset == 'WORKLOAD' or dataset == 'EEGMAT':
+    elif dataset in ['WORKLOAD', 'EEGMAT']:
         from data_loaders import get_dataloaders
         test_set = get_dataloaders('WORKLOAD', 'test', 200)
+        if model == 'LaBraM':
+            from thirdparty.LaBraM.utils import get_input_chans
+            from einops import rearrange
+
+            ch_names = ['EEG FP1', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
+                        'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
+            ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
+
+            input_chs = get_input_chans(ch_names[:16])
+            def call_model(model, sample):
+                return model(rearrange(sample, "B N (A T) -> B N A T", T=200), input_chans = input_chs)
+            
+            hooks.call_model = call_model
     elif dataset == 'RANDOM':
         g = torch.Generator().manual_seed(seed)
         class RandomDataset(Dataset):
@@ -179,7 +201,11 @@ def prepare_model(args): # -> 'torch.nn.Module':
             import thirdparty.LaBraM.modeling_finetune
             from timm.models import create_model
 
-            state_dict = torch.load('./finetune/LaBraM/checkpoints/finetune_tuab_base_256/checkpoint-best.pth', weights_only=False)
+            if args.dataset == 'TUAB':
+                cp_path = './finetune/LaBraM/checkpoints/finetune_tuab_base_256/checkpoint-best.pth'
+            elif args.dataset in ['WORKLOAD', 'EEGMAT']:
+                cp_path = './finetune/LaBraM/checkpoints/finetune_eegmat_base_377/checkpoint-best.pth'
+            state_dict = torch.load(cp_path, weights_only=False)
             saved_args = state_dict['args']
             model_dict = state_dict['model']
 
@@ -233,8 +259,12 @@ def prepare_model(args): # -> 'torch.nn.Module':
             model_args.vqvae_pretrained_path = 'thirdparty/TFM_Tokenizer/pretrained_weigths/single_dataset_settings/TUAB_tfm_tokenizer_2x2x8/tfm_tokenizer_last.pth'
             model_args.code_book_size = 8192
             model_args.emb_size = 64
-            model_args.finetuned_path = 'thirdparty/TFM_Tokenizer/pretrained_weigths/single_dataset_settings/TUAB_tfm_tokenizer_2x2x8/tfm_encoder_best_model.pth'
             model_args.resampling_rate = 200
+
+            if args.dataset == 'TUAB':
+                model_args.finetuned_path = 'thirdparty/TFM_Tokenizer/pretrained_weigths/single_dataset_settings/TUAB_tfm_tokenizer_2x2x8/tfm_encoder_best_model.pth'
+            elif args.dataset in ['WORKLOAD', 'EEGMAT']:
+                model_args.finetuned_path = 'finetune/TFM_Tokenizer/log/finetune_eegmat_377/TFM_ENCODER_FINETUNING_WORKLOAD_random_seed_5/best_model.pth'
 
             dataset_params = {
                 'classification_task': 'binary',
@@ -396,6 +426,8 @@ def main(args):
     device = torch.device('cuda:0')
     from engine import Hooks, create_global_context, destructure_global_context, train, test, valid
     hooks = Hooks(calc_metric=lambda pred, label : {})
+
+    import_models(args)
 
     # prepare dataloaders
     train_loader, test_loader, val_loader = prepare_dataloader(args, hooks)

@@ -14,6 +14,19 @@ def set_seeds(args):
     torch.backends.cudnn.deterministic=True
     torch.use_deterministic_algorithms(True)
 
+def import_models(args):
+    import sys
+    import importlib
+
+    if args.model == 'BIOT':
+        pass
+    elif args.model == 'LaBraM':
+        sys.modules['data_processor'] = importlib.import_module('thirdparty.LaBraM.data_processor')
+    elif args.model == 'TFM':
+        sys.modules['utils'] = importlib.import_module('thirdparty.TFM_Tokenizer.utils')
+        sys.modules['datasets.data_loaders'] = importlib.import_module('thirdparty.TFM_Tokenizer.datasets.data_loaders')
+        sys.modules['models.tfm_token'] = importlib.import_module('thirdparty.TFM_Tokenizer.models.tfm_token')
+
 def prepare_dataloader(args, hooks):
     set_seeds(args)
 
@@ -42,18 +55,16 @@ def prepare_dataloader(args, hooks):
             test_set = TUEVLoader(os.path.join(root, "processed_test"), test_files, args.sampling_rate)
             # val_set = TUEVLoader(os.path.join(root, "processed_eval"), val_files, args.sampling_rate)
         elif model == 'LaBraM':
-
-            sys.modules['data_processor'] = importlib.import_module('thirdparty.LaBraM.data_processor')
-
             from thirdparty.LaBraM.utils import prepare_TUEV_dataset, get_input_chans
             # train_dataset, test_dataset, val_dataset = prepare_TUAB_dataset("./datasets/tuab/labrama/")
             train_dataset, test_dataset, val_dataset = prepare_TUEV_dataset("./datasets/tuev/labram/")
             ch_names = ['EEG FP1', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
                         'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
             ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
+            input_chs = get_input_chans(ch_names)
+
             args.nb_classes = 6
 
-            input_chs = get_input_chans(ch_names)
 
             # train_set = train_dataset
             # val_set = val_dataset
@@ -71,15 +82,31 @@ def prepare_dataloader(args, hooks):
             
         #     train_set, test_set, val_set = prepare_TUAB_dataset('./datasets/tuab/eegpt/')
         elif model == 'TFM':
-            sys.modules['utils'] = importlib.import_module('thirdparty.TFM_Tokenizer.utils')
-            sys.modules['datasets.data_loaders'] = importlib.import_module('thirdparty.TFM_Tokenizer.datasets.data_loaders')
-            sys.modules['models.tfm_token'] = importlib.import_module('thirdparty.TFM_Tokenizer.models.tfm_token')
-
             from thirdparty.TFM_Tokenizer.datasets.data_loaders import TUEVloader
             # train_set = None # TUEVloader('./datasets/tuab/tfm_tokenizer/', 'train', 200, None)
             test_set = TUEVloader('./datasets/tuev/tfm_tokenizer/', 'test', 200, None)
             # val_set = None # TUEVloader('./datasets/tuab/tfm_tokenizer/', 'val', 200, None)
+    elif dataset in ['ISRUC', 'EarEEG']:
+        from data_loaders import get_dataloaders
+        ds_name = 'WORKLOAD' if dataset == 'EEGMAT' else dataset
+        test_set = get_dataloaders(ds_name, 'test', 200)
+        if model == 'LaBraM':
+            from thirdparty.LaBraM.utils import get_input_chans
+            from einops import rearrange
+            ch_names = ['EEG FP1', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
+                        'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
+            ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
 
+            if dataset == 'ISRUC':
+                ch_names = ch_names[:6]
+            else:
+                ch_names = ch_names[:4]
+
+            input_chs = get_input_chans(ch_names)
+            def call_model(model, sample):
+                return model(rearrange(sample, 'B N (A T) -> B N A T', T=200), input_chans = input_chs)
+            
+            hooks.call_model = call_model
     elif dataset == 'RANDOM':
         seed = args.seed
 
@@ -158,11 +185,20 @@ def prepare_model(args): # -> 'torch.nn.Module':
         if model == "BIOT":
 
             if dataset == 'TUAB':
-                cp_path = 'finetune/BIOT/log/TUAB-BIOT-0.0005-512-200-200-100/checkpoints/epoch=0-step=577.ckpt'
+                cp_path = 'finetune/BIOT/checkpoint/TUAB-BIOT-0.0005-512-200-200-100/epoch=0-step=577.ckpt'
+                args.n_classes = 1
+            elif dataset in ['WORKLOAD', 'EEGMAT']:
+                cp_path = 'finetune/BIOT/checkpoint/WORKLOAD-BIOT-0.0005-512-200-200-100/epoch=0-step=577.ckpt'
                 args.n_classes = 1
             elif dataset == 'TUEV':
-                cp_path = 'finetune/BIOT/log/TUEV-BIOT-0.0005-512-200-200-100/checkpoints/epoch=2-step=432.ckpt'
+                cp_path = 'finetune/BIOT/checkpoint/TUEV-BIOT-0.0005-512-200-200-100/epoch=2-step=432.ckpt'
                 args.n_classes = 6
+            elif dataset == 'EarEEG':
+                cp_path = ''
+                args.n_classes = 5
+            elif dataset == 'ISRUC':
+                cp_path = ''
+                args.n_classes = 4
             else:
                 raise NotImplementedError("BIOT can only work with TUAB and TUEV in this script now.")
 
@@ -192,13 +228,23 @@ def prepare_model(args): # -> 'torch.nn.Module':
             wp.load_state_dict(model_dict)
             model = wp.model
             patch.biot(model, trace_source=getattr(args, 'trace_source', False), show_shape=getattr(args, 'show_shape', False))
-        elif args.model == 'LaBraM':
+        elif model == 'LaBraM':
             # This is necessary to register the model to timm, so DO NOT remove it
 
             import thirdparty.LaBraM.modeling_finetune
             from timm.models import create_model
 
-            state_dict = torch.load('./finetune/LaBraM/checkpoints/finetune_tuev_base_256/checkpoint-best.pth', weights_only=False)
+            patch_time_embed = False
+            if args.dataset == 'TUEV':
+                cp_path = 'checkpoints/finetune_tuev_base_256/checkpoint-best.pth'
+            elif args.dataset == 'EarEEG':
+                cp_path = 'checkpoints/finetune_eareeg_base_128/checkpoint-best.pth'
+                patch_time_embed = True
+            elif args.dataset == 'ISRUC':
+                cp_path = 'checkpoints/finetune_isruc_base_128/checkpoint-best.pth'
+                patch_time_embed = True
+
+            state_dict = torch.load('./finetune/LaBraM/' + cp_path, weights_only=False)
             saved_args = state_dict['args']
             model_dict = state_dict['model']
 
@@ -217,6 +263,12 @@ def prepare_model(args): # -> 'torch.nn.Module':
                 init_values=saved_args.layer_scale_init_value,
                 qkv_bias=saved_args.qkv_bias,
             )
+
+            if patch_time_embed:
+                time_embed = model.time_embed
+                shape = list(time_embed.shape)
+                shape[-2] = 60
+                model.time_embed = torch.nn.Parameter(torch.empty(shape, device=time_embed.device, dtype=time_embed.dtype))
 
             model.load_state_dict(model_dict)
             print(getattr(args, 'show_shape', False))
@@ -247,20 +299,38 @@ def prepare_model(args): # -> 'torch.nn.Module':
         #     patch.eegpt(model)
         # elif args.model == 'CBraMod':
         #     pass
-        elif args.model == 'TFM':
+        elif model == 'TFM':
             from thirdparty.TFM_Tokenizer.tfm_tokenizer_inference import Pl_tfm_tokenizer_inference
             from types import SimpleNamespace
-            base_path = 'thirdparty/TFM_Tokenizer/pretrained_weigths/single_dataset_settings/TUEV_tfm_tokenizer_2x2x8/'
+
+            if dataset == 'TUEV':
+                base_path = 'thirdparty/TFM_Tokenizer/pretrained_weigths/single_dataset_settings/TUEV_tfm_tokenizer_2x2x8/'
+                vqvae = base_path + 'tfm_tokenizer_last.pth'
+                encoder = base_path + 'tfm_encoder_best_model.pth'
+            elif dataset in ['EarEEG', 'ISRUC', 'EEGMAT', 'WORKLOAD']:
+                map = {
+                    'EarEEG': ('eareeg_128', 'EarEEG'), 
+                    'ISRUC': ('isruc_128', 'ISRUC'), 
+                    'WORKLOAD': ('eegmat_377', 'WORKLOAD'), 
+                    'EEGMAT': ('eegmat_377', 'WORKLOAD')
+                }
+
+                vqvae = 'finetune/TFM_Tokenizer/pretrained_weigths/multiple_dataset_settings/Pretrained_tfm_tokenizer_2x2x8/tfm_tokenizer_last.pth'
+                encoder = f"finetune_{map[dataset][0]}/TFM_ENCODER_FINETUNING_{map[dataset][1]}_random_seed_5/best_model.pth"
+                encoder = 'finetune/TFM_Tokenizer/log/' + encoder
+
             model_args = SimpleNamespace()
-            model_args.vqvae_pretrained_path = base_path + 'tfm_tokenizer_last.pth'
+            model_args.vqvae_pretrained_path = vqvae
             model_args.code_book_size = 8192
             model_args.emb_size = 64
-            model_args.finetuned_path = base_path + 'tfm_encoder_best_model.pth'
             model_args.resampling_rate = 200
+            model_args.finetuned_path = encoder
+
+            num_classes = {'TUEV': 6, 'EarEEG': 6, 'ISRUC': 5}.get(dataset, 1)
 
             dataset_params = {
-                'classification_task': 'multiclass',
-                'num_classes': 6
+                'classification_task': 'multiclass' if num_classes > 1 else 'binary',
+                'num_classes': num_classes
             }
 
             model = Pl_tfm_tokenizer_inference(model_args, None, 'workspace/debug/', 1, dataset_params)
@@ -311,6 +381,8 @@ def main(args):
     device = torch.device('cuda:0')
     from engine import Hooks, create_global_context, destructure_global_context, train, test, valid
     hooks = Hooks(calc_metric=lambda pred, label : calculate_metrics(pred, label))
+
+    import_models(args)
 
     # prepare dataloaders
     _, test_loader, _ = prepare_dataloader(args, hooks)

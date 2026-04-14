@@ -49,8 +49,59 @@ def make_biot_encoder_class(klass):
             seq = (seq - self.n_fft) // self.hop_length + 1
             self._pinfo['shape'] = [bsz, chs, seq, emb_size]
 
-            return super().forward(x, n_channel_offset, perturb)
-    
+            """
+            x: [batch_size, channel, ts]
+            output: [batch_size, emb_size]
+            """
+            # emb_seq = []
+            # for i in range(x.shape[1]):
+            #     channel_spec_emb = self.stft(x[:, i : i + 1, :])
+            #     channel_spec_emb = self.patch_embedding(channel_spec_emb)
+            #     batch_size, ts, _ = channel_spec_emb.shape
+            #     # (batch_size, ts, emb)
+            #     channel_token_emb = (
+            #         self.channel_tokens(self.index[i + n_channel_offset])
+            #         .unsqueeze(0)
+            #         .unsqueeze(0)
+            #         .repeat(batch_size, ts, 1)
+            #     )
+            #     # (batch_size, ts, emb)
+            #     channel_emb = self.positional_encoding(channel_spec_emb + channel_token_emb)
+
+            #     # perturb
+            #     if perturb:
+            #         ts = channel_emb.shape[1]
+            #         ts_new = np.random.randint(ts // 2, ts)
+            #         selected_ts = np.random.choice(range(ts), ts_new, replace=False)
+            #         channel_emb = channel_emb[:, selected_ts]
+            #     emb_seq.append(channel_emb)
+
+            # # (batch_size, 16 * ts, emb)
+            # emb = torch.cat(emb_seq, dim=1)
+
+            # faster version, with no error when batch_size big enough
+            batch_size, channels, _ = x.shape
+            channel_spec_emb = self.stft(x.flatten(0, 1))
+            channel_spec_emb = self.patch_embedding(channel_spec_emb)
+            _, ts, emb_size = channel_spec_emb.shape
+
+            # self.tome_container['shape'] = [batch_size, channels, ts, emb_size]
+
+            channel_spec_emb = channel_spec_emb.reshape(batch_size, channels, ts, emb_size)
+            channel_token_emb = (
+                self.channel_tokens(self.index[n_channel_offset:n_channel_offset + channels])
+                .unsqueeze(1)
+                .unsqueeze(0)
+            )
+            channel_emb = channel_spec_emb + channel_token_emb
+            channel_emb = self.positional_encoding(channel_emb.flatten(0, 1))
+
+            emb_batch = channel_emb.reshape(batch_size, ts * channels, emb_size)
+            emb = emb_batch
+            # (batch_size, emb)
+            emb = self.transformer(emb).mean(dim=1)
+            return emb
+        
     return PatchedBIOTEncoder
 
 # def make_transformer(klass):

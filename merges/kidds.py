@@ -1,7 +1,7 @@
 import torch
 import math
 
-from .utils import Spliter, select_metric, handle_source, clamp
+from .utils import Spliter, select_metric, handle_source, clamp, setdiff_indices
 
 def apply_kidd(pinfo : dict, r : int, variant : str, x : torch.Tensor, q : torch.Tensor, k : torch.Tensor, v : torch.Tensor):
 
@@ -79,53 +79,65 @@ def kidd_pivot(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter 
         tokens_base = tokens_base / tokens_base.norm(2, -1, True)
 
         # scale the metric matrix
-        metric_norm = m_raw.norm(2, -1, True) # (bsz, seq, 1)
-        m_raw = m_raw / metric_norm
+        metric_norm = m_raw.norm(2, -1) # (bsz, seq, 1)
+        m_raw = m_raw / metric_norm.unsqueeze(-1)
 
         # select pivot tokens, there will be (bsz, num_pivot) indices
-        idx_pivot = metric_norm.squeeze(-1).topk(num_pivot, sorted=False).indices
-        tokens_pivot = m_raw.gather(-2, idx_pivot[..., None].expand(-1, -1, dim))
+        idx_pivot = metric_norm.topk(num_pivot, sorted=False).indices
+        idx_non_pivot = setdiff_indices(seq, idx_pivot)
+        tokens_pivot = m_raw.take_along_dim(idx_pivot.unsqueeze(-1), -2)
+        tokens_non_pivot = m_raw.take_along_dim(idx_non_pivot.unsqueeze(-1), -2)
         del metric_norm
         # metric_norm = None
 
         # calculate redundancy
         # score_dup, idx_dup_tar = (m_raw @ tokens_pivot.transpose(-2, -1)).max(-1)
-        score_dup, idx_dup_tar = batch_matmul_large_n_wrapper(m_raw, tokens_pivot)
-        idx_dup_tar = idx_dup_tar.to(dtype=torch.long)
+        score_dup, idx_dup_tar = batch_matmul_large_n_wrapper(tokens_non_pivot, tokens_pivot)
+        # idx_dup_tar = idx_dup_tar.to(dtype=torch.long)
+
+        # score_tmp = torch.empty((bsz, seq), device=score_dup.device, dtype=score_dup.dtype).
 
         # regard top r tokens as duplicate tokens
-        idx_tmp = score_dup.scatter(-1, idx_pivot, -torch.inf).sort(descending=True).indices
-        idx_dup = idx_tmp[:, :r]
-        left_idx = idx_tmp[:, r:].sort().values
+        # idx_tmp = score_dup.scatter(-1, idx_pivot, -torch.inf).sort(descending=True).indices
+        # idx_tmp = score_dup.sort(descending=True).indices
+        idx_tmp = score_dup.topk(r, 1, True, False).indices
+        # idx_dup = idx_non_pivot.gather(-1, score_dup.topk(r, -1, True, False).indices)
+        # idx_dup = idx_tmp[:, :r]
+        # left_idx = idx_tmp[:, r:].sort().values
+        # left_idx = setdiff_indices(seq, )
 
         # now we assign tar_idx and src_idx, note that they are not filtered by importance yet
-        tar_idx = idx_pivot.gather(-1, idx_dup_tar).gather(-1, idx_dup)
-        src_idx = idx_dup
+        tar_idx = idx_pivot.gather(-1, idx_dup_tar.gather(-1, idx_tmp))
+        src_idx = idx_non_pivot.gather(-1, idx_tmp)
+        left_idx = setdiff_indices(seq, src_idx)
 
         # calculate importance now
-        score_imp = (m_raw @ tokens_base.view(bsz, dim, 1)).squeeze(-1) # (bsz, seq)
+        score_imp = (m_raw @ tokens_base.view(bsz, dim, 1))[:, :, 0] # (bsz, seq)
         idx_imp = score_imp.topk(num_imp, -1, True, False).indices
 
-        mask_imp = torch.zeros_like(score_imp)
-        mask_imp.scatter_(-1, idx_imp, 0)
-        mask_imp = mask_imp.gather(-1, idx_dup).to(dtype=torch.bool)
+        mask_imp = torch.zeros_like(score_imp).scatter(-1, idx_imp, 1.)
+        # mask_imp.scatter_(-1, idx_imp, 0)
+        mask_imp = mask_imp.gather(-1, src_idx)
 
         # now only those important tokens have a target, others should be assigned to indices which are not in left_idx
-        tar_idx[~mask_imp] = src_idx[~mask_imp]
+        # tar_idx[~mask_imp] = src_idx[~mask_imp]
+        tar_idx = tar_idx.where(mask_imp > 0, src_idx)
 
         # shrunk the array from seq to min(num_imp, r)
-        idx_imp_dup = mask_imp.to(dtype=torch.int).topk(num_imp_dup, sorted=False).indices
+        # idx_imp_dup = mask_imp.topk(num_imp_dup, sorted=False).indices
 
-        tar_idx = tar_idx.gather(-1, idx_imp_dup)
-        src_idx = src_idx.gather(-1, idx_imp_dup)
+        # tar_idx = tar_idx.gather(-1, idx_imp_dup)
+        # src_idx = src_idx.gather(-1, idx_imp_dup)
 
     def merge(x : torch.Tensor, reduce = 'sum'):
         x_prot, x_raw = spliter(x)
         bsz, seq, dim = x_raw.shape
 
-        src = x_raw.gather(-2, src_idx[..., None].expand(-1, -1, dim))
-        x_raw = x_raw.scatter_reduce(-2, tar_idx[..., None].expand(-1, -1, dim), src, reduce)
-        left = x_raw.gather(-2, left_idx[..., None].expand(-1, -1, dim))
+        src = x_raw.gather(-2, src_idx.unsqueeze(-1).expand(-1, -1, dim))
+        # src = x_raw.take_along_dim(src_idx.unsqueeze(-1), -2)
+        x_raw = x_raw.scatter_reduce(-2, tar_idx.unsqueeze(-1).expand(-1, -1, dim), src, reduce)
+        left = x_raw.gather(-2, left_idx.unsqueeze(-1).expand(-1, -1, dim))
+        # left = x_raw.take_along_dim(left_idx.unsqueeze(-1), -2)
 
         return torch.cat([x_prot, left], dim = -2)
     
