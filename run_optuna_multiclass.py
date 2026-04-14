@@ -1,7 +1,7 @@
 import os
 import argparse
 from pathlib import Path
-from run_infer_multiclass import prepare_model, prepare_dataloader, calculate_metrics
+from run_inference import import_models, prepare_model, prepare_dataloader, calculate_metrics_binary, calculate_metrics_multiclass
 
 import optuna
 
@@ -420,14 +420,25 @@ def objective(trial : optuna.Trial, args, model, dataloader, hooks):
     for k, v in metrics.items():
         trial.set_user_attr(k, v)
 
-    return metrics['balanced_accuracy'], metrics['cohen_kappa'], metrics['f1_weighted']
+    if args.n_classes > 1:
+        return metrics['balanced_accuracy'], metrics['cohen_kappa'], metrics['f1_weighted']
+    else:
+        return metrics['balanced_accuracy'], metrics['pr_auc'], metrics['roc_auc']
 
 def optuna_main(args):
     from engine import Hooks
     from functools import partial
-    hooks = Hooks(calc_metric=calculate_metrics, handle_post_infer_result=lambda pred, label: (pred.argmax(-1), label))
+    hooks = Hooks(None)
+    import_models(args)
     _, dataloader, _ = prepare_dataloader(args, hooks)
     model = prepare_model(args)
+
+    if args.n_classes > 1:
+        hooks.calc_metric = calculate_metrics_multiclass
+        hooks.handle_post_infer_result = lambda pred, label: (pred.argmax(-1), label)
+    else:
+        hooks.calc_metric = partial(calculate_metrics_binary, threshold = 0.5)
+        hooks.handle_post_infer_result = lambda pred, label: (pred.sigmoid().flatten(), label)
 
     study = optuna.create_study(
         storage=getattr(args, 'storage', 'sqlite:///db.sqlite3'),
