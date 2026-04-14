@@ -1,3 +1,4 @@
+from functools import partial
 import os
 import argparse
 from pathlib import Path
@@ -33,14 +34,77 @@ def prepare_dataloader(args, hooks):
     dataset = args.dataset
     model = args.model
 
-    import sys
-    import importlib
     import torch
     from torch.utils.data import Dataset, DataLoader
 
     train_set = val_set = test_set = None
+    if dataset == 'TUAB':
+        if model == 'BIOT':
+            from thirdparty.BIOT.utils import TUABLoader
+            # root = './datasets/tuab/biot/' + subset
+            root = './datasets/tuab/biot/'
 
-    if dataset == 'TUEV':
+            train_files = os.listdir(os.path.join(root, "train"))
+            # np.random.shuffle(train_files)
+            # train_files = train_files[:100000]
+            val_files = os.listdir(os.path.join(root, "val"))
+            test_files = os.listdir(os.path.join(root, "test"))
+
+            print(len(train_files), len(val_files), len(test_files))
+
+            # train_set = TUABLoader(os.path.join(root, "train"), train_files, args.sampling_rate)
+            test_set = TUABLoader(os.path.join(root, "test"), test_files, args.sampling_rate)
+            # val_set = TUABLoader(os.path.join(root, "val"), val_files, args.sampling_rate)
+        elif model == 'LaBraM':
+            from thirdparty.LaBraM.utils import prepare_TUAB_dataset, get_input_chans
+            # train_dataset, test_dataset, val_dataset = prepare_TUAB_dataset("./datasets/tuab/labrama/")
+            train_dataset, test_dataset, val_dataset = prepare_TUAB_dataset("./datasets/tuab/labram/")
+            ch_names = ['EEG FP1', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
+                        'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
+            ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
+            # args.nb_classes = 1
+            # metrics = ["pr_auc", "roc_auc", "accuracy", "balanced_accuracy"]
+
+            input_chs = get_input_chans(ch_names)
+            from torch.utils.data import Dataset
+
+            # train_set = train_dataset
+            val_set = val_dataset
+            # test_set = test_dataset
+
+            from einops import rearrange
+
+            def call_model(model, sample):
+                eeg = rearrange(sample.float(), 'B N (A T) -> B N A T', T=200) / 100
+                return model(eeg, input_chans = input_chs)
+
+            hooks.call_model = call_model
+        # elif model == 'EEGPT':
+        #     from thirdparty.EEGPT.downstream_tueg.utils import prepare_TUAB_dataset
+            
+        #     train_set, test_set, val_set = prepare_TUAB_dataset('./datasets/tuab/eegpt/')
+        elif model == 'TFM':
+            from thirdparty.TFM_Tokenizer.datasets.data_loaders import TUABloader
+            # train_set = TUABloader('./datasets/tuab/tfm_tokenizer/', 'train', 200, None)
+            test_set = TUABloader('./datasets/tuab/tfm_tokenizer/', 'test', 200, None)
+            # val_set = TUABloader('./datasets/tuab/tfm_tokenizer/', 'val', 200, None)
+    elif dataset in ['WORKLOAD', 'EEGMAT']:
+        from data_loaders import get_dataloaders
+        test_set = get_dataloaders('WORKLOAD', 'test', 200)
+        if model == 'LaBraM':
+            from thirdparty.LaBraM.utils import get_input_chans
+            from einops import rearrange
+
+            ch_names = ['EEG FP1', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
+                        'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
+            ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
+
+            input_chs = get_input_chans(ch_names[:16])
+            def call_model(model, sample):
+                return model(rearrange(sample, "B N (A T) -> B N A T", T=200), input_chans = input_chs)
+            
+            hooks.call_model = call_model
+    elif dataset == 'TUEV':
         if model == 'BIOT':
             from thirdparty.BIOT.utils import TUEVLoader
             root = './datasets/tuev/biot/'
@@ -56,6 +120,7 @@ def prepare_dataloader(args, hooks):
             # val_set = TUEVLoader(os.path.join(root, "processed_eval"), val_files, args.sampling_rate)
         elif model == 'LaBraM':
             from thirdparty.LaBraM.utils import prepare_TUEV_dataset, get_input_chans
+            from einops import rearrange
             # train_dataset, test_dataset, val_dataset = prepare_TUAB_dataset("./datasets/tuab/labrama/")
             train_dataset, test_dataset, val_dataset = prepare_TUEV_dataset("./datasets/tuev/labram/")
             ch_names = ['EEG FP1', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
@@ -63,7 +128,7 @@ def prepare_dataloader(args, hooks):
             ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
             input_chs = get_input_chans(ch_names)
 
-            args.nb_classes = 6
+            # args.nb_classes = 6
 
 
             # train_set = train_dataset
@@ -71,16 +136,11 @@ def prepare_dataloader(args, hooks):
             test_set = test_dataset
 
             def call_model(model, sample):
-                from einops import rearrange
-                eeg = sample
-                eeg = rearrange(eeg.float(), 'B N (A T) -> B N A T', T=200) / 100
+                # eeg = sample
+                eeg = rearrange(sample.float(), 'B N (A T) -> B N A T', T=200) / 100
                 return model(eeg, input_chans = input_chs)
 
             hooks.call_model = call_model
-        # elif model == 'EEGPT':
-        #     from thirdparty.EEGPT.downstream_tueg.utils import prepare_TUAB_dataset
-            
-        #     train_set, test_set, val_set = prepare_TUAB_dataset('./datasets/tuab/eegpt/')
         elif model == 'TFM':
             from thirdparty.TFM_Tokenizer.datasets.data_loaders import TUEVloader
             # train_set = None # TUEVloader('./datasets/tuab/tfm_tokenizer/', 'train', 200, None)
@@ -130,46 +190,26 @@ def prepare_dataloader(args, hooks):
     else:
         raise NotImplementedError("Unrecognized dataset: {}".format(dataset))
 
-    # prepare training and test data loader
-    if train_set is not None:
-        train_loader = DataLoader(
-            dataset=train_set,
-            batch_size=args.batch_size,
-            shuffle=True,
-            drop_last=True,
-            num_workers=args.num_workers,
-            persistent_workers=args.num_workers > 0,
-            pin_memory=True,
-        )
-    else:
-        train_loader = None
+    def ds2dl(ds, shuffle = False, drop_last = False):
+        if ds is None or len(ds) == 0:
+            return None
+        else:
+            return DataLoader(
+                dataset=ds, 
+                batch_size=args.batch_size, 
+                shuffle=shuffle, 
+                num_workers=args.num_workers, 
+                persistent_workers=args.num_workers > 0,
+                pin_memory=True,
+                drop_last=drop_last
+            )
+        
+    def olen(dl):
+        return 0 if dl is None else len(dl)
 
-    if test_set is not None:
-        test_loader = DataLoader(
-            dataset=test_set,
-            batch_size=args.batch_size,
-            shuffle=False,
-            num_workers=args.num_workers,
-            persistent_workers=args.num_workers > 0,
-            pin_memory=True,
-        )
-    else:
-        test_loader = None
-
-    if val_set is not None:
-        val_loader = DataLoader(
-            dataset=val_set,
-            batch_size=args.batch_size,
-            shuffle=False,
-            num_workers=args.num_workers,
-            persistent_workers=args.num_workers > 0,
-            pin_memory=True,
-        )
-    else:
-        val_loader = None
-
-    def olen(data):
-        return len(data) if data is not None else 0
+    train_loader = ds2dl(train_set, True, True)
+    test_loader = ds2dl(test_set)
+    val_loader = ds2dl(val_set)
 
     print(olen(train_loader), olen(val_loader), olen(test_loader))
     return train_loader, test_loader, val_loader
@@ -188,16 +228,16 @@ def prepare_model(args): # -> 'torch.nn.Module':
                 cp_path = 'finetune/BIOT/checkpoint/TUAB-BIOT-0.0005-512-200-200-100/epoch=0-step=577.ckpt'
                 args.n_classes = 1
             elif dataset in ['WORKLOAD', 'EEGMAT']:
-                cp_path = 'finetune/BIOT/checkpoint/WORKLOAD-BIOT-0.0005-512-200-200-100/epoch=0-step=577.ckpt'
+                cp_path = 'finetune/BIOT/checkpoint/EEGMAT-BIOT-0.0005-754-200-200-100/epoch=1-step=4.ckpt'
                 args.n_classes = 1
             elif dataset == 'TUEV':
                 cp_path = 'finetune/BIOT/checkpoint/TUEV-BIOT-0.0005-512-200-200-100/epoch=2-step=432.ckpt'
                 args.n_classes = 6
             elif dataset == 'EarEEG':
-                cp_path = ''
+                cp_path = 'finetune/BIOT/checkpoint/EarEEG-BIOT-0.0005-512-200-200-100/epoch=4-step=80.ckpt'
                 args.n_classes = 5
             elif dataset == 'ISRUC':
-                cp_path = ''
+                cp_path = 'finetune/BIOT/checkpoint/ISRUC-BIOT-0.0005-512-200-200-100/epoch=15-step=2224.ckpt'
                 args.n_classes = 4
             else:
                 raise NotImplementedError("BIOT can only work with TUAB and TUEV in this script now.")
@@ -219,6 +259,7 @@ def prepare_model(args): # -> 'torch.nn.Module':
             state_dict = torch.load(cp_path, weights_only=False) # Warning! This may cause Arbitary Code Execution!
             model_dict = state_dict['state_dict']
 
+            # This is to address the prefix problem 'model.biot.xxx' -> 'biot.xxx'
             class wrapper(torch.nn.Module):
                 def __init__(self, model):
                     super().__init__()
@@ -230,23 +271,28 @@ def prepare_model(args): # -> 'torch.nn.Module':
             patch.biot(model, trace_source=getattr(args, 'trace_source', False), show_shape=getattr(args, 'show_shape', False))
         elif model == 'LaBraM':
             # This is necessary to register the model to timm, so DO NOT remove it
-
             import thirdparty.LaBraM.modeling_finetune
             from timm.models import create_model
 
             patch_time_embed = False
-            if args.dataset == 'TUEV':
+            if dataset == 'TUAB':
+                cp_path = 'checkpoints/finetune_tuab_base_256/checkpoint-best.pth'
+            elif dataset in ['EEGMAT', 'WORKLOAD']:
+                cp_path = 'checkpoints/finetune_eegmat_base_377/checkpoint-best.pth'
+            elif dataset == 'TUEV':
                 cp_path = 'checkpoints/finetune_tuev_base_256/checkpoint-best.pth'
-            elif args.dataset == 'EarEEG':
-                cp_path = 'checkpoints/finetune_eareeg_base_128/checkpoint-best.pth'
+            elif dataset == 'EarEEG':
+                cp_path = 'checkpoints/finetune_eareeg_base_256/checkpoint-best.pth'
                 patch_time_embed = True
-            elif args.dataset == 'ISRUC':
-                cp_path = 'checkpoints/finetune_isruc_base_128/checkpoint-best.pth'
+            elif dataset == 'ISRUC':
+                cp_path = 'checkpoints/finetune_isruc_base_256/checkpoint-best.pth'
                 patch_time_embed = True
 
             state_dict = torch.load('./finetune/LaBraM/' + cp_path, weights_only=False)
             saved_args = state_dict['args']
             model_dict = state_dict['model']
+
+            args.n_classes = saved_args.nb_classes
 
             model = create_model(
                 saved_args.model,
@@ -303,7 +349,11 @@ def prepare_model(args): # -> 'torch.nn.Module':
             from thirdparty.TFM_Tokenizer.tfm_tokenizer_inference import Pl_tfm_tokenizer_inference
             from types import SimpleNamespace
 
-            if dataset == 'TUEV':
+            if dataset == 'TUAB':
+                base_path = 'thirdparty/TFM_Tokenizer/pretrained_weigths/single_dataset_settings/TUAB_tfm_tokenizer_2x2x8/'
+                vqvae = base_path + 'tfm_tokenizer_last.pth'
+                encoder = base_path + 'tfm_encoder_best_model.pth'
+            elif dataset == 'TUEV':
                 base_path = 'thirdparty/TFM_Tokenizer/pretrained_weigths/single_dataset_settings/TUEV_tfm_tokenizer_2x2x8/'
                 vqvae = base_path + 'tfm_tokenizer_last.pth'
                 encoder = base_path + 'tfm_encoder_best_model.pth'
@@ -328,6 +378,8 @@ def prepare_model(args): # -> 'torch.nn.Module':
 
             num_classes = {'TUEV': 6, 'EarEEG': 6, 'ISRUC': 5}.get(dataset, 1)
 
+            args.n_classes = num_classes
+
             dataset_params = {
                 'classification_task': 'multiclass' if num_classes > 1 else 'binary',
                 'num_classes': num_classes
@@ -342,7 +394,7 @@ def prepare_model(args): # -> 'torch.nn.Module':
         
     return model
 
-def calculate_metrics(y_hat, y_ground, threshold = None):
+def calculate_metrics_multiclass(y_hat, y_ground, threshold = None):
     from sklearn.metrics import accuracy_score, balanced_accuracy_score, cohen_kappa_score, f1_score
 
     return {
@@ -351,6 +403,35 @@ def calculate_metrics(y_hat, y_ground, threshold = None):
         "cohen_kappa": cohen_kappa_score(y_ground, y_hat),
         "f1_weighted": f1_score(y_ground, y_hat, average='weighted'),
     }
+
+def calculate_metrics_binary(y_hat, y_ground, threshold = None):
+    import numpy as np
+    from sklearn.metrics import accuracy_score, balanced_accuracy_score, roc_auc_score, average_precision_score
+
+    if (
+        sum(y_ground) * (len(y_ground) - sum(y_ground)) != 0
+    ):  # to prevent all 0 or all 1 and raise the AUROC error
+        if threshold is None:
+            threshold = np.sort(y_hat)[-int(np.sum(y_ground))].item()
+        y_pred = np.empty_like(y_hat)
+        y_pred[y_hat >= threshold] = 1
+        y_pred[y_hat < threshold] = 0
+        result = {
+            "accuracy": accuracy_score(y_ground, y_pred),
+            "balanced_accuracy": balanced_accuracy_score(y_ground, y_pred),
+            "pr_auc": average_precision_score(y_ground, y_hat),
+            "roc_auc": roc_auc_score(y_ground, y_hat),
+            "threshold": threshold,
+        }
+    else:
+        result = {
+            "accuracy": 0.0,
+            "balanced_accuracy": 0.0,
+            "pr_auc": 0.0,
+            "roc_auc": 0.0,
+            "threshold": 0.5,
+        }
+    return result
 
 def main(args):
     # version = f"{args.model}-{args.dataset}-{'_'.join(args.tome_variant)}-{'_'.join([str(it) for it in args.tome_r])}-{'cls' if getattr(args, 'use_cls', False) else 'mean'}-{args.pivot_factor}"
@@ -380,7 +461,7 @@ def main(args):
     # get data loaders
     device = torch.device('cuda:0')
     from engine import Hooks, create_global_context, destructure_global_context, train, test, valid
-    hooks = Hooks(calc_metric=lambda pred, label : calculate_metrics(pred, label))
+    hooks = Hooks(None)
 
     import_models(args)
 
@@ -390,17 +471,24 @@ def main(args):
     # define the model
     model = prepare_model(args)
 
+    if args.n_classes > 1:
+        hooks.calc_metric = calculate_metrics_multiclass
+        hooks.handle_post_infer_result = lambda pred, label: (pred.argmax(-1), label)
+    else:
+        hooks.calc_metric = partial(calculate_metrics_binary, threshold = 0.5)
+        hooks.handle_post_infer_result = lambda pred, label: (pred.sigmoid().flatten(), label)
+
     model.r = args.tome_r
     model.variant = args.tome_variant
     model.pivot_factor = getattr(args, 'pivot_factor', None)
     model.use_cls = getattr(args, 'use_cls', False)
     # model.show_shape = getattr(args, 'show_shape', False)
 
-    def infer_post_fn(pred, label):
-        pred = torch.argmax(pred, -1)
-        return pred, label
+    # def infer_post_fn(pred, label):
+    #     pred = torch.argmax(pred, -1)
+    #     return pred, label
     
-    hooks.handle_post_infer_result = infer_post_fn
+    # hooks.handle_post_infer_result = infer_post_fn
     ctx = create_global_context(device, log_dir, cp_dir, 2)
 
     from contextlib import ExitStack
@@ -430,36 +518,35 @@ def pre_main():
     parser.add_argument("--epochs", type=int, default=100,
                         help="number of epochs")
     parser.add_argument("--lr", type=float, default=1e-3, help="learning rate")
-    parser.add_argument("--weight_decay", type=float,
-                        default=1e-5, help="weight decay")
-    parser.add_argument("--batch_size", type=int,
-                        default=512, help="batch size")
+    parser.add_argument("--weight_decay", type=float, default=1e-5, help="weight decay")
+    parser.add_argument("--batch_size", type=int, default=512, help="batch size")
     parser.add_argument("--num_workers", type=int,
                         default=4, help="number of workers")
     parser.add_argument("--dataset", type=str, help="dataset", required=True)
     parser.add_argument(
         "--model", type=str, help="which supervised model to use", required=True
     )
-    parser.add_argument(
-        "--in_channels", type=int, default=16, help="number of input channels"
-    )
-    parser.add_argument(
-        "--sample_length", type=float, default=10, help="length (s) of sample"
-    )
+    # parser.add_argument(
+    #     "--in_channels", type=int, default=16, help="number of input channels"
+    # )
+    # parser.add_argument(
+    #     "--sample_length", type=float, default=10, help="length (s) of sample"
+    # )
+    # The n_classes can be implied by the dataset
     parser.add_argument(
         "--n_classes", type=int, default=1, help="number of output classes"
     )
     parser.add_argument(
         "--sampling_rate", type=int, default=200, help="sampling rate (r)"
     )
-    parser.add_argument("--token_size", type=int,
-                        default=200, help="token size (t)")
-    parser.add_argument(
-        "--hop_length", type=int, default=100, help="token hop length (t - p)"
-    )
-    parser.add_argument(
-        "--pretrain_model_path", type=str, default="", help="pretrained model path"
-    )
+    # parser.add_argument("--token_size", type=int,
+    #                     default=200, help="token size (t)")
+    # parser.add_argument(
+    #     "--hop_length", type=int, default=100, help="token hop length (t - p)"
+    # )
+    # parser.add_argument(
+    #     "--pretrain_model_path", type=str, default="", help="pretrained model path"
+    # )
 
     # modification made for tc_eeg
     parser.add_argument("--seed", type=int, default=None)
@@ -479,6 +566,7 @@ def pre_main():
     # parser.add_argument("--flash", action='store_true', default=False)
 
     # parser.add_argument("--load_from_checkpoint", type=str, default=None)
+    parser.set_defaults(train=False, test=False, valid=False, debug=False, profile=False)
     parser.add_argument("--train", action='store_true', default=False)
     parser.add_argument("--test", action='store_true', default=False)
     parser.add_argument("--valid", action='store_true', default=False)
@@ -508,7 +596,7 @@ def pre_main():
         if len(required) > 0:
             parser.error('the following arguments are required: ' + ', '.join(['--' + it for it in required]))
 
-    if args.seed is None:
+    if getattr(args, 'seed', None) is None:
         if args.train:
             parser.error('the following arguments are required: --seed')
         else:
