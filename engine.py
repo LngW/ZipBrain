@@ -668,7 +668,7 @@ def valid(
     dataset = LimitedDataset(test_dataloader.dataset, test_dataloader.batch_size)
     loader = DataLoader(
         dataset=dataset,
-        batch_size=test_dataloader.batch_size,
+        batch_size=8,
         num_workers=test_dataloader.num_workers,
         persistent_workers=test_dataloader.persistent_workers,
         pin_memory=test_dataloader.pin_memory,
