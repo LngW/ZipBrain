@@ -6,10 +6,10 @@
 
 /finetune/*/
 !/finetune/patches/
-/datasets/*
+/datasets/
 /models/
 /logs*/
-/workspace*/*
+/workspace*/
 /checkpoints/*
 /runs/
 
@@ -22,3 +22,6 @@
 # raw experiments results
 *.csv
 *.sqlite3
+
+shells/
+notebooks/

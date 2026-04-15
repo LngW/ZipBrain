@@ -69,8 +69,8 @@ def prepare_dataloader(args, hooks):
             from torch.utils.data import Dataset
 
             # train_set = train_dataset
-            val_set = val_dataset
-            # test_set = test_dataset
+            # val_set = val_dataset
+            test_set = test_dataset
 
             from einops import rearrange
 
@@ -235,10 +235,10 @@ def prepare_model(args): # -> 'torch.nn.Module':
                 args.n_classes = 6
             elif dataset == 'EarEEG':
                 cp_path = 'finetune/BIOT/checkpoint/EarEEG-BIOT-0.0005-512-200-200-100/epoch=4-step=80.ckpt'
-                args.n_classes = 5
+                args.n_classes = 6
             elif dataset == 'ISRUC':
                 cp_path = 'finetune/BIOT/checkpoint/ISRUC-BIOT-0.0005-512-200-200-100/epoch=15-step=2224.ckpt'
-                args.n_classes = 4
+                args.n_classes = 5
             else:
                 raise NotImplementedError("BIOT can only work with TUAB and TUEV in this script now.")
 
@@ -359,8 +359,8 @@ def prepare_model(args): # -> 'torch.nn.Module':
                 encoder = base_path + 'tfm_encoder_best_model.pth'
             elif dataset in ['EarEEG', 'ISRUC', 'EEGMAT', 'WORKLOAD']:
                 map = {
-                    'EarEEG': ('eareeg_128', 'EarEEG'), 
-                    'ISRUC': ('isruc_128', 'ISRUC'), 
+                    'EarEEG': ('eareeg_256', 'EarEEG'), 
+                    'ISRUC': ('isruc_256', 'ISRUC'), 
                     'WORKLOAD': ('eegmat_377', 'WORKLOAD'), 
                     'EEGMAT': ('eegmat_377', 'WORKLOAD')
                 }
@@ -442,8 +442,10 @@ def main(args):
         '_'.join([str(it) for it in args.tome_r]) if args.tome_r else '0',
         'tome' if getattr(args, 'tome_scheme', False) else 'full',
         'cls' if getattr(args, 'use_cls', False) else 'mean',
-        getattr(args, 'pivot_factor', 0.)
+        getattr(args, 'pivot_factor', [0.05])[0],
+        # getattr(args, 'imp_factor', 0.),
     )
+
     logdir : str = args.log_dir
     workspace = Path('.', 'workspace', args.workspace)
     log_dir = workspace / 'logs' / logdir / version
@@ -480,8 +482,10 @@ def main(args):
 
     model.r = args.tome_r
     model.variant = args.tome_variant
+    model.imp_factor = getattr(args, 'imp_factor', None)
     model.pivot_factor = getattr(args, 'pivot_factor', None)
     model.use_cls = getattr(args, 'use_cls', False)
+    model._pinfo['tome_scheme'] = getattr(args, 'tome_scheme', False)
     # model.show_shape = getattr(args, 'show_shape', False)
 
     # def infer_post_fn(pred, label):
@@ -558,7 +562,8 @@ def pre_main():
     # parser.add_argument("--top_k", type=int, default=0)
     parser.add_argument("--tome_r", type=int, nargs='+', default=[])
     parser.add_argument("--tome_variant", type=str, nargs='+', default=[])
-    parser.add_argument("--pivot_factor", type=float, default=0.05)
+    parser.add_argument("--pivot-factor", type=float, nargs='+', default=[None], dest='pivot_factor')
+    parser.add_argument("--imp-factor", type=float, nargs='+', default=[None], dest='imp_factor')
     parser.add_argument("--tome-scheme", action='store_true', default=False, dest='tome_scheme')
     
     # parser.add_argument("--use_cls", type=bool, default=False)
