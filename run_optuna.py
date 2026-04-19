@@ -29,7 +29,7 @@ def objective(trial : optuna.Trial, args, model, dataloader, hooks):
     model.variant = args.tome_variant
     model.pivot_factor = pivot_factor
     model.imp_factor = imp_factor
-    model.use_cls = False
+    model.use_cls = getattr(args, 'use_cls', False)
 
     from contextlib import ExitStack
     import torch

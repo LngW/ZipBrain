@@ -221,6 +221,9 @@ def prepare_model(args): # -> 'torch.nn.Module':
     model = args.model
     dataset = args.dataset
 
+    def fn_patch(model, trace_source, show_shape, tome_scheme):
+        return model
+
     with torch.random.fork_rng():
         if model == "BIOT":
 
@@ -268,7 +271,8 @@ def prepare_model(args): # -> 'torch.nn.Module':
             wp = wrapper(model)
             wp.load_state_dict(model_dict)
             model = wp.model
-            patch.biot(model, trace_source=getattr(args, 'trace_source', False), show_shape=getattr(args, 'show_shape', False))
+            fn_patch = patch.biot
+            # patch.biot(model, trace_source=getattr(args, 'trace_source', False), show_shape=getattr(args, 'show_shape', False))
         elif model == 'LaBraM':
             # This is necessary to register the model to timm, so DO NOT remove it
             import thirdparty.LaBraM.modeling_finetune
@@ -318,7 +322,8 @@ def prepare_model(args): # -> 'torch.nn.Module':
 
             model.load_state_dict(model_dict)
             print(getattr(args, 'show_shape', False))
-            patch.labram(model, trace_source=getattr(args, 'trace_source', False), show_shape=getattr(args, 'show_shape', False))
+            # patch.labram(model, trace_source=getattr(args, 'trace_source', False), show_shape=getattr(args, 'show_shape', False))
+            fn_patch = patch.labram
 
         # elif args.model == 'EEGPT':
         #     from thirdparty.EEGPT.downstream_tueg.Modules.models.EEGPT_mcae_finetune_change import EEGPTClassifier
@@ -386,12 +391,14 @@ def prepare_model(args): # -> 'torch.nn.Module':
             }
 
             model = Pl_tfm_tokenizer_inference(model_args, None, 'workspace/debug/', 1, dataset_params)
-            patch.tfm_tokenizer(model, trace_source=getattr(args, 'trace_source', False), show_shape=getattr(args, 'show_shape', False))
+            # patch.tfm_tokenizer(model, trace_source=getattr(args, 'trace_source', False), show_shape=getattr(args, 'show_shape', False))
+            fn_patch = patch.tfm_tokenizer
 
             # return model
         else:
             raise NotImplementedError
-        
+    
+    fn_patch(model, trace_source=getattr(args, 'trace_source', False), show_shape=getattr(args, 'show_shape', False), tome_scheme=getattr(args, 'tome_scheme', False))
     return model
 
 def calculate_metrics_multiclass(y_hat, y_ground, threshold = None):
@@ -485,7 +492,7 @@ def main(args):
     model.imp_factor = getattr(args, 'imp_factor', None)
     model.pivot_factor = getattr(args, 'pivot_factor', None)
     model.use_cls = getattr(args, 'use_cls', False)
-    model._pinfo['tome_scheme'] = getattr(args, 'tome_scheme', False)
+    # model._pinfo['tome_scheme'] = getattr(args, 'tome_scheme', False)
     # model.show_shape = getattr(args, 'show_shape', False)
 
     # def infer_post_fn(pred, label):
