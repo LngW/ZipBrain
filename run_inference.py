@@ -569,7 +569,7 @@ def pre_main():
     # parser.add_argument("--top_k", type=int, default=0)
     parser.add_argument("--tome_r", type=int, nargs='+', default=[])
     parser.add_argument("--tome_variant", type=str, nargs='+', default=[])
-    parser.add_argument("--pivot-factor", type=float, nargs='+', default=[None], dest='pivot_factor')
+    parser.add_argument("--pivot-factor", type=float, nargs='+', default=[0.05], dest='pivot_factor')
     parser.add_argument("--imp-factor", type=float, nargs='+', default=[None], dest='imp_factor')
     parser.add_argument("--tome-scheme", action='store_true', default=False, dest='tome_scheme')
     
