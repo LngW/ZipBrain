@@ -1,7 +1,7 @@
 import torch
 import math
 
-from .utils import Spliter, select_metric, handle_source, clamp, setdiff_indices
+from .utils import Spliter, handle_source, clamp, setdiff_indices
 
 # In this method, we return three metric, and the three metrics are used for:
 # m0: select pivot tokens
@@ -69,7 +69,7 @@ def apply_kidd(pinfo : dict, r : int, variant : str, x : torch.Tensor, q : torch
         if variant.startswith('kiddp'):
             return kidd_pivot(pinfo, r_, x, m0, split)
         elif variant.startswith('kiddl2'):
-            return kidd_left2(pinfo, r_, x, m0, split)
+            return kidd_left2(pinfo, r_, x, m0, m1, m2, split)
         elif variant.startswith('kiddl'):
             return kidd_left(pinfo, r_, x, m0, split)
         else:
@@ -471,15 +471,17 @@ def kidd_left(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter :
     # x = x / x.norm(2, -1, True) * length_
     # return x
 
-def kidd_left2(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter : Spliter):
+def kidd_left2(pinfo, r : int, x : torch.Tensor, m0 : torch.Tensor, m1 : torch.Tensor, m2 : torch.Tensor, spliter : Spliter):
 
-    m_prot, m_raw = spliter(metric)
+    m0_prot, m0_raw = spliter(m0)
+    m1_prot, m1_raw = spliter(m1)
+    m2_prot, m2_raw = spliter(m2)
 
-    use_cls = pinfo.get('use_cls', True)
+    use_cls = pinfo.get('use_cls', False)
     # pivot_factor = pinfo.get('pivot_factor', [0.05]).pop(0)
 
     # cal improtance by attention score with mean
-    bsz, seq, dim = m_raw.shape
+    bsz, seq, dim = m0_raw.shape
 
     if pinfo['tome_scheme']:
         r = min(r, seq // 2)
@@ -510,22 +512,15 @@ def kidd_left2(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter 
 
     with torch.no_grad():
 
-        if use_cls and pinfo['class_token']:
-            tokens_base = m_prot[:, 0:1]
-        else:
-            tokens_base = m_raw.mean(-2, True) # (bsz, 1, dim)
-        tokens_base = tokens_base / tokens_base.norm(2, -1, True)
-
         # scale the metric matrix
-        metric_norm = m_raw.norm(2, -1, True) # (bsz, seq, 1)
-        m_raw = m_raw / metric_norm
-
-        # select pivot tokens, there will be (bsz, num_pivot) indices
-        idx_pivot = metric_norm.squeeze(-1).topk(num_pivot, sorted=False).indices
-        tokens_pivot = m_raw.gather(-2, idx_pivot[..., None].expand(-1, -1, dim))
+        metric_norm = m0_raw.norm(2, -1, True) # (bsz, seq, 1)
+        idx_pivot = metric_norm[..., 0].topk(num_pivot, sorted=False, largest=False).indices
 
         # calculate redundancy
-        score_dup = (m_raw @ tokens_pivot.transpose(-2, -1)).sum(-1)
+        # select pivot tokens, there will be (bsz, num_pivot) indices
+        dup_space = m1_raw / m1_raw.norm(2, -1, True)
+        tokens_pivot = dup_space.gather(-2, idx_pivot[..., None].expand(-1, -1, dup_space.size(-1)))
+        score_dup = (dup_space @ tokens_pivot.transpose(-2, -1)).sum(-1)
         # idx_tmp = score_dup.scatter(-1, idx_pivot, -torch.inf).sort(descending=True).indices
         idx_tmp = score_dup.sort(descending=True).indices
 
@@ -534,14 +529,19 @@ def kidd_left2(pinfo, r : int, x : torch.Tensor, metric : torch.Tensor, spliter 
         left_idx = idx_tmp[:, r:].sort().values
 
         # find merging target basing on similarity, again, with whole left set
-        tokens_src = m_raw.gather(-2, src_idx[..., None].expand(-1, -1, dim))
-        tokens_left = m_raw.gather(-2, left_idx[..., None].expand(-1, -1, dim))
+        tokens_src = dup_space.gather(-2, src_idx[..., None].expand(-1, -1, dup_space.size(-1)))
+        tokens_left = dup_space.gather(-2, left_idx[..., None].expand(-1, -1, dup_space.size(-1)))
         _, idx_sim = batch_matmul_large_n_wrapper(tokens_src, tokens_left) #.argmax(-1)
         # assert idx_sim.size(1) == r
         tar_idx = left_idx.gather(-1, idx_sim)
 
         # calculate importance now
-        score_imp = (m_raw @ tokens_base.view(bsz, dim, 1)).squeeze(-1) # (bsz, seq)
+        if use_cls and pinfo['class_token']:
+            tokens_base = m2_prot[:, 0:1]
+        else:
+            tokens_base = m2_raw.mean(-2, True) # (bsz, 1, dim)
+        tokens_base = tokens_base / tokens_base.norm(2, -1, True)
+        score_imp = ((m2_raw / m2_raw.norm(2, -1, True)) @ tokens_base.view(bsz, m2_raw.size(-1), 1)).squeeze(-1) # (bsz, seq)
         idx_imp = score_imp.topk(num_imp, -1, True, False).indices
 
         mask_imp = torch.zeros_like(score_imp, dtype=torch.bool)
