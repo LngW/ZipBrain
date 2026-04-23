@@ -6,9 +6,9 @@ from .utils import Spliter, handle_source, clamp, setdiff_indices
 
 KIDD_RND_DUP=(os.getenv('KIDD_RND_DUP', '0') == '1')
 KIDD_RND_IMP=(os.getenv('KIDD_RND_IMP', '0') == '1')
-KIDD_NORM_DUP=(os.getenv('KIDD_RND_IMP', '1') == '1')
-KIDD_NORM_MRG=(os.getenv('KIDD_RND_IMP', '1') == '1')
-KIDD_NORM_IMP=(os.getenv('KIDD_RND_IMP', '1') == '1')
+KIDD_NORM_DUP=(os.getenv('KIDD_NORM_DUP', '1') == '1')
+KIDD_NORM_MRG=(os.getenv('KIDD_NORM_MRG', '1') == '1')
+KIDD_NORM_IMP=(os.getenv('KIDD_NORM_IMP', '1') == '1')
 
 KIDD_PIVOT_BOTTOM=(os.getenv('KIDD_PIVOT_BOTTOM', '0') == '1')
 
@@ -594,13 +594,15 @@ def kidd_left2(pinfo, r : int, x : torch.Tensor, m0 : torch.Tensor, m1 : torch.T
         mask_imp = mask_imp.gather(-1, src_idx)
 
         # now only those important tokens have a target, others should be assigned to indices which are not in left_idx
-        tar_idx[~mask_imp] = src_idx[~mask_imp]
+        # tar_idx[~mask_imp] = src_idx[~mask_imp]
+        # tar_idx[~mask_imp] = src_idx[~mask_imp]
+        tar_idx = tar_idx.where(~mask_imp, src_idx)
 
         # shrunk the array from seq to min(num_imp, r)
-        idx_imp_dup = mask_imp.to(dtype=torch.int).topk(num_imp_dup, sorted=False).indices
+        # idx_imp_dup = mask_imp.to(dtype=torch.int).topk(num_imp_dup, sorted=False).indices
 
-        tar_idx = tar_idx.gather(-1, idx_imp_dup)
-        src_idx = src_idx.gather(-1, idx_imp_dup)
+        # tar_idx = tar_idx.gather(-1, idx_imp_dup)
+        # src_idx = src_idx.gather(-1, idx_imp_dup)
 
     def merge(x : torch.Tensor, reduce = 'sum'):
         x_prot, x_raw = spliter(x)

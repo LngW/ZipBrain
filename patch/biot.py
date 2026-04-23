@@ -38,10 +38,10 @@ def make_biot_encoder_class(klass):
                 hop_length = self.hop_length,
                 center = False,
                 onesided = True,
-                return_complex = False, # To make onnx happy: Onnx doesn't support complex-valued version of stft.
+                return_complex = True, # To make onnx happy: Onnx doesn't support complex-valued version of stft.
                 window=self.window, # To make torch happy: Torch print spam message when stft if called without a window.
             )
-            return torch.norm(spectral, 2, -1) # To make onnx happy
+            return torch.abs(spectral)
 
         def forward(self, x, n_channel_offset=0, perturb=False):
             emb_size = self.patch_embedding.projection.out_features
