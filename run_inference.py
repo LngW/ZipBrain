@@ -214,7 +214,7 @@ def prepare_dataloader(args, hooks):
     print(olen(train_loader), olen(val_loader), olen(test_loader))
     return train_loader, test_loader, val_loader
 
-def prepare_model(args): # -> 'torch.nn.Module':
+def prepare_model(args, hooks = None): # -> 'torch.nn.Module':
     import torch
     import patch
 
@@ -502,6 +502,10 @@ def main(args):
     # hooks.handle_post_infer_result = infer_post_fn
     ctx = create_global_context(device, log_dir, cp_dir, 2)
 
+    def record_profile(prof):
+        prof_dir.mkdir(parents=True, exist_ok=True)
+        prof.export_chrome_trace(str(prof_dir / 'profile.json'))
+
     from contextlib import ExitStack
     with ExitStack() as stack:
         stack.push(lambda *_: destructure_global_context(ctx))
@@ -511,7 +515,7 @@ def main(args):
             stack.push(lambda *_: torch.cuda.memory._dump_snapshot(str(prof_dir / 'memory.pickle')))
 
             prof = None
-            stack.push(lambda *_: prof.export_chrome_trace(str(prof_dir / 'profile.json')))
+            stack.push(lambda *_: record_profile(prof))
             prof = stack.enter_context(profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU]))
 
         model = model.to(device)
