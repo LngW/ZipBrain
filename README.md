@@ -72,8 +72,8 @@ pinfo = {
     'trace_source': False,
     'tome_shceme': False,
     'use_cls': False,
-    'pivot_factor': 0.45,
-    'imp_factor': 0.6,
+    'pivot_factor': [0.45],
+    'imp_factor': [0.6],
 }
 ```
 
