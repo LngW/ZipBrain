@@ -29,7 +29,7 @@ After running the command, folders named `BIOT`, `LaBraM` and `TFM_Tokenizer` ca
 
 For your easy replication of our results, we also provide dataset splittion and commandline to obtain our checkpoint.
 
-### Evaluate our method and baselines
+### 3. Evaluate our method and baselines
 
 [run_inference.py](run_inference.py) defines a unified entrance for evaluating all baselines and our method.
 
@@ -40,13 +40,13 @@ python run_inference.py --model BIOT --dataset TUEV --tome_variant 'kiddl2[k]' -
 
 To evaluate other token compression methods, please replace 'kiddl2[k]' with other varaint names.  
 Currently we support:
-* ToMe: --tome_variant tome
-* ToFU: --tome_variant tofu
-* FasterVLM: --tome_variant clsp
-* TR-PTS: --tome_variant clsm
-* FasterVLM*: --tome_variant meanp
-* TR-PTS*: --tome_variant meanm
-* DART^: --tome_variant 'dartp[k,x]'
+* ToMe: `--tome_variant tome`
+* ToFU: `--tome_variant tofu`
+* FasterVLM: `--tome_variant clsp`
+* TR-PTS: `--tome_variant clsm`
+* FasterVLM*: `--tome_variant meanp`
+* TR-PTS*: `--tome_variant meanm`
+* DART^: `--tome_variant 'dartp[k,x]'`
 
 ## Integrate into new models
 
@@ -87,11 +87,9 @@ pinfo = {
 
 Both `pivot_factor` and `imp_factor` affect the performance of our method heavily so they should be adjusted carefully.
 
-<!-- ### The patching way -->
-
 ### **The Patching Way**
 
-When you want to inject code without modifying the original source files, you can use Python’s **duck typing** feature. You can find an example implementation in [`./patch/biot.py`](./patch/biot.py).
+When you want to inject code without modifying the original source files, you can use Python’s **duck typing** feature. You can find an example implementation in [`./patch/biot.py#L116`](./patch/biot.py#L116).
 
 #### **1. Identify Target Classes**
 First, identify which classes need to be patched. We recommend patching at least the following:
@@ -129,3 +127,5 @@ model.imp_factor = 0.6
 # 4. Use the model as usual
 pred = model(x) 
 ```
+
+Notice that, in this case, the `pinfo` should be generated when applying patches to the model, as done in [`apply_patch`](./patch/biot.py#L137-L149) and [`PatchedClassifier`](./patch/biot.py#L13-L25).
