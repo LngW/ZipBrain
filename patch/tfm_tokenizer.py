@@ -71,6 +71,14 @@ def apply_patch(model, trace_source = False, show_shape = False, tome_scheme = F
     print('Patched TFM-Tokenizer, Layers = {}'.format(len(lat.layers.layers)))
 
 if __name__ == '__main__':
+
+    import sys
+    import importlib
+
+    sys.modules['utils'] = importlib.import_module('thirdparty.TFM_Tokenizer.utils')
+    sys.modules['datasets.data_loaders'] = importlib.import_module('thirdparty.TFM_Tokenizer.datasets.data_loaders')
+    sys.modules['models.tfm_token'] = importlib.import_module('thirdparty.TFM_Tokenizer.models.tfm_token')
+
     from thirdparty.TFM_Tokenizer.tfm_tokenizer_inference import Pl_tfm_tokenizer_inference
     # import yaml
     # import argparse
