@@ -598,7 +598,7 @@ def kidd_left2(pinfo, r : int, x : torch.Tensor, m0 : torch.Tensor, m1 : torch.T
         # now only those important tokens have a target, others should be assigned to indices which are not in left_idx
         # tar_idx[~mask_imp] = src_idx[~mask_imp]
         # tar_idx[~mask_imp] = src_idx[~mask_imp]
-        tar_idx = tar_idx.where(~mask_imp, src_idx)
+        tar_idx = tar_idx.where(mask_imp, src_idx)
 
         # shrunk the array from seq to min(num_imp, r)
         # idx_imp_dup = mask_imp.to(dtype=torch.int).topk(num_imp_dup, sorted=False).indices
