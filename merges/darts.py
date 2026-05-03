@@ -45,10 +45,11 @@ def apply_dart(pinfo : dict, r : int, variant : str, x : torch.Tensor, q : torch
         return x
     
     m0, m1 = find_two_metric(variant, x, q.mean(1), k.mean(1), v.mean(1))
-
-    if variant.startswith('dartpa'):
+    if variant.startswith('dartpo'):
+        return original_dartp(pinfo, r_, x, m0, split)
+    elif variant.startswith('dartpa'):
         return dart_pruneA(pinfo, r_, x, m0, split)
-    if variant.startswith('dartp'):
+    elif variant.startswith('dartp'):
         return dart_prune(pinfo, r_, x, m0.detach(), m1.detach(), split)
     else:
         return x
@@ -264,3 +265,75 @@ def get_retained_image_token_(config: dict, r, last_layer_state: torch.Tensor, a
 
 def dart_pruneA(pinfo, r, x, metric : torch.Tensor, split):
     return __dart_impl0(pinfo, r, x, metric, split)
+
+def original_dartp(
+    pinfo : dict,
+    r : int,
+    x: torch.Tensor,
+    m: torch.Tensor,
+    # DART_config: dict
+    spliter,
+) -> torch.Tensor:
+    """
+    Simplified version of DART token reduction, assuming NO text tokens (only image tokens).
+    
+    Args:
+        last_layer_state (torch.Tensor): Hidden states from the last layer (e.g., [1, seq_len, hidden_dim]).
+        any_states (torch.Tensor): States from the pruned layer (e.g., [1, seq_len, any_dim]).
+        DART_config (dict): Configuration containing 'image_token_start_index', 'image_token_length',
+                            'pivot_image_token', 'reduction_ratio', and optionally 'max_num_trunction'.
+    
+    Returns:
+        torch.Tensor: Tensor containing indices of the retained image tokens.
+    """
+
+    x_prot, x_raw = spliter(x)
+    x_prot : torch.Tensor = x_prot
+    x_raw : torch.Tensor = x_raw
+
+    m_prot, m_raw = spliter(m)
+
+    image_token_start_index = 0 #DART_config['image_token_start_index']
+    image_token_length = x_raw.shape[1] #DART_config['image_token_length']
+    MAX_NUM_TRUNCTION = None #DART_config.get('max_num_trunction')
+    pivot_image_token = max(math.floor(image_token_length * pinfo.get('pivot_factor', [0.05]).pop(0)), 1)
+    reduction_ratio = r / image_token_length #DART_config['reduction_ratio']
+    
+    device = x_raw.device
+    
+    # Calculate TOKEN_TOPK based only on image tokens
+    token_topk = math.ceil(
+        (MAX_NUM_TRUNCTION if MAX_NUM_TRUNCTION is not None else (image_token_length * (1 - reduction_ratio))) 
+        // pivot_image_token
+    )
+    
+    # Extract image token states
+    k_states_image_token = m_raw[0] #any_states[0, image_token_start_index : image_token_start_index + image_token_length, :]
+    k_states_image_token_L1_norm = torch.norm(k_states_image_token, p=1, dim=-1)
+    
+    # Select pivot tokens
+    image_indices = (k_states_image_token_L1_norm.topk(pivot_image_token).indices + image_token_start_index).tolist() 
+    indices_set = set(image_indices)
+    
+    valid_indices = set(range(image_token_start_index, image_token_start_index + image_token_length)) - set(image_indices)
+    
+    valid_indices_list = list(valid_indices)  
+    for item in list(indices_set):
+        if not valid_indices_list: break
+        
+        valid_vectors = x_raw[0, valid_indices_list, :]
+        cos_sim = -torch.nn.functional.cosine_similarity(x_raw[0, item, :], valid_vectors, dim=-1)
+        
+        # Ensure token_topk does not exceed number of available valid indices
+        current_k = min(token_topk, len(valid_indices_list))
+        top_k_indices = cos_sim.topk(current_k).indices
+        
+        top_k_real_indices = [valid_indices_list[i] for i in top_k_indices]
+        indices_set.update(top_k_real_indices)
+        
+        valid_indices.difference_update(top_k_real_indices)
+        valid_indices_list = list(valid_indices)  
+    
+    x_raw_ = x_raw[0].take_along_dim(torch.tensor(list(indices_set), device=device).unsqueeze(-1), -2)
+    return torch.cat([x_prot, x_raw_.unsqueeze(0)], -2)
+    # return torch.tensor(list(indices_set), device=device)
