@@ -28,3 +28,6 @@
 [submodule "thirdparty/DART"]
 	path = thirdparty/DART
 	url = https://github.com/ZichenWen1/DART.git
+[submodule "thirdparty/PPT"]
+	path = thirdparty/PPT
+	url = https://github.com/xjwu1024/PPT
