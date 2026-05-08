@@ -31,3 +31,9 @@
 [submodule "thirdparty/PPT"]
 	path = thirdparty/PPT
 	url = https://github.com/xjwu1024/PPT
+[submodule "thirdparty/STEEGFormer"]
+	path = thirdparty/STEEGFormer
+	url = https://github.com/LiuyinYang1101/STEEGFormer
+[submodule "thirdparty/CodeBrain"]
+	path = thirdparty/CodeBrain
+	url = https://github.com/jingyingma01/CodeBrain
