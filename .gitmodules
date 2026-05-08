@@ -37,3 +37,9 @@
 [submodule "thirdparty/CodeBrain"]
 	path = thirdparty/CodeBrain
 	url = https://github.com/jingyingma01/CodeBrain
+[submodule "thirdparty/evit"]
+	path = thirdparty/evit
+	url = https://github.com/youweiliang/evit
+[submodule "thirdparty/prune_and_merge"]
+	path = thirdparty/prune_and_merge
+	url = https://github.com/NUST-Machine-Intelligence-Laboratory/prune_and_merge
