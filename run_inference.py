@@ -275,8 +275,8 @@ def prepare_model(args, hooks = None): # -> 'torch.nn.Module':
             # patch.biot(model, trace_source=getattr(args, 'trace_source', False), show_shape=getattr(args, 'show_shape', False))
         elif model == 'LaBraM':
             # This is necessary to register the model to timm, so DO NOT remove it
-            import thirdparty.LaBraM.modeling_finetune
-            from timm.models import create_model
+            from thirdparty.LaBraM import modeling_finetune
+            # from timm.models import create_model
 
             patch_time_embed = False
             if dataset == 'TUAB':
@@ -298,8 +298,8 @@ def prepare_model(args, hooks = None): # -> 'torch.nn.Module':
 
             args.n_classes = saved_args.nb_classes
 
-            model = create_model(
-                saved_args.model,
+            model = modeling_finetune.__dict__[saved_args.model](
+                # saved_args.model,
                 pretrained=False,
                 num_classes=saved_args.nb_classes,
                 drop_rate=saved_args.drop,
@@ -325,7 +325,8 @@ def prepare_model(args, hooks = None): # -> 'torch.nn.Module':
             # patch.labram(model, trace_source=getattr(args, 'trace_source', False), show_shape=getattr(args, 'show_shape', False))
             fn_patch = patch.labram
 
-        # elif args.model == 'EEGPT':
+        elif args.model == 'EEGPT':
+            pass
         #     from thirdparty.EEGPT.downstream_tueg.Modules.models.EEGPT_mcae_finetune_change import EEGPTClassifier
         #     use_channels_names = [      
         #                 'FP1','FPZ', 'FP2',
@@ -348,6 +349,8 @@ def prepare_model(args, hooks = None): # -> 'torch.nn.Module':
         #     model.load_state_dict(state_dict['model'])
 
         #     patch.eegpt(model)
+        elif model == 'STEEG':
+            pass
         # elif args.model == 'CBraMod':
         #     pass
         elif model == 'TFM':

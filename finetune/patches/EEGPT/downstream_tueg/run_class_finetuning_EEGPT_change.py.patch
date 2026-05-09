@@ -1,0 +1,30 @@
+--- thirdparty/EEGPT/downstream_tueg/run_class_finetuning_EEGPT_change.py	2026-01-13 22:30:32.510962244 +0900
++++ finetune/EEGPT/downstream_tueg/run_class_finetuning_EEGPT_change.py	2026-05-10 00:52:14.148167790 +0900
+@@ -232,3 +232,3 @@
+     if args.dataset == 'TUAB':
+-        train_dataset, test_dataset, val_dataset = utils.prepare_TUAB_dataset("../datasets/downstream/tuh_eeg_abnormal/v3.0.1/edf/processed/")
++        train_dataset, test_dataset, val_dataset = utils.prepare_TUAB_dataset("../../../datasets/tuab/eegpt/")
+         ch_names = ['EEG FP1', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
+@@ -240,3 +240,3 @@
+     elif args.dataset == 'TUEV':
+-        train_dataset, test_dataset, val_dataset = utils.prepare_TUEV_dataset("../datasets/downstream/tuh_eeg_events/v2.0.1/edf/processed/")
++        train_dataset, test_dataset, val_dataset = utils.prepare_TUEV_dataset("../../../datasets/tuev/eegpt/")
+         ch_names = ['EEG FP1-REF', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
+@@ -287,3 +287,3 @@
+ 
+-    if True:  # args.distributed:
++    if args.distributed:
+         num_tasks = utils.get_world_size()
+@@ -311,4 +311,7 @@
+     else:
++        num_tasks = 1
++        global_rank = 0
+         sampler_train = torch.utils.data.RandomSampler(dataset_train)
+         sampler_val = torch.utils.data.SequentialSampler(dataset_val)
++        sampler_test = torch.utils.data.SequentialSampler(dataset_test)
+ 
+@@ -368,3 +371,3 @@
+         else:
+-            checkpoint = torch.load(args.finetune, map_location='cpu')
++            checkpoint = torch.load(args.finetune, map_location='cpu', weights_only=False)
+ 

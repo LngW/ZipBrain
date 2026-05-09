@@ -1,0 +1,12 @@
+--- thirdparty/EEGPT/downstream_tueg/utils.py	2026-01-13 22:30:32.510962244 +0900
++++ finetune/EEGPT/downstream_tueg/utils.py	2026-05-10 01:23:38.133230230 +0900
+@@ -489,3 +489,3 @@
+     def __init__(self):
+-        self._scaler = torch.cuda.amp.GradScaler()
++        self._scaler = torch.amp.GradScaler('cuda')
+ 
+@@ -622,3 +622,3 @@
+             else:
+-                checkpoint = torch.load(args.resume, map_location='cpu')
++                checkpoint = torch.load(args.resume, map_location='cpu', weights_only=False)
+             model_without_ddp.load_state_dict(checkpoint['model']) # strict: bool=True, , strict=False

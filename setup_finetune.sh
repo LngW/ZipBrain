@@ -21,6 +21,11 @@ if [ ! -e finetune/TFM_Tokenizer/ ]; then
     cp -r thirdparty/TFM_Tokenizer/ finetune/
 fi
 
+if [ ! -e finetune/EEGPT/ ]; then
+    echo Copying EEGPT from ./thirdparty/ to ./finetune/
+    cp -r thirdparty/EEGPT/ finetune/
+fi
+
 apply_patch()
 {
     patch thirdparty/$1 -i finetune/patches/$1.patch -o finetune/$1
@@ -29,9 +34,19 @@ apply_patch()
 apply_patch LaBraM/run_class_finetuning.py
 apply_patch LaBraM/engine_for_finetuning.py
 apply_patch LaBraM/utils.py
+
 apply_patch BIOT/run_multiclass_supervised.py
 apply_patch BIOT/run_binary_supervised.py
+
 apply_patch TFM_Tokenizer/downstream_transformer_finetuning.py
+
+apply_patch EEGPT/downstream_tueg/finetune_TUAB_EEGPT.sh
+apply_patch EEGPT/downstream_tueg/finetune_TUEV_EEGPT.sh
+apply_patch EEGPT/downstream_tueg/engine_for_finetuning_EEGPT.py
+apply_patch EEGPT/downstream_tueg/run_class_finetuning_EEGPT_change_tuev.py
+apply_patch EEGPT/downstream_tueg/run_class_finetuning_EEGPT_change.py
+apply_patch EEGPT/downstream_tueg/Modules/models/EEGPT_mcae_finetune_change_tuev.py
+apply_patch EEGPT/downstream_tueg/utils.py
 
 cur_dir=$(pwd)
 
@@ -43,23 +58,40 @@ ln -s $(pwd)/dataset_configs.finetune.yaml finetune/BIOT/dataset_configs.yaml
 ln -s $(pwd)/dataset_configs.finetune.yaml finetune/LaBraM/dataset_configs.yaml
 ln -s $(pwd)/dataset_configs.finetune.yaml finetune/TFM_Tokenizer/dataset_configs.yaml
 
+ln -sT $cur_dir/datasets/tuab/labram datasets/tuab/eegpt
+ln -sT $cur_dir/datasets/tuev/labram datasets/tuev/eegpt
+
 echo
 echo setting up venv for BIOT
 cd $cur_dir/finetune/BIOT/
-uv venv -p 312 --clear
+if [ ! -e .venv ]; then
+    uv venv -p 312 --clear
+fi
 uv pip sync -q ../requirements.biot.txt --torch-backend cu118
 
 echo
 echo setting up venv for LaBraM
 cd $cur_dir/finetune/LaBraM
-uv venv -p 312 --clear
+if [ ! -e .venv ]; then
+    uv venv -p 312 --clear
+fi
 uv pip sync -q ../requirements.labram.txt --torch-backend cu118
 
 echo
 echo setting up venv for TFM_Tokenizer
 cd $cur_dir/finetune/TFM_Tokenizer
-uv venv -p 312 --clear
+if [ ! -e .venv ]; then
+    uv venv -p 312 --clear
+fi
 uv pip sync -q ../requirements.tfm.txt --torch-backend cu118
+
+echo
+echo setting up venv for EEGPT
+cd $cur_dir/finetune/EEGPT
+if [ ! -e .venv ]; then
+    uv venv -p 312 --clear
+fi
+uv pip sync -q ../requirements.labram.txt --torch-backend cu118 # EEGPT can use same venv as labram
 
 cd $cur_dir
 

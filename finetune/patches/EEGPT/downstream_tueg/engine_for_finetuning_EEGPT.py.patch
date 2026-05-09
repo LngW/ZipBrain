@@ -1,0 +1,29 @@
+--- thirdparty/EEGPT/downstream_tueg/engine_for_finetuning_EEGPT.py	2026-01-13 22:30:32.510962244 +0900
++++ finetune/EEGPT/downstream_tueg/engine_for_finetuning_EEGPT.py	2026-05-10 01:38:30.350198594 +0900
+@@ -76,3 +76,3 @@
+         else:
+-            with torch.cuda.amp.autocast():
++            with torch.amp.autocast('cuda'):
+                 loss, output = train_class_batch(
+@@ -180,3 +180,3 @@
+         # compute output
+-        with torch.cuda.amp.autocast():
++        with torch.amp.autocast('cuda'):
+             output = model(EEG)
+@@ -190,3 +190,3 @@
+ 
+-        results = utils.get_metrics(output.numpy(), target.numpy(), metrics, is_binary)
++        # results = utils.get_metrics(output.numpy(), target.numpy(), metrics, is_binary)
+         pred.append(output)
+@@ -196,4 +196,4 @@
+         metric_logger.update(loss=loss.item())
+-        for key, value in results.items():
+-            metric_logger.meters[key].update(value, n=batch_size)
++        # for key, value in results.items():
++        #     metric_logger.meters[key].update(value, n=batch_size)
+         #metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
+@@ -208,2 +208,4 @@
+     ret = utils.get_metrics(pred, true, metrics, is_binary, 0.5)
++    for key, value in ret.items():
++        metric_logger.meters[key].update(value, n=len(true))
+     ret['loss'] = metric_logger.loss.global_avg

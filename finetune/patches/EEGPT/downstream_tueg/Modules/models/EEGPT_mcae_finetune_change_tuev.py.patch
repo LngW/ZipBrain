@@ -1,0 +1,17 @@
+--- thirdparty/EEGPT/downstream_tueg/Modules/models/EEGPT_mcae_finetune_change_tuev.py	2026-03-21 22:53:23.539264535 +0900
++++ finetune/EEGPT/downstream_tueg/Modules/models/EEGPT_mcae_finetune_change_tuev.py	2026-05-10 01:18:31.221379249 +0900
+@@ -569,3 +569,3 @@
+         super(Conv1dWithConstraint, self).__init__(*args, **kwargs)
+-    @autocast(True)
++    # @autocast(True)
+     def forward(self, x):
+@@ -583,3 +583,3 @@
+         super(LinearWithConstraint, self).__init__(*args, **kwargs)
+-    @autocast(True)
++    # @autocast(True)
+     def forward(self, x):
+@@ -601,3 +601,3 @@
+ 
+-    @autocast(True)
++    # @autocast(True)
+     def forward(self, x):
