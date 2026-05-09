@@ -1,5 +1,5 @@
 --- thirdparty/EEGPT/downstream_tueg/run_class_finetuning_EEGPT_change_tuev.py	2026-01-13 22:30:32.510962244 +0900
-+++ finetune/EEGPT/downstream_tueg/run_class_finetuning_EEGPT_change_tuev.py	2026-05-10 01:24:00.524571846 +0900
++++ finetune/EEGPT/downstream_tueg/run_class_finetuning_EEGPT_change_tuev.py	2026-05-10 01:56:30.862909122 +0900
 @@ -233,3 +233,3 @@
      if args.dataset == 'TUAB':
 -        train_dataset, test_dataset, val_dataset = utils.prepare_TUAB_dataset("../datasets/downstream/tuh_eeg_abnormal/v3.0.1/edf/processed/")

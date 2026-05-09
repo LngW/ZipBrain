@@ -1,5 +1,5 @@
 --- thirdparty/EEGPT/downstream_tueg/engine_for_finetuning_EEGPT.py	2026-01-13 22:30:32.510962244 +0900
-+++ finetune/EEGPT/downstream_tueg/engine_for_finetuning_EEGPT.py	2026-05-10 01:38:30.350198594 +0900
++++ finetune/EEGPT/downstream_tueg/engine_for_finetuning_EEGPT.py	2026-05-10 01:56:30.862909122 +0900
 @@ -76,3 +76,3 @@
          else:
 -            with torch.cuda.amp.autocast():

@@ -1,5 +1,5 @@
 --- thirdparty/EEGPT/downstream_tueg/utils.py	2026-01-13 22:30:32.510962244 +0900
-+++ finetune/EEGPT/downstream_tueg/utils.py	2026-05-10 01:23:38.133230230 +0900
++++ finetune/EEGPT/downstream_tueg/utils.py	2026-05-10 01:56:30.870242453 +0900
 @@ -489,3 +489,3 @@
      def __init__(self):
 -        self._scaler = torch.cuda.amp.GradScaler()
