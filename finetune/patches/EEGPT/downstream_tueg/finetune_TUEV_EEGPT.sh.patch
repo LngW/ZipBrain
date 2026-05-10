@@ -1,5 +1,5 @@
 --- thirdparty/EEGPT/downstream_tueg/finetune_TUEV_EEGPT.sh	2026-01-13 22:30:32.510962244 +0900
-+++ finetune/EEGPT/downstream_tueg/finetune_TUEV_EEGPT.sh	2026-05-10 02:16:13.425230321 +0900
++++ finetune/EEGPT/downstream_tueg/finetune_TUEV_EEGPT.sh	2026-05-10 23:49:02.490713995 +0900
 @@ -15,4 +15,5 @@
  # Please refer to `run_class_finetuning_EEGPT_change_tuev.py` for the meaning of the following hyperreferences
 -CUDA_VISIBLE_DEVICES=4,5 OMP_NUM_THREADS=1 python -m torch.distributed.run --nproc_per_node=${GPUS_PER_NODE} \

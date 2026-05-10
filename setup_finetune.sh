@@ -54,6 +54,7 @@ apply_patch EEGPT/downstream_tueg/utils.py
 apply_patch EEGPT/downstream/finetune_EEGPT_EarEEG.py EEGPT/downstream/finetune_EEGPT_SleepEDF.py
 apply_patch EEGPT/downstream/finetune_EEGPT_EEGMAT.py EEGPT/downstream/finetune_EEGPT_SleepEDF.py
 apply_patch EEGPT/downstream/finetune_EEGPT_ISRUC.py EEGPT/downstream/finetune_EEGPT_SleepEDF.py
+apply_patch EEGPT/downstream/utils.py
 
 apply_patch EEGPT/downstream/dataset_configs.yaml dataset_configs.yaml .
 
@@ -62,11 +63,14 @@ cur_dir=$(pwd)
 ln -s $(pwd)/data_loaders.py finetune/BIOT/data_loaders.py
 ln -s $(pwd)/data_loaders.py finetune/LaBraM/data_loaders.py
 ln -s $(pwd)/data_loaders.py finetune/TFM_Tokenizer/data_loaders.py
+ln -s $(pwd)/data_loaders.py finetune/EEGPT/downstream/data_loaders.py
 
 ln -s $(pwd)/dataset_configs.finetune.yaml finetune/BIOT/dataset_configs.yaml
 ln -s $(pwd)/dataset_configs.finetune.yaml finetune/LaBraM/dataset_configs.yaml
 ln -s $(pwd)/dataset_configs.finetune.yaml finetune/TFM_Tokenizer/dataset_configs.yaml
+# We use patch here for generating the dataset_configs.yaml in EEGPT/downstream
 
+# This is because they use exactly same preprocessing pipeline
 ln -sT $cur_dir/datasets/tuab/labram datasets/tuab/eegpt
 ln -sT $cur_dir/datasets/tuev/labram datasets/tuev/eegpt
 

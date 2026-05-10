@@ -1,5 +1,5 @@
 --- thirdparty/EEGPT/downstream/finetune_EEGPT_SleepEDF.py	2026-01-13 22:30:32.507362243 +0900
-+++ finetune/EEGPT/downstream/finetune_EEGPT_ISRUC.py	2026-05-10 23:18:49.143326482 +0900
++++ finetune/EEGPT/downstream/finetune_EEGPT_ISRUC.py	2026-05-10 23:49:02.497913994 +0900
 @@ -38,3 +38,3 @@
          super().__init__()    
 -        self.chans_num = len(use_channels_names)

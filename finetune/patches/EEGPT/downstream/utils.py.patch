@@ -1,0 +1,11 @@
+--- thirdparty/EEGPT/downstream/utils.py	2026-01-13 22:30:32.510962244 +0900
++++ finetune/EEGPT/downstream/utils.py	2026-05-10 20:44:22.882139276 +0900
+@@ -31,5 +31,5 @@
+ data_path = os.path.join(root_path,'Data','BCIC_2a_0_38HZ')
+-if not os.path.exists(data_path):
+-    print('BCIC_2a_0_38HZ数据不存在，开始初始化！')
+-    Load_BCIC_2a_raw_data(0,4,[0,38])
++# if not os.path.exists(data_path):
++#     print('BCIC_2a_0_38HZ数据不存在，开始初始化！')
++#     Load_BCIC_2a_raw_data(0,4,[0,38])
+         

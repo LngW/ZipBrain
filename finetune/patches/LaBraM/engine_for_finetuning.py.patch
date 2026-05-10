@@ -1,5 +1,5 @@
 --- thirdparty/LaBraM/engine_for_finetuning.py	2026-01-19 14:47:38.540255299 +0900
-+++ finetune/LaBraM/engine_for_finetuning.py	2026-05-10 01:56:30.859242458 +0900
++++ finetune/LaBraM/engine_for_finetuning.py	2026-05-10 23:49:02.487113994 +0900
 @@ -42,3 +42,3 @@
      header = 'Epoch: [{}]'.format(epoch)
 -    print_freq = 10
