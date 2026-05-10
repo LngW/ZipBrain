@@ -1,5 +1,5 @@
 --- thirdparty/EEGPT/downstream/finetune_EEGPT_SleepEDF.py	2026-01-13 22:30:32.507362243 +0900
-+++ finetune/EEGPT/downstream/finetune_EEGPT_EEGMAT.py	2026-05-10 23:49:02.497913994 +0900
++++ finetune/EEGPT/downstream/finetune_EEGPT_EEGMAT.py	2026-05-11 00:12:18.547711980 +0900
 @@ -32,3 +32,3 @@
  
 -use_channels_names = ['F3', 'F4', 'C3', 'C4', 'P3','P4', 'FPZ', 'FZ', 'CZ', 'CPZ', 'PZ', 'POZ', 'OZ' ]
@@ -50,12 +50,14 @@
 +        loss = self.loss_fn(logit, label.float())
 +        accuracy = (logit > 0.5).float().mean().cpu()
          # Logging to TensorBoard by default
-@@ -142,3 +144,4 @@
+@@ -142,4 +144,5 @@
          
 -        metrics = ["accuracy", "balanced_accuracy", "cohen_kappa", "f1_weighted", "f1_macro", "f1_micro"]
-+        metrics = ["accuracy", "balanced_accuracy", "precision", "recall", "cohen_kappa", "f1", "roc_auc"]
+-        results = get_metrics(y_score.cpu().numpy(), label.cpu().numpy(), metrics, False)
++        metrics = ["accuracy", "balanced_accuracy", "roc_auc", "pr_auc"]
 +        # metrics = ["accuracy", "balanced_accuracy", "cohen_kappa", "f1_weighted", "f1_macro", "f1_micro"]
-         results = get_metrics(y_score.cpu().numpy(), label.cpu().numpy(), metrics, False)
++        results = get_metrics(y_score.cpu().numpy(), label.cpu().numpy(), metrics, True)
+         
 @@ -153,7 +156,8 @@
          x, y = batch
 -        label = y.long()
