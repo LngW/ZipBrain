@@ -27,8 +27,11 @@ if [ ! -e finetune/EEGPT/ ]; then
 fi
 
 apply_patch()
-{
-    patch thirdparty/$1 -i finetune/patches/$1.patch -o finetune/$1
+{   
+    local tar=$1
+    local src=${2:-"$tar"}
+    local base=${3:-"thirdparty"}
+    patch $base/$src -i finetune/patches/$tar.patch -o finetune/$tar
 }
 
 apply_patch LaBraM/run_class_finetuning.py
@@ -47,6 +50,12 @@ apply_patch EEGPT/downstream_tueg/run_class_finetuning_EEGPT_change_tuev.py
 apply_patch EEGPT/downstream_tueg/run_class_finetuning_EEGPT_change.py
 apply_patch EEGPT/downstream_tueg/Modules/models/EEGPT_mcae_finetune_change_tuev.py
 apply_patch EEGPT/downstream_tueg/utils.py
+
+apply_patch EEGPT/downstream/finetune_EEGPT_EarEEG.py EEGPT/downstream/finetune_EEGPT_SleepEDF.py
+apply_patch EEGPT/downstream/finetune_EEGPT_EEGMAT.py EEGPT/downstream/finetune_EEGPT_SleepEDF.py
+apply_patch EEGPT/downstream/finetune_EEGPT_ISRUC.py EEGPT/downstream/finetune_EEGPT_SleepEDF.py
+
+apply_patch EEGPT/downstream/dataset_configs.yaml dataset_configs.yaml .
 
 cur_dir=$(pwd)
 
@@ -91,7 +100,7 @@ cd $cur_dir/finetune/EEGPT
 if [ ! -e .venv ]; then
     uv venv -p 312 --clear
 fi
-uv pip sync -q ../requirements.labram.txt --torch-backend cu118 # EEGPT can use same venv as labram
+uv pip sync -q ../requirements.eegpt.txt --torch-backend cu118
 
 cd $cur_dir
 

@@ -1,0 +1,60 @@
+--- thirdparty/EEGPT/downstream/finetune_EEGPT_SleepEDF.py	2026-01-13 22:30:32.507362243 +0900
++++ finetune/EEGPT/downstream/finetune_EEGPT_ISRUC.py	2026-05-10 23:18:49.143326482 +0900
+@@ -38,3 +38,3 @@
+         super().__init__()    
+-        self.chans_num = len(use_channels_names)
++        self.chans_num = 6 #len(use_channels_names)
+         self.num_class = 5
+@@ -58,6 +58,6 @@
+         self.target_encoder = target_encoder
+-        self.chans_id       = target_encoder.prepare_chan_ids(use_channels_names)
++        self.chans_id       = None #target_encoder.prepare_chan_ids(use_channels_names)
+         
+         # -- load checkpoint
+-        pretrain_ckpt = torch.load(load_path)
++        pretrain_ckpt = torch.load(load_path, weights_only=False)
+         
+@@ -70,4 +70,5 @@
+         self.target_encoder.load_state_dict(target_encoder_stat)
++        self.target_encoder.chan_embed.reset_parameters()
+ 
+-        self.chan_conv       = Conv1dWithConstraint(2, self.chans_num, 1, max_norm=1)
++        self.chan_conv       = Conv1dWithConstraint(self.chans_num, self.chans_num, 1, max_norm=1)
+         
+@@ -92,3 +93,3 @@
+         self.target_encoder.eval()
+-        z = self.target_encoder(x, self.chans_id.to(x))
++        z = self.target_encoder(x, )#self.chans_id.to(x))
+         
+@@ -194,13 +195,18 @@
+ # Train Data Num : 5Class: 36914 13604 34722 7922 15398
+-subjects = [0, 2, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 24, 25, 26, 29, 30, 31, 32, 33, 34, 35, 37, 38, 40, 42, 44, 45, 46, 47, 48, 49, 51, 52, 53, 54, 55, 56, 57, 58, 59, 61, 62, 63, 64, 65, 66, 71, 72, 73, 74, 75, 76, 77, 81, 82]
+-N = len(subjects)//10
+-set_all = set(subjects)
+-for fold in range(10):
+-    set_valid = set(subjects[fold*N:(fold+1)*N])
+-    set_train = set_all - set_valid
++# subjects = [0, 2, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 24, 25, 26, 29, 30, 31, 32, 33, 34, 35, 37, 38, 40, 42, 44, 45, 46, 47, 48, 49, 51, 52, 53, 54, 55, 56, 57, 58, 59, 61, 62, 63, 64, 65, 66, 71, 72, 73, 74, 75, 76, 77, 81, 82]
++# N = len(subjects)//10
++# set_all = set(subjects)
++# for fold in range(10):
++    # set_valid = set(subjects[fold*N:(fold+1)*N])
++    # set_train = set_all - set_valid
+ 
+-    train_dataset = torchvision.datasets.DatasetFolder(root="../datasets/downstream/sleep_edf/TrainFold", loader=lambda x: torch.load(x),  extensions=[f'.s{i}' for i in set_train])
+-    valid_dataset = torchvision.datasets.DatasetFolder(root="../datasets/downstream/sleep_edf/TrainFold", loader=lambda x: torch.load(x), extensions=[f'.s{i}' for i in set_valid])
++    # train_dataset = torchvision.datasets.DatasetFolder(root="../datasets/downstream/sleep_edf/TrainFold", loader=lambda x: torch.load(x),  extensions=[f'.s{i}' for i in set_train])
++    # valid_dataset = torchvision.datasets.DatasetFolder(root="../datasets/downstream/sleep_edf/TrainFold", loader=lambda x: torch.load(x), extensions=[f'.s{i}' for i in set_valid])
+ 
+     # -- begin Training ------------------------------
++if __name__ == '__main__':
++
++    import data_loaders
++    train_dataset = data_loaders.get_dataloaders('ISRUC', 'train', 200)
++    valid_dataset = data_loaders.get_dataloaders('ISRUC', 'val', 200)
+ 
+@@ -233,3 +239,3 @@
+                         callbacks=callbacks,
+-                        logger=[pl_loggers.TensorBoardLogger('./logs/', name="EEGPT_SLEEPEDF_tb", version=f"fold{fold+1}"), 
++                        logger=[pl_loggers.TensorBoardLogger('./logs/', name="EEGPT_SLEEPEDF_tb", version=f"fold1"), 
+                                 pl_loggers.CSVLogger('./logs/', name="EEGPT_SLEEPEDF_csv")])

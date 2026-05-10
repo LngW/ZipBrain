@@ -1,0 +1,17 @@
+--- ./dataset_configs.yaml	2026-04-11 18:10:23.085415120 +0900
++++ finetune/EEGPT/downstream/dataset_configs.yaml	2026-05-10 20:35:01.409369975 +0900
+@@ -3,3 +3,3 @@
+ WORKLOAD:
+-    data_dir: 'datasets/workload/processed_data' 
++    data_dir: '../../../datasets/workload/processed_data' 
+     channels: ''
+@@ -12,3 +12,3 @@
+ EarEEG:
+-    data_dir: 'datasets/earEEG/processed_data' 
++    data_dir: '../../../datasets/earEEG/processed_data' 
+     channels: ''
+@@ -21,3 +21,3 @@
+ ISRUC:
+-    data_dir: 'datasets/ISRUC/processed'
++    data_dir: '../../../datasets/ISRUC/processed'
+     channels: ''

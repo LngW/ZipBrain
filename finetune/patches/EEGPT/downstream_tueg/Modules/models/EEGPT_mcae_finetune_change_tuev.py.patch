@@ -1,4 +1,4 @@
---- thirdparty/EEGPT/downstream_tueg/Modules/models/EEGPT_mcae_finetune_change_tuev.py	2026-03-21 22:53:23.539264535 +0900
+--- thirdparty/EEGPT/downstream_tueg/Modules/models/EEGPT_mcae_finetune_change_tuev.py	2026-05-10 22:43:54.119493116 +0900
 +++ finetune/EEGPT/downstream_tueg/Modules/models/EEGPT_mcae_finetune_change_tuev.py	2026-05-10 01:56:30.870242453 +0900
 @@ -569,3 +569,3 @@
          super(Conv1dWithConstraint, self).__init__(*args, **kwargs)
