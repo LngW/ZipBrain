@@ -43,3 +43,9 @@
 [submodule "thirdparty/prune_and_merge"]
 	path = thirdparty/prune_and_merge
 	url = https://github.com/NUST-Machine-Intelligence-Laboratory/prune_and_merge
+[submodule "thirdparty/BENDR"]
+	path = thirdparty/BENDR
+	url = https://github.com/SPOClab-ca/BENDR
+[submodule "thirdparty/dn3"]
+	path = thirdparty/dn3
+	url = https://github.com/SPOClab-ca/dn3
