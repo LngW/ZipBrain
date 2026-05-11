@@ -1,17 +1,21 @@
 --- thirdparty/EEGPT/downstream/finetune_EEGPT_SleepEDF.py	2026-01-13 22:30:32.507362243 +0900
-+++ finetune/EEGPT/downstream/finetune_EEGPT_EEGMAT.py	2026-05-11 10:20:34.225952145 +0900
++++ finetune/EEGPT/downstream/finetune_EEGPT_EEGMAT.py	2026-05-11 13:14:57.368087388 +0900
 @@ -32,3 +32,3 @@
  
 -use_channels_names = ['F3', 'F4', 'C3', 'C4', 'P3','P4', 'FPZ', 'FZ', 'CZ', 'CPZ', 'PZ', 'POZ', 'OZ' ]
 +# use_channels_names = ['F3', 'F4', 'C3', 'C4', 'P3','P4', 'FPZ', 'FZ', 'CZ', 'CPZ', 'PZ', 'POZ', 'OZ' ]
  
-@@ -38,4 +38,4 @@
+@@ -38,7 +38,7 @@
          super().__init__()    
 -        self.chans_num = len(use_channels_names)
 -        self.num_class = 5
 +        self.chans_num = 16 # len(use_channels_names)
 +        self.num_class = 1
          # init model
+         target_encoder = EEGTransformer(
+-            img_size=[self.chans_num, 256*30],
++            img_size=[self.chans_num, 256*4],
+             patch_size=32*2,
 @@ -58,6 +58,6 @@
          self.target_encoder = target_encoder
 -        self.chans_id       = target_encoder.prepare_chan_ids(use_channels_names)
@@ -33,7 +37,11 @@
 -        self.loss_fn        = torch.nn.CrossEntropyLoss()
 +        self.loss_fn        = torch.nn.BCEWithLogitsLoss()
      
-@@ -92,3 +93,3 @@
+@@ -89,6 +90,6 @@
+         B, C, T = x.shape
+-        x = temporal_interpolation(x, 256*30)
++        x = temporal_interpolation(x, 256*4)
+         x = self.chan_conv(x)
          self.target_encoder.eval()
 -        z = self.target_encoder(x, self.chans_id.to(x))
 +        z = self.target_encoder(x, ) #self.chans_id.to(x))
@@ -95,11 +103,6 @@
 +    train_dataset = data_loaders.get_dataloaders('WORKLOAD', 'train', 200)
 +    valid_dataset = data_loaders.get_dataloaders('WORKLOAD', 'val', 200)
  
-@@ -213,3 +221,3 @@
- 
--    batch_size=8*4
-+    batch_size=8*1
- 
 @@ -227,3 +235,6 @@
      lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval='epoch')
 -    callbacks = [lr_monitor]
@@ -112,6 +115,6 @@
                          callbacks=callbacks,
 -                        logger=[pl_loggers.TensorBoardLogger('./logs/', name="EEGPT_SLEEPEDF_tb", version=f"fold{fold+1}"), 
 -                                pl_loggers.CSVLogger('./logs/', name="EEGPT_SLEEPEDF_csv")])
-+                        logger=[pl_loggers.TensorBoardLogger('./logs/', name="EEGPT_EEGMAT_tb", version=f"fold1"), 
-+                                pl_loggers.CSVLogger('./logs/', name="EEGPT_EEGMAT_csv")])
++                        logger=[pl_loggers.TensorBoardLogger('./logs/', name="EEGPT_EEGMAT_100_tb", version=f"fold1"), 
++                                pl_loggers.CSVLogger('./logs/', name="EEGPT_EEGMAT_100_csv")])
  
