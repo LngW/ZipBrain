@@ -27,6 +27,11 @@ def import_models(args):
         sys.modules['utils'] = importlib.import_module('thirdparty.TFM_Tokenizer.utils')
         sys.modules['datasets.data_loaders'] = importlib.import_module('thirdparty.TFM_Tokenizer.datasets.data_loaders')
         sys.modules['models.tfm_token'] = importlib.import_module('thirdparty.TFM_Tokenizer.models.tfm_token')
+    elif args.model == 'EEGPT':
+        sys.modules['Data_process'] = importlib.import_module('finetune.EEGPT.downstream.Data_process')
+        sys.modules['utils'] = importlib.import_module('finetune.EEGPT.downstream.utils')
+        sys.modules['utils_eval'] = importlib.import_module('finetune.EEGPT.downstream.utils_eval')
+        sys.modules['Modules'] = importlib.import_module('finetune.EEGPT.downstream.Modules')
 
 def prepare_dataloader(args, hooks):
     set_seeds(args)
@@ -79,31 +84,35 @@ def prepare_dataloader(args, hooks):
                 return model(eeg, input_chans = input_chs)
 
             hooks.call_model = call_model
-        # elif model == 'EEGPT':
-        #     from thirdparty.EEGPT.downstream_tueg.utils import prepare_TUAB_dataset
+        elif model == 'EEGPT':
+            from thirdparty.EEGPT.downstream_tueg.utils import prepare_TUAB_dataset, get_input_chans
             
-        #     train_set, test_set, val_set = prepare_TUAB_dataset('./datasets/tuab/eegpt/')
+            train_set, test_set, val_set = prepare_TUAB_dataset('./datasets/tuab/eegpt/')
+            ch_names = ['EEG FP1', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
+                        'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
+            ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
+            # args.nb_classes = 1
+            # metrics = ["pr_auc", "roc_auc", "accuracy", "balanced_accuracy"]
+
+            input_chs = get_input_chans(ch_names)
+            from torch.utils.data import Dataset
+
+            # train_set = train_dataset
+            # val_set = val_dataset
+            # test_set = test_dataset
+
+            from einops import rearrange
+
+            def call_model(model, sample):
+                eeg = rearrange(sample.float(), 'B N (A T) -> B N A T', T=200) / 100
+                return model(eeg, input_chans = input_chs)
+
+            hooks.call_model = call_model
         elif model == 'TFM':
             from thirdparty.TFM_Tokenizer.datasets.data_loaders import TUABloader
             # train_set = TUABloader('./datasets/tuab/tfm_tokenizer/', 'train', 200, None)
             test_set = TUABloader('./datasets/tuab/tfm_tokenizer/', 'test', 200, None)
             # val_set = TUABloader('./datasets/tuab/tfm_tokenizer/', 'val', 200, None)
-    elif dataset in ['WORKLOAD', 'EEGMAT']:
-        from data_loaders import get_dataloaders
-        test_set = get_dataloaders('WORKLOAD', 'test', 200)
-        if model == 'LaBraM':
-            from thirdparty.LaBraM.utils import get_input_chans
-            from einops import rearrange
-
-            ch_names = ['EEG FP1', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
-                        'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
-            ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
-
-            input_chs = get_input_chans(ch_names[:16])
-            def call_model(model, sample):
-                return model(rearrange(sample, "B N (A T) -> B N A T", T=200), input_chans = input_chs)
-            
-            hooks.call_model = call_model
     elif dataset == 'TUEV':
         if model == 'BIOT':
             from thirdparty.BIOT.utils import TUEVLoader
@@ -141,11 +150,52 @@ def prepare_dataloader(args, hooks):
                 return model(eeg, input_chans = input_chs)
 
             hooks.call_model = call_model
+        elif model == 'EEGPT':
+            from thirdparty.EEGPT.downstream_tueg.utils import prepare_TUEV_dataset, get_input_chans
+            
+            train_set, test_set, val_set = prepare_TUEV_dataset('./datasets/tuev/eegpt/')
+            ch_names = ['EEG FP1-REF', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
+                        'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
+            
+            ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
+
+            input_chs = get_input_chans(ch_names)
+            from torch.utils.data import Dataset
+
+            # train_set = train_dataset
+            # val_set = val_dataset
+            # test_set = test_dataset
+
+            from einops import rearrange
+
+            def call_model(model, sample):
+                eeg = rearrange(sample.float(), 'B N (A T) -> B N A T', T=200) / 100
+                return model(eeg, input_chans = input_chs)
+
+            hooks.call_model = call_model
         elif model == 'TFM':
             from thirdparty.TFM_Tokenizer.datasets.data_loaders import TUEVloader
             # train_set = None # TUEVloader('./datasets/tuab/tfm_tokenizer/', 'train', 200, None)
             test_set = TUEVloader('./datasets/tuev/tfm_tokenizer/', 'test', 200, None)
             # val_set = None # TUEVloader('./datasets/tuab/tfm_tokenizer/', 'val', 200, None)
+    elif dataset in ['WORKLOAD', 'EEGMAT']:
+        from data_loaders import get_dataloaders
+        test_set = get_dataloaders('WORKLOAD', 'test', 200)
+        if model == 'LaBraM':
+            from thirdparty.LaBraM.utils import get_input_chans
+            from einops import rearrange
+
+            ch_names = ['EEG FP1', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
+                        'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
+            ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
+
+            input_chs = get_input_chans(ch_names[:16])
+            def call_model(model, sample):
+                return model(rearrange(sample, "B N (A T) -> B N A T", T=200), input_chans = input_chs)
+            
+            hooks.call_model = call_model
+        elif model == 'EEGPT':
+            hooks.call_model = lambda model, sample: model(sample)[1]
     elif dataset in ['ISRUC', 'EarEEG']:
         from data_loaders import get_dataloaders
         ds_name = 'WORKLOAD' if dataset == 'EEGMAT' else dataset
@@ -167,6 +217,8 @@ def prepare_dataloader(args, hooks):
                 return model(rearrange(sample, 'B N (A T) -> B N A T', T=200), input_chans = input_chs)
             
             hooks.call_model = call_model
+        elif model == 'EEGPT':
+            hooks.call_model = lambda model, sample: model(sample)[1]
     elif dataset == 'RANDOM':
         seed = args.seed
 
@@ -326,31 +378,82 @@ def prepare_model(args, hooks = None): # -> 'torch.nn.Module':
             fn_patch = patch.labram
 
         elif args.model == 'EEGPT':
-            pass
-        #     from thirdparty.EEGPT.downstream_tueg.Modules.models.EEGPT_mcae_finetune_change import EEGPTClassifier
-        #     use_channels_names = [      
-        #                 'FP1','FPZ', 'FP2',
-        #         'F7', 'F3', 'FZ', 'F4', 'F8',
-        #         'T7', 'C3', 'CZ', 'C4', 'T8',
-        #         'P7', 'P3', 'PZ', 'P4', 'P8',
-        #                 'O1', 'O2' ]
-        #     ch_names = ['EEG FP1', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
-        #                     'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
-        #     ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
-        #     model = EEGPTClassifier(
-        #         num_classes=1,
-        #         in_channels=len(ch_names), 
-        #         img_size=[len(use_channels_names),2000], 
-        #         use_channels_names=use_channels_names, 
-        #         use_chan_conv=True,
-        #     )
 
-        #     state_dict = torch.load('./finetune/EEGPT/downstream_tueg/checkpoints/finetune_tuab_eegpt/checkpoint-best.pth', weights_only=False)
-        #     model.load_state_dict(state_dict['model'])
+            if args.dataset == 'TUAB':
+                from thirdparty.EEGPT.downstream_tueg.Modules.models.EEGPT_mcae_finetune_change import EEGPTClassifier
+                use_channels_names = [      
+                            'FP1','FPZ', 'FP2',
+                    'F7', 'F3', 'FZ', 'F4', 'F8',
+                    'T7', 'C3', 'CZ', 'C4', 'T8',
+                    'P7', 'P3', 'PZ', 'P4', 'P8',
+                            'O1', 'O2' ]
+                ch_names = ['EEG FP1', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
+                                'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
+                ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
+                args.n_classes = 1
+                model = EEGPTClassifier(
+                    num_classes=args.n_classes,
+                    in_channels=len(ch_names), 
+                    img_size=[len(use_channels_names),2000], 
+                    use_channels_names=use_channels_names, 
+                    use_chan_conv=True,
+                    use_mean_pooling=True,
+                )
 
-        #     patch.eegpt(model)
-        elif model == 'STEEG':
-            pass
+                state_dict = torch.load('./finetune/EEGPT/downstream_tueg/checkpoints/finetune_tuab_eegpt/checkpoint-best.pth', weights_only=False)
+                model.load_state_dict(state_dict['model'])
+            
+            elif args.dataset == 'TUEV':
+                from finetune.EEGPT.downstream_tueg.Modules.models.EEGPT_mcae_finetune_change_tuev import EEGPTClassifier
+
+                args.n_classes = 6
+
+                use_channels_names = [      
+                        'FP1','FPZ', 'FP2',
+                    'F7', 'F3', 'FZ', 'F4', 'F8',
+                    'T7', 'C3', 'CZ', 'C4', 'T8',
+                    'P7', 'P3', 'PZ', 'P4', 'P8',
+                            'O1', 'O2' ]
+                
+                ch_names = ['EEG FP1-REF', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
+                                'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
+                
+                ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
+                model = EEGPTClassifier(
+                    num_classes=args.n_classes,
+                    in_channels=len(ch_names), 
+                    img_size=[len(use_channels_names),1000], 
+                    use_channels_names=use_channels_names, 
+                    use_chan_conv=True,
+                    use_mean_pooling=True,)
+            elif args.dataset in ['EEGMAT', 'WORKLOAD']:
+                from finetune.EEGPT.downstream.finetune_EEGPT_EEGMAT import LitEEGPTCausal
+                model = LitEEGPTCausal.load_from_checkpoint(
+                    './finetune/EEGPT/downstream/checkpoint/EEGPT_EEGMAT/epoch=35-step=1728.ckpt',
+                    load_path = 'finetune/EEGPT/checkpoint/eegpt_mcae_58chs_4s_large4E.ckpt'
+                )
+                args.n_classes = 1
+            elif args.dataset == 'EarEEG':
+                from finetune.EEGPT.downstream.finetune_EEGPT_EarEEG import LitEEGPTCausal
+                model = LitEEGPTCausal.load_from_checkpoint(
+                    './finetune/EEGPT/downstream/checkpoint/EEGPT_EarEEG/epoch=31-step=8512.ckpt', 
+                    load_path = 'finetune/EEGPT/checkpoint/eegpt_mcae_58chs_4s_large4E.ckpt'
+                )
+                args.n_classes = 6
+            elif args.dataset == 'ISRUC':
+                from finetune.EEGPT.downstream.finetune_EEGPT_ISRUC import LitEEGPTCausal
+                model = LitEEGPTCausal.load_from_checkpoint(
+                    './finetune/EEGPT/downstream/checkpoint/EEGPT_ISRUC/epoch=32-step=73425.ckpt',
+                    load_path = 'finetune/EEGPT/checkpoint/eegpt_mcae_58chs_4s_large4E.ckpt'
+                )
+                args.n_classes = 5
+            # else:
+            #     raise NotImplementedError('Unsupported dataset with ')
+
+            fn_patch = patch.eegpt
+            # patch.eegpt(model)
+        # elif model == 'STEEG':
+        #     pass
         # elif args.model == 'CBraMod':
         #     pass
         elif model == 'TFM':
