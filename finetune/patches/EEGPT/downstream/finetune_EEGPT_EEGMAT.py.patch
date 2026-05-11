@@ -1,5 +1,5 @@
 --- thirdparty/EEGPT/downstream/finetune_EEGPT_SleepEDF.py	2026-01-13 22:30:32.507362243 +0900
-+++ finetune/EEGPT/downstream/finetune_EEGPT_EEGMAT.py	2026-05-11 00:12:18.547711980 +0900
++++ finetune/EEGPT/downstream/finetune_EEGPT_EEGMAT.py	2026-05-11 10:20:34.225952145 +0900
 @@ -32,3 +32,3 @@
  
 -use_channels_names = ['F3', 'F4', 'C3', 'C4', 'P3','P4', 'FPZ', 'FZ', 'CZ', 'CPZ', 'PZ', 'POZ', 'OZ' ]
@@ -95,8 +95,23 @@
 +    train_dataset = data_loaders.get_dataloaders('WORKLOAD', 'train', 200)
 +    valid_dataset = data_loaders.get_dataloaders('WORKLOAD', 'val', 200)
  
-@@ -233,3 +241,3 @@
+@@ -213,3 +221,3 @@
+ 
+-    batch_size=8*4
++    batch_size=8*1
+ 
+@@ -227,3 +235,6 @@
+     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval='epoch')
+-    callbacks = [lr_monitor]
++    cp_callback = pl.callbacks.ModelCheckpoint(
++        './checkpoint/' + 'EEGPT_EEGMAT', monitor='valid_roc_auc', save_last=True, save_top_k=3, mode='max'
++    )
++    callbacks = [lr_monitor, cp_callback]
+ 
+@@ -233,4 +244,4 @@
                          callbacks=callbacks,
 -                        logger=[pl_loggers.TensorBoardLogger('./logs/', name="EEGPT_SLEEPEDF_tb", version=f"fold{fold+1}"), 
-+                        logger=[pl_loggers.TensorBoardLogger('./logs/', name="EEGPT_SLEEPEDF_tb", version=f"fold1"), 
-                                 pl_loggers.CSVLogger('./logs/', name="EEGPT_SLEEPEDF_csv")])
+-                                pl_loggers.CSVLogger('./logs/', name="EEGPT_SLEEPEDF_csv")])
++                        logger=[pl_loggers.TensorBoardLogger('./logs/', name="EEGPT_EEGMAT_tb", version=f"fold1"), 
++                                pl_loggers.CSVLogger('./logs/', name="EEGPT_EEGMAT_csv")])
+ 

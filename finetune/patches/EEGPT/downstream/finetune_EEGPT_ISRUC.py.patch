@@ -1,5 +1,5 @@
 --- thirdparty/EEGPT/downstream/finetune_EEGPT_SleepEDF.py	2026-01-13 22:30:32.507362243 +0900
-+++ finetune/EEGPT/downstream/finetune_EEGPT_ISRUC.py	2026-05-10 23:49:02.497913994 +0900
++++ finetune/EEGPT/downstream/finetune_EEGPT_ISRUC.py	2026-05-11 09:55:05.135023676 +0900
 @@ -38,3 +38,3 @@
          super().__init__()    
 -        self.chans_num = len(use_channels_names)
@@ -53,8 +53,18 @@
 +    train_dataset = data_loaders.get_dataloaders('ISRUC', 'train', 200)
 +    valid_dataset = data_loaders.get_dataloaders('ISRUC', 'val', 200)
  
-@@ -233,3 +239,3 @@
+@@ -227,3 +233,6 @@
+     lr_monitor = pl.callbacks.LearningRateMonitor(logging_interval='epoch')
+-    callbacks = [lr_monitor]
++    cp_callback = pl.callbacks.ModelCheckpoint(
++        './checkpoint/' + 'EEGPT_ISRUC', monitor='valid_cohen_kappa', save_last=True, save_top_k=1, mode='max'
++    )
++    callbacks = [lr_monitor, cp_callback]
+ 
+@@ -233,4 +242,4 @@
                          callbacks=callbacks,
 -                        logger=[pl_loggers.TensorBoardLogger('./logs/', name="EEGPT_SLEEPEDF_tb", version=f"fold{fold+1}"), 
-+                        logger=[pl_loggers.TensorBoardLogger('./logs/', name="EEGPT_SLEEPEDF_tb", version=f"fold1"), 
-                                 pl_loggers.CSVLogger('./logs/', name="EEGPT_SLEEPEDF_csv")])
+-                                pl_loggers.CSVLogger('./logs/', name="EEGPT_SLEEPEDF_csv")])
++                        logger=[pl_loggers.TensorBoardLogger('./logs/', name="EEGPT_ISRUC_tb", version=f"fold1"), 
++                                pl_loggers.CSVLogger('./logs/', name="EEGPT_ISRUC_csv")])
+ 
