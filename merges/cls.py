@@ -59,6 +59,8 @@ def apply_cls(pinfo : dict, r : int, variant : str, x : torch.Tensor, q : torch.
         return cls_prune(pinfo, r_, x, attn_score, split)
     elif variant.startswith('clstrpts'):
         return cls_trpts(pinfo, r_, x, attn_score, split)
+    elif variant.startswith('clsevit'):
+        return cls_evit(pinfo, r_, x, q, k, split)
     elif variant.startswith('clsm0'):
         return cls_merge0(pinfo, r_, x, attn_score, split)
     elif variant.startswith('clsm1'):
@@ -192,9 +194,43 @@ def cls_trpts(pinfo, r, x, attn, split : Spliter):
         src = it_raw.gather(-2, src_idx.expand(-1, -1, it.size(-1))) # (B, T, D)
         left = torch.gather(it_raw, -2, left_idx.expand(-1, -1, it.size(-1)))
 
-        return torch.cat([it_prot, left, (score @ src) / score.sum(-1)], dim=-2)
+        return torch.cat([it_prot, left, (score @ src) / score.sum(-1, True)], dim=-2)
     
     handle_source(pinfo, x, merge)
     size, size_ = handle_size(pinfo, x, merge)
 
     return merge(x * size) / size_
+
+def cls_evit(pinfo, r, x, q, k, split : Spliter):
+    x_prot, x_raw = split(x.detach())
+    q_cls = q[:, :, :1, :]
+    _, k_tokens = split(k)
+
+    # (B, H, N, D) @ (B, H, D, 1) -> (B, H, N, 1) -> (B, N, 1) -> (B, 1, N)
+    attn = (k_tokens @ q_cls.transpose(-2, -1)).mean(1).transpose(-2, -1) 
+
+    seq = x_raw.size(1)
+    t = seq - r
+
+    left_idx = torch.topk(attn, t, dim=-1, sorted=False).indices # (B, 1, T)
+    src_idx = setdiff_indices(seq, left_idx) # (B, 1, T)
+
+    score = torch.gather(attn, -1, src_idx) # (B, 1, T)
+
+    left_idx, _ = left_idx.sort(-1, False) # (B, 1, T)
+    left_idx = left_idx[..., 0, :, None] # (B, T, 1)
+    src_idx = src_idx[..., 0, :, None]
+
+    def merge(it, mode = 'sum'):
+        it_prot, it_raw = split(it)
+        # dim = it.size(-1)
+        src = it_raw.gather(-2, src_idx.expand(-1, -1, it.size(-1))) # (B, T, D)
+        left = torch.gather(it_raw, -2, left_idx.expand(-1, -1, it.size(-1)))
+
+        return torch.cat([it_prot, left, (score @ src)], dim=-2)
+    
+    handle_source(pinfo, x, merge)
+    # size, size_ = handle_size(pinfo, x, merge)
+
+    # return merge(x * size) / size_
+    return merge(x)
