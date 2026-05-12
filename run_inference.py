@@ -105,7 +105,7 @@ def prepare_dataloader(args, hooks):
 
             def call_model(model, sample):
                 eeg = rearrange(sample.float(), 'B N (A T) -> B N A T', T=200) / 100
-                return model(eeg, input_chans = input_chs)
+                return model(eeg, chan_ids = input_chs)
 
             hooks.call_model = call_model
         elif model == 'TFM':
@@ -154,12 +154,12 @@ def prepare_dataloader(args, hooks):
             from thirdparty.EEGPT.downstream_tueg.utils import prepare_TUEV_dataset, get_input_chans
             
             train_set, test_set, val_set = prepare_TUEV_dataset('./datasets/tuev/eegpt/')
-            ch_names = ['EEG FP1-REF', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
-                        'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
+            # ch_names = ['EEG FP1-REF', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF', 'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF', 'EEG F7-REF', \
+            #             'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF', 'EEG T6-REF', 'EEG A1-REF', 'EEG A2-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF', 'EEG T1-REF', 'EEG T2-REF']
             
-            ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
+            # ch_names = [name.split(' ')[-1].split('-')[0] for name in ch_names]
 
-            input_chs = get_input_chans(ch_names)
+            # input_chs = get_input_chans(ch_names)
             from torch.utils.data import Dataset
 
             # train_set = train_dataset
@@ -170,7 +170,7 @@ def prepare_dataloader(args, hooks):
 
             def call_model(model, sample):
                 eeg = rearrange(sample.float(), 'B N (A T) -> B N A T', T=200) / 100
-                return model(eeg, input_chans = input_chs)
+                return model(eeg)
 
             hooks.call_model = call_model
         elif model == 'TFM':
@@ -426,6 +426,9 @@ def prepare_model(args, hooks = None): # -> 'torch.nn.Module':
                     use_channels_names=use_channels_names, 
                     use_chan_conv=True,
                     use_mean_pooling=True,)
+
+                state_dict = torch.load('./finetune/EEGPT/downstream_tueg/checkpoints_TUEV/finetune_tuev_eegpt/checkpoint-best.pth', weights_only=False)
+                model.load_state_dict(state_dict['model'])
             elif args.dataset in ['EEGMAT', 'WORKLOAD']:
                 from finetune.EEGPT.downstream.finetune_EEGPT_EEGMAT import LitEEGPTCausal
                 model = LitEEGPTCausal.load_from_checkpoint(
