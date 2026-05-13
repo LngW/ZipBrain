@@ -105,7 +105,7 @@ def prepare_dataloader(args, hooks):
 
             def call_model(model, sample):
                 eeg = rearrange(sample.float(), 'B N (A T) -> B N A T', T=200) / 100
-                return model(eeg, chan_ids = input_chs)
+                return model(eeg)
 
             hooks.call_model = call_model
         elif model == 'TFM':

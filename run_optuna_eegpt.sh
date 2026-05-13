@@ -54,7 +54,7 @@ for ds in ${datasets}; do
     elif [[ "$ds" == "EEGMAT" ]]; then
         # ds=EEGMAT
         for m in "${methods[@]}"; do
-            for r in 1; do
+            for r in 1 2 3; do
                 python $common_args --dataset $ds --tome_variant $m --tome_r 0 $r 0 $r 0 $r 0 $r --log_dir ${m}-${ds} --tome-scheme
             done
         done
@@ -68,7 +68,7 @@ for ds in ${datasets}; do
     elif [[ "$ds" == "EarEEG" ]]; then
         # ds=EarEEG
         for m in "${methods[@]}"; do
-            for r in 1 2 3; do
+            for r in 1; do
                 python $common_args --dataset $ds --tome_variant $m --tome_r 0 $r 0 $r 0 $r 0 $r --log_dir ${m}-${ds} --tome-scheme
             done
         done

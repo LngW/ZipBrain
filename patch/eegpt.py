@@ -87,9 +87,13 @@ def make_block_class(klass):
     return PatchedBlock
 
 def make_classifier_class(klass):
+    from .utils import reset_common_pinfo
     class PatchedClassifier(klass):
         def forward(self, *args, **kwargs):
             depth = len(self.target_encoder.blocks)
+
+            reset_common_pinfo(self, self._pinfo, depth)
+
             self._pinfo["r"] = parse_r(depth, self.r)
             self._pinfo["variant"] = parse_variant(depth, self.variant)
             self._pinfo['shape'] = None
@@ -105,9 +109,13 @@ def make_classifier_class(klass):
     return PatchedClassifier
 
 def make_lit_class(klass):
+    from .utils import reset_common_pinfo
     class PatchedLit(klass):
         def forward(self, *args, **kwargs):
             depth = len(self.target_encoder.blocks)
+
+            reset_common_pinfo(self, self._pinfo, depth)
+
             self._pinfo["r"] = parse_r(depth, self.r)
             self._pinfo["variant"] = parse_variant(depth, self.variant)
             self._pinfo['shape'] = None
