@@ -108,6 +108,23 @@ def make_classifier_class(klass):
 
     return PatchedClassifier
 
+def make_eeg_transformer_class(klass):
+    class PatchedEEGTransformer(klass):
+        def forward(self, x, chan_ids=None, mask_x=None, mask_t=None):
+            b = x.shape[0]
+            c, n, *_ = self.num_patches
+
+            if chan_ids is None:
+                chan_ids = torch.arange(0, c)     
+            chan_ids = chan_ids.to(device = x.device, dtype=torch.long)
+            pte = self.chan_embed(chan_ids).unsqueeze(0) # (1, 1, C, D)
+            pte = pte.flatten(0, 1).expand(b * n, -1, -1) # (b * n, c, d)
+            self._pinfo['pte'] = pte
+
+            return super().forward(x, chan_ids, mask_x, mask_t)
+
+    return PatchedEEGTransformer
+
 def make_lit_class(klass):
     from .utils import reset_common_pinfo
     class PatchedLit(klass):
@@ -137,6 +154,7 @@ def apply_patch(model, trace_source = False, show_shape = False, tome_scheme = F
     PatchedClassifier = make_classifier_class(model.__class__) if model.__class__.__name__ == 'EEGPTClassifier' else make_lit_class(model.__class__)
     PatchedBlock = make_block_class(model.target_encoder.blocks[0].__class__)
     PatchedAttention = make_attention_class(model.target_encoder.blocks[0].attn.__class__)
+    PatchedEEGTransformer = make_eeg_transformer_class(model.target_encoder.__class__)
 
     pinfo = {
         'r': 0,
@@ -156,6 +174,9 @@ def apply_patch(model, trace_source = False, show_shape = False, tome_scheme = F
     model.r = 0
     model.variant = ''
     model._pinfo = pinfo
+
+    model.target_encoder.__class__ = PatchedEEGTransformer
+    model.target_encoder._pinfo = pinfo
 
     for blk in model.target_encoder.blocks:
         blk.__class__ = PatchedBlock

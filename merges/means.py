@@ -52,6 +52,8 @@ def apply_means(pinfo : dict, r : int, variant : str, x : torch.Tensor, q : torc
 
     if variant.startswith('meanp'):
         return mean_prune(pinfo, r_, x, attn_score, split)
+    elif variant.startswith('meantrpts2'):
+        return mean_trpts2(pinfo, r_, x, attn_score, split)
     elif variant.startswith('meantrpts'):
         return mean_trpts(pinfo, r_, x, attn_score, split)
     elif variant.startswith('meanevit'):
@@ -196,6 +198,45 @@ def mean_trpts(pinfo, r, x, attn, split : Spliter):
 
     return merge(x * size) / size_
 
+def mean_trpts2(pinfo, r, x, attn, split : Spliter):
+    x_prot, x_raw = split(x.detach())
+
+    seq = x_raw.size(1)
+    r = min(r + 1, seq) # since this method generate append one token to the remaining tokens, we remove one more token for consistant compression ratio as other methods
+
+    t = seq - r
+
+    left_idx = torch.topk(attn, t, dim=-1, sorted=False).indices # (B, 1, T)
+    src_idx = setdiff_indices(seq, left_idx) # (B, 1, T)
+
+    score = torch.gather(attn, -1, src_idx) # (B, 1, T)
+
+    left_idx, _ = left_idx.sort(-1, False) # (B, 1, T)
+    left_idx = left_idx[..., 0, :, None] # (B, T, 1)
+    src_idx = src_idx[..., 0, :, None]
+
+    # d = x_raw.shape[-1]
+    # x_tar = x_raw.gather(-2, left_idx.expand(-1, -1, d))
+    # x_src = x_raw.gather(-2, src_idx.expand(-1, -1, d))
+
+    # idx_max = (x_src @ x_tar.transpose(-2, -1)).argmax(-1, True)
+
+    # # tar_idx = left_idx.gather(-2, idx_max)
+    # tar_idx = idx_max
+
+    def merge(it, mode = 'sum'):
+        it_prot, it_raw = split(it)
+        # dim = it.size(-1)
+        src = it_raw.gather(-2, src_idx.expand(-1, -1, it.size(-1))) # (B, T, D)
+        left = torch.gather(it_raw, -2, left_idx.expand(-1, -1, it.size(-1)))
+
+        return torch.cat([it_prot, left, (score @ src) / score.sum(-1, True)], dim=-2)
+    
+    handle_source(pinfo, x, merge)
+    size, size_ = handle_size(pinfo, x, merge)
+
+    return merge(x * size) / size_
+
 def mean_evit(pinfo, r, x, q, k, split : Spliter):
     x_prot, x_raw = split(x.detach())
     q_mean = split(q)[1].mean(-2, True)
@@ -205,6 +246,7 @@ def mean_evit(pinfo, r, x, q, k, split : Spliter):
     attn = (k_tokens @ q_mean.transpose(-2, -1)).mean(1).transpose(-2, -1) 
 
     seq = x_raw.size(1)
+    r = min(r + 1, seq) # since this method generate append one token to the remaining tokens, we remove one more token for consistant compression ratio as other methods
     t = seq - r
 
     left_idx = torch.topk(attn, t, dim=-1, sorted=False).indices # (B, 1, T)
@@ -222,7 +264,7 @@ def mean_evit(pinfo, r, x, q, k, split : Spliter):
         src = it_raw.gather(-2, src_idx.expand(-1, -1, it.size(-1))) # (B, T, D)
         left = torch.gather(it_raw, -2, left_idx.expand(-1, -1, it.size(-1)))
 
-        return torch.cat([it_prot, left, (score @ src)], dim=-2)
+        return torch.cat([it_prot, left, score @ src], dim=-2)
     
     handle_source(pinfo, x, merge)
     # size, size_ = handle_size(pinfo, x, merge)

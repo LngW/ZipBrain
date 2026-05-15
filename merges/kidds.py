@@ -85,6 +85,8 @@ def apply_kidd(pinfo : dict, r : int, variant : str, x : torch.Tensor, q : torch
             return kidd_left4(pinfo, r_, x, m0, split)
         elif variant.startswith('kiddl3'):
             return kidd_left3(pinfo, r_, x, m0, m1, m2, m3, split)
+        elif variant.startswith('kiddl2pte'):
+            return kidd_left2_pte(pinfo, r_, x, m0, m1, m2, m3, split)
         elif variant.startswith('kiddl2'):
             return kidd_left2(pinfo, r_, x, m0, m1, m2, m3, split)
         elif variant.startswith('kiddl'):
@@ -1007,3 +1009,152 @@ def kidd_left4(pinfo, r : int, x : torch.Tensor, m0 : torch.Tensor, spliter : Sp
     # x = x / x.norm(2, -1, True) * length_
     # return x
 
+def kidd_left2_pte(pinfo, r : int, x : torch.Tensor, m0 : torch.Tensor, m1 : torch.Tensor, m2 : torch.Tensor, m3 : torch.Tensor, spliter : Spliter):
+
+    m0_prot, m0_raw = spliter(m0)
+    m1_prot, m1_raw = spliter(m1)
+    m2_prot, m2_raw = spliter(m2)
+    m3_prot, m3_raw = spliter(m3)
+
+    use_cls = pinfo.get('use_cls', False)
+    # pivot_factor = pinfo.get('pivot_factor', [0.05]).pop(0)
+
+    # cal improtance by attention score with mean
+    bsz, seq, dim = m0_raw.shape
+
+    if pinfo['tome_scheme']:
+        r = min(r, seq // 2)
+
+        if r <= 0:
+            return x
+
+    num_imp = max(r, seq - r)
+    num_imp_dup = min(num_imp, r)
+    num_pivot = math.ceil((seq - r) * 0.05)
+
+    if 'imp_num' in pinfo:
+        imp_num = pinfo['imp_num'].pop(0)
+        if imp_num is not None:
+            num_imp = imp_num
+    elif 'imp_factor' in pinfo:
+        imp_factor = pinfo['imp_factor'].pop(0)
+        if imp_factor is not None:
+            num_imp = clamp(math.floor((seq + 1) * imp_factor), 0, seq)
+    if 'pivot_num' in pinfo:
+        pivot_num = pinfo['pivot_num'].pop(0)
+        if pivot_num is not None:
+            num_pivot = pivot_num
+    elif 'pivot_factor' in pinfo:
+        pivot_factor = pinfo['pivot_factor'].pop(0)
+        if pivot_factor is not None:
+            num_pivot = clamp(math.ceil(seq * pivot_factor), 1, seq)
+
+    with torch.no_grad():
+
+        # scale the metric matrix
+        metric_norm = m0_raw.norm(2, -1, True) # (bsz, seq, 1)
+        if KIDD_PIVOT_BOTTOM:
+            idx_pivot = metric_norm[..., 0].topk(num_pivot, sorted=False, largest=False).indices
+        else:
+            idx_pivot = metric_norm[..., 0].topk(num_pivot, sorted=False, largest=True).indices
+
+        # calculate redundancy
+        # select pivot tokens, there will be (bsz, num_pivot) indices
+        if KIDD_NORM_DUP:
+            dup_space = m1_raw / m1_raw.norm(2, -1, True)
+        else:
+            dup_space = m1_raw
+        tokens_pivot = dup_space.gather(-2, idx_pivot.unsqueeze(-1).expand(-1, -1, dup_space.size(-1)))
+        if KIDD_RND_DUP:
+            score_dup = torch.rand(bsz, seq, device=x.device)
+        else:
+            score_dup = matmul_sum(dup_space, tokens_pivot) #(dup_space @ tokens_pivot.transpose(-2, -1)).sum(-1)
+
+        # regard top r tokens as duplicate tokens
+        idx_tmp = score_dup.sort(descending=True).indices
+        src_idx = idx_tmp[:, :r]
+        left_idx = idx_tmp[:, r:]
+
+        # find merging target basing on similarity, again, with whole left set
+        if KIDD_NORM_MRG:
+            merge_space = m2_raw / m2_raw.norm(2, -1, True)
+        else:
+            merge_space = m2_raw
+
+        tokens_src = merge_space.take_along_dim(src_idx.unsqueeze(-1), -2)
+        tokens_left = merge_space.take_along_dim(left_idx.unsqueeze(-1), -2)
+
+        pte_space = pinfo['pte']
+        pte_space = pte_space / pte_space.norm(p=2, dim=-1, keepdim=True)
+        pte_src = pte_space.take_along_dim(src_idx.unsqueeze(-1), -2)
+        pte_left = pte_space.take_along_dim(left_idx.unsqueeze(-1), -2)
+
+        # _, idx_sim = matmul_max(tokens_src, tokens_left) #.argmax(-1)
+        _, idx_sim = (tokens_src @ tokens_left.transpose(-2, -1) + pte_src @ pte_left.transpose(-2, -1)).max(-1) #.argmax(-1)
+        tar_idx = left_idx.gather(-1, idx_sim)
+
+        # calculate importance now
+        if use_cls and pinfo['class_token']:
+            tokens_base = m3_prot[:, 0:1]
+        else:
+            tokens_base = m3_raw.mean(-2, True) # (bsz, 1, dim)
+        
+        if KIDD_NORM_IMP:
+            imp_space = m3_raw / m3_raw.norm(2, -1, True)
+        else:
+            imp_space = m3_raw
+        tokens_base = tokens_base / tokens_base.norm(2, -1, True)
+        if KIDD_RND_IMP:
+            score_imp = torch.rand(bsz, seq, device=x.device)
+        else:
+            score_imp = (imp_space @ tokens_base.transpose(-2, -1)).squeeze(-1) # (bsz, seq)
+        idx_imp = score_imp.topk(num_imp, -1, True, False).indices
+
+        mask_imp = (src_idx.unsqueeze(-1) == idx_imp.unsqueeze(-2)).any(-1)
+
+        # now only those important tokens have a target, others should be assigned to indices which are not in left_idx
+        tar_idx = tar_idx.where(mask_imp, src_idx)
+
+    def merge(x : torch.Tensor, reduce = 'sum', do_split = True):
+        if do_split:
+            x_prot, x_raw = spliter(x)
+        else:
+            x_prot, x_raw = x[:, 0:0, :], x
+        bsz, seq, dim = x_raw.shape
+
+        src = x_raw.take_along_dim(src_idx.unsqueeze(-1), -2)
+        tar_idx_ = tar_idx.unsqueeze(-1).expand(-1, -1, dim)
+        x_raw = x_raw.scatter_reduce(-2, tar_idx_, src, reduce)
+        left = x_raw.take_along_dim(left_idx.unsqueeze(-1), -2)
+
+        return torch.cat([x_prot, left], dim = -2)
+    
+    handle_source(pinfo, x, merge)
+
+    # pte = pinfo['pte']
+    pinfo['pte'] = merge(pinfo['pte'], do_split=False)
+
+    # slerp
+    # size, size_ = handle_size(pinfo, x, merge)
+    # return merge(x * size) / size_
+
+    # mlerp
+    length = x.norm(2, -1, True)
+    length_ = merge(length, 'amax')
+    x = merge(x)
+    x = x / x.norm(2, -1, True)
+    x = x * length_
+    return x
+
+    # avg
+    # size = torch.ones_like(x[..., :1])
+    # size_ = merge(size)
+    # return merge(x) / merge(size)
+
+    # length_avg
+    # length = x.norm(2, -1, True)
+    # size, size_ = handle_size(pinfo, x, merge)
+    # length_ = merge(length * size) / size_
+    # x = merge(x)
+    # x = x / x.norm(2, -1, True) * length_
+    # return x

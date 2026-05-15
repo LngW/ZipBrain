@@ -28,6 +28,35 @@ def make_PL_class(klass):
 
     return PatchInference
 
+def make_classifier_class(klass):
+    import torch
+    from einops import rearrange
+
+    class PatchedTFMClassifier(klass):
+        def forward(self, x,num_ch = 16):
+
+            x = self.eeg_token_embedding(x)
+
+            for i in range(x.shape[1]):
+                used_channel_embed = self.channel_embed(self.index[i]).unsqueeze(0).unsqueeze(0).expand(x.size(0),-1,-1)
+                x[:,i] = self.temporal_pos_embed(x[:,i]+used_channel_embed)
+            
+            ch_emb = self.channel_embed(self.index[0:x.shape[1]]).unsqueeze(1).unsqueeze(0)
+            ts_emb = self.temporal_pos_embed.pe[:, :x.shape[2]].unsqueeze(1)
+            self._pinfo['pte'] = (ch_emb + ts_emb).flatten(1, 2).expand(x.shape[0], -1, -1)
+
+            x = rearrange(x, 'B C T E -> B (C T) E')
+
+            
+            cls_tokens = self.cls_token.expand(x.size(0), -1, -1)
+            x = torch.cat((cls_tokens, x), dim=1)
+            
+            x = self.LAT(x)
+            pred = self.classification_head(x[:, 0])
+            return pred
+        
+    return PatchedTFMClassifier
+
 def apply_patch(model, trace_source = False, show_shape = False, tome_scheme = False):
     if model.__class__.__name__ != 'Pl_tfm_tokenizer_inference':
         return
@@ -36,6 +65,7 @@ def apply_patch(model, trace_source = False, show_shape = False, tome_scheme = F
     from .linear_attn_transformer import make_sequential_class, make_self_attention_class
     # from .biot import make_sequential_class, make_self_attention_class
     PatchedInference = make_PL_class(model.__class__)
+    PatchedClassifier = make_classifier_class(model.tfm_token.__class__)
     PatchedSequence = make_sequential_class(transformer.layers.__class__)
     # print(transformer.layers.layers[0][0])
     PatchedSelfAttention = make_self_attention_class(transformer.layers.layers[0][0].fn.__class__)
@@ -59,6 +89,9 @@ def apply_patch(model, trace_source = False, show_shape = False, tome_scheme = F
     model._pinfo = pinfo
     model.pivot_factor = 0.05
     model.use_cls = True
+
+    model.tfm_token.__class__ = PatchedClassifier
+    model.tfm_token._pinfo = pinfo
 
     lat = model.tfm_token.LAT
     lat.layers.__class__ = PatchedSequence

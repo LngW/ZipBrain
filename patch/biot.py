@@ -1,5 +1,7 @@
 from .utils import reset_common_pinfo
-
+import torch
+import torch.nn as nn
+import torch.fft
 # def apply_merge(pinfo, r, variant, x):
 #     pinfo['qkv'] = None
 
@@ -21,6 +23,7 @@ def make_classifier_class(klass):
             self._pinfo["source"] = None
             self._pinfo["qkv"] = None
             self._pinfo["pe_score"] = None
+            self._pinfo["pte"] = None
             self._pinfo["alibi"] = None
             self._pinfo["attn_score"] = None
 
@@ -28,9 +31,67 @@ def make_classifier_class(klass):
 
     return PatchedBIOTClassifier
 
+class STFTViaConv(nn.Module):
+    def __init__(self, n_fft, hop_length, window):
+        super().__init__()
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        
+
+        import numpy as np
+        # 1. 预计算 DFT 基函数
+        fourier_basis = np.fft.fft(np.eye(n_fft))
+        # 只保留 onesided 部分 (n_fft // 2 + 1)
+        cutoff = n_fft // 2 + 1
+        fourier_basis = fourier_basis[:cutoff, :]
+        
+        real_basis = np.real(fourier_basis)
+        imag_basis = np.imag(fourier_basis)
+        
+        # 2. 将窗函数应用到基函数中
+        window = window.detach().cpu().numpy()
+        real_basis = real_basis * window
+        imag_basis = imag_basis * window
+        
+        # 3. 创建卷积层
+        # 输出通道为 cutoff * 2 (实部和虚部)，输入通道为 1
+        self.conv = nn.Conv1d(
+            in_channels=1,
+            out_channels=cutoff * 2,
+            kernel_size=n_fft,
+            stride=hop_length,
+            bias=False
+        )
+        
+        # 4. 初始化权重
+        # 权重形状: [out_channels, in_channels, kernel_size]
+        weights = np.stack([real_basis, imag_basis], axis=1).reshape(cutoff * 2, 1, n_fft)
+        self.conv.weight.data = torch.from_numpy(weights).float()
+        
+    def forward(self, x):
+        # x: [Batch, Time] -> [32, 1000]
+        x = x.unsqueeze(1) # [32, 1, 1000]
+        
+        # 执行卷积
+        # output: [32, 202, 9] (202 = 101实部 + 101虚部)
+        output = self.conv(x)
+        
+        # 拆分实部和虚部
+        # output 形状转为 [32, 2, 101, 9]
+        output = output.view(x.shape[0], 2, self.n_fft // 2 + 1, -1)
+        
+        real = output[:, 0, :, :]
+        imag = output[:, 1, :, :]
+        
+        # 计算 torch.abs(spectral) -> sqrt(real^2 + imag^2)
+        mag = torch.sqrt(real**2 + imag**2 + 1e-12) # 加个 eps 防止梯度或数值问题
+        
+        return mag # [32, 101, 9]
+
 def make_biot_encoder_class(klass):
     class PatchedBIOTEncoder(klass):
         def stft(self, sample):
+            # return self.stft_module(sample) #.transpose(-2, -1)
             import torch
             spectral = torch.stft( 
                 input = sample,
@@ -93,8 +154,12 @@ def make_biot_encoder_class(klass):
                 .unsqueeze(1)
                 .unsqueeze(0)
             )
+            temporal_token_emb = self.positional_encoding.pe[:, : channel_spec_emb.size(2)]
             channel_emb = channel_spec_emb + channel_token_emb
             channel_emb = self.positional_encoding(channel_emb.flatten(0, 1))
+
+            pte = self._pinfo['pte'] = (temporal_token_emb.unsqueeze(1) + channel_token_emb).flatten(1, 2).expand(batch_size, -1, -1)
+            # print(pte.shape)
 
             emb_batch = channel_emb.reshape(batch_size, ts * channels, emb_size)
             emb = emb_batch
@@ -151,6 +216,7 @@ def apply_patch(model, trace_source: bool = False, show_shape = False, tome_sche
 
     biot.__class__ = PatchedEncoder
     biot.register_buffer('window', torch.ones(biot.n_fft))
+    # biot.stft_module = STFTViaConv(biot.n_fft, biot.hop_length, torch.ones(biot.n_fft))
     biot._pinfo = _pinfo
 
     sequential.__class__ = PatchedSequential
