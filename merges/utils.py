@@ -36,6 +36,23 @@ def select_metric(variant, x, q, k, v):
     else:
         return k
 
+def separate_method_args(m : str):
+    left = m.find('[')
+    right = m.rfind(']')
+
+    method, args = None, None
+    if left > 0 and right > left:
+        method = m[:left]
+        args = m[left + 1: right]
+    else:
+        method = m
+        args = ''
+
+    args = args.split(',')
+    args = [it.strip() for it in args]
+
+    return method, args
+
 def setdiff_indices(total : int, indices : torch.Tensor):
     *b, t0 = indices.shape
     masks = torch.ones((*b, total), dtype=indices.dtype, device=indices.device)

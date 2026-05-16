@@ -2,7 +2,7 @@ import os
 import math
 import torch
 
-from .utils import Spliter, handle_source, clamp, setdiff_indices
+from .utils import separate_method_args, Spliter, handle_source, clamp, setdiff_indices
 
 KIDD_RND_DUP=(os.getenv('KIDD_RND_DUP', '0') == '1')
 KIDD_RND_IMP=(os.getenv('KIDD_RND_IMP', '0') == '1')
@@ -19,36 +19,37 @@ KIDD_PIVOT_BOTTOM=(os.getenv('KIDD_PIVOT_BOTTOM', '0') == '1')
 # m3: decide the space of judging importance
 # We accept three formats: [m0_1_2_3], [m0_1_2, m3], [m0, m1_2, m3] or [m0, m1, m2, m3]
 # When not explictly indicated, we use k for m0, m1, m2 and m3
-def select_metric(variant : str, x, q, k, v):
-    left = variant.find('[')
-    right = variant.find(']')
+def select_metric(args : list[str], x, q, k, v):
+    # left = variant.find('[')
+    # right = variant.find(']')
 
-    if left <= 0 or right <= 0 or right <= left:
-        return k, k, k, k
+    # if left <= 0 or right <= 0 or right <= left:
+    #     return k, k, k, k
     
-    scheme = variant[left + 1:right]
-    if len(scheme) <= 0:
-        return k, k, k, k
+    # scheme = variant[left + 1:right]
+    # if len(scheme) <= 0:
+    #     return k, k, k, k
     
-    scheme = scheme.split(',')
-    scheme = [it.strip() for it in scheme]
+    # scheme = scheme.split(',')
+    # scheme = [it.strip() for it in scheme]
+    # args = args
     mapping = {'x': x, 'q': q, 'k': k, 'v': v, 'r': torch.rand_like(k)}
-    if len(scheme) <= 0:
+    if len(args) <= 0:
         return k, k, k, k
-    elif len(scheme) == 1:
-        m0 = mapping.get(scheme[0], k)
+    elif len(args) == 1:
+        m0 = mapping.get(args[0], k)
         return m0, m0, m0, m0
-    elif len(scheme) == 2:
-        m0_1_2 = mapping.get(scheme[0], k)
-        m3 = mapping.get(scheme[1], k)
+    elif len(args) == 2:
+        m0_1_2 = mapping.get(args[0], k)
+        m3 = mapping.get(args[1], k)
         return m0_1_2, m0_1_2, m3
-    elif len(scheme) == 3:
-        m0 = mapping.get(scheme[0], k)
-        m1_2 = mapping.get(scheme[1], k)
-        m3 = mapping.get(scheme[2], k)
+    elif len(args) == 3:
+        m0 = mapping.get(args[0], k)
+        m1_2 = mapping.get(args[1], k)
+        m3 = mapping.get(args[2], k)
         return m0, m1_2, m1_2, m3
     else:
-        return [mapping.get(it, k) for it in scheme[:4]]
+        return [mapping.get(it, k) for it in args[:4]]
 
 
 def apply_kidd(pinfo : dict, r : int, variant : str, x : torch.Tensor, q : torch.Tensor, k : torch.Tensor, v : torch.Tensor):
@@ -71,7 +72,29 @@ def apply_kidd(pinfo : dict, r : int, variant : str, x : torch.Tensor, q : torch
     if r_ <= 0:
         return x
     
-    m0, m1, m2, m3 = select_metric(variant, x, q.mean(1), k.mean(1), v.mean(1)) # q, k, v are all (B, N, HD) now, and x is (B, N, D)
+    method, args = separate_method_args(variant)
+
+    # print(args)
+
+    m0, m1, m2, m3 = select_metric(args, x, q.mean(1), k.mean(1), v.mean(1)) # q, k, v are all (B, N, HD) now, and x is (B, N, D)
+
+    if method == 'kidd3mp':
+        return kidd_pivot3m(pinfo, r_, x, m0, m1, m2, split)
+    elif method == 'kiddp':
+        return kidd_pivot(pinfo, r_, x, m0, split)
+    elif method == 'kiddl4':
+        return kidd_left4(pinfo, r_, x, m0, split)
+    elif method == 'kiddl3':
+        return kidd_left3(pinfo, r_, x, m0, m1, m2, m3, split)
+    elif method == 'kiddl2pte':
+        return kidd_left2_pte(pinfo, r_, x, m0, m1, m2, m3, split)
+    elif method == 'kiddl2':
+        return kidd_left2(pinfo, r_, x, m0, m1, m2, m3, split)
+    elif method == 'kiddl':
+        return kidd_left(pinfo, r_, x, m0, split)
+    else:
+        raise NotImplementedError('Unsupported KIDD variant or args: {}, {}'.format(method, args))
+
 
     if variant.startswith('kidd3m'):
         if variant.startswith('kidd3mp'):
