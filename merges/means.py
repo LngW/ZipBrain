@@ -253,6 +253,7 @@ def mean_evit(pinfo, r, x, q, k, split : Spliter):
     src_idx = setdiff_indices(seq, left_idx) # (B, 1, T)
 
     score = torch.gather(attn, -1, src_idx) # (B, 1, T)
+    score = torch.softmax(score, dim=-1)
 
     left_idx, _ = left_idx.sort(-1, False) # (B, 1, T)
     left_idx = left_idx[..., 0, :, None] # (B, T, 1)
