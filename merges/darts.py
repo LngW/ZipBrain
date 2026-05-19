@@ -1,17 +1,19 @@
 import math
 import torch
-from .utils import clamp, handle_size, handle_source, Spliter
+from einops import rearrange
+from .utils import separate_method_args, clamp, handle_size, handle_source, Spliter
 
-def find_two_metric(variant : str, x, q, k, v):
-    left = variant.find('[')
-    right = variant.find(']')
+def find_two_metric(args : list[str], x, q, k, v):
+    # left = variant.find('[')
+    # right = variant.find(']')
 
-    if left < 0 or right < 0 or right <= left:
-        return q, k
+    # if left < 0 or right < 0 or right <= left:
+    #     return q, k
 
-    sub = variant[left + 1:right]
-    subs = [it.strip() for it in sub.split(',')]
+    # sub = variant[left + 1:right]
+    # subs = [it.strip() for it in sub.split(',')]
 
+    subs = args
     if len(subs) == 0:
         return q, k
     
@@ -25,7 +27,7 @@ def find_two_metric(variant : str, x, q, k, v):
 
     return metrics[0], metrics[1]
 
-def apply_dart(pinfo : dict, r : int, variant : str, x : torch.Tensor, q : torch.Tensor, k : torch.Tensor, v):
+def apply_dart(pinfo : dict, r : int, variant : str, x : torch.Tensor, q : torch.Tensor, k : torch.Tensor, v : torch.Tensor):
     prot = 0
     if pinfo.get('class_token', False):
         prot += 1
@@ -43,16 +45,40 @@ def apply_dart(pinfo : dict, r : int, variant : str, x : torch.Tensor, q : torch
 
     if r_ <= 0:
         return x
-    
-    m0, m1 = find_two_metric(variant, x, q.mean(1), k.mean(1), v.mean(1))
-    if variant.startswith('dartpo'):
+
+    method, args = separate_method_args(variant)
+    m0, m1 = find_two_metric(
+        args, 
+        x, 
+        rearrange(q, 'b h n d -> b n (h d)'), 
+        rearrange(k, 'b h n d -> b n (h d)'), 
+        rearrange(v, 'b h n d -> b n (h d)')
+    )
+
+    if method == 'dartpo':
         return original_dartp(pinfo, r_, x, m0, split)
-    elif variant.startswith('dartpa'):
+    elif method == 'dartpa':
         return dart_pruneA(pinfo, r_, x, m0, split)
-    elif variant.startswith('dartp'):
+    elif method == 'dartp':
+        m0, m1 = find_two_metric(
+            args, 
+            x, 
+            q.mean(1),
+            k.mean(1),  
+            v.mean(1), 
+        )
+        return dart_prune(pinfo, r_, x, m0.detach(), m1.detach(), split)
+    elif method == 'dartp_':
+        m0, m1 = find_two_metric(
+            args, 
+            x, 
+            rearrange(q, 'b h n d -> b n (h d)'), 
+            rearrange(k, 'b h n d -> b n (h d)'), 
+            rearrange(v, 'b h n d -> b n (h d)')
+        )
         return dart_prune(pinfo, r_, x, m0.detach(), m1.detach(), split)
     else:
-        return x
+        raise NotImplementedError("Unknown dart method: {} {}".format(method, args))
 
 def dart_prune(pinfo, r, x : torch.Tensor, m0 : torch.Tensor, m1 : torch.Tensor, split : Spliter):
 
@@ -69,7 +95,7 @@ def dart_prune(pinfo, r, x : torch.Tensor, m0 : torch.Tensor, m1 : torch.Tensor,
     # select tokens via m0's l1-norm
     pivot_idx = m0_raw.norm(dim=-1, p=1).topk(k=k, dim=-1).indices
     # but test token's redundancy via m1's cosine similarity
-    pivot_tokens = m1_raw.gather(dim=-2, index=pivot_idx[..., None].expand(-1, -1, dim))
+    pivot_tokens = m1_raw.take_along_dim(pivot_idx[..., None], -2)
 
     similarity = (pivot_tokens / pivot_tokens.norm(2, -1, True)) @ (m1_raw / m1_raw.norm(2, -1, True)).transpose(-2, -1)
     sim_max_val, sim_max_idx = similarity.max(dim=-2)
