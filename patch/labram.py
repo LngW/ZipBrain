@@ -1,7 +1,7 @@
 
-from patch.utils import reset_common_pinfo
+from .utils import reset_common_pinfo, compute_cinfo
 
-def apply_merge(pinfo, r, variant, x, q, k, v):
+def apply_merge(pinfo, x, q, k, v):
 
     # q, k, v = pinfo['qkv']
     # pinfo['qkv'] = None
@@ -21,8 +21,10 @@ def apply_merge(pinfo, r, variant, x, q, k, v):
     # if variant is not None:
     #     metric = _find_metric(variant)
 
+    cinfo = compute_cinfo(pinfo)
+
     from merges import apply_merge_impl
-    return apply_merge_impl(pinfo, r, variant, x, q, k, v)
+    return apply_merge_impl(pinfo, cinfo, x, q, k, v)
 
 
 def create_block_class(klass):
@@ -30,9 +32,10 @@ def create_block_class(klass):
         def forward(self, x, rel_pos_bias=None, return_attention=False, return_qkv=False):
 
             # Modifications here
-            r = self._pinfo['r'].pop(0)
-            variant = self._pinfo['variant'].pop(0)
-            if self._pinfo['show_shape']: print(x.shape, self._pinfo['class_token'])
+            # r = self._pinfo['r'].pop(0)
+            # variant = self._pinfo['variant'].pop(0)
+            if self._pinfo['show_shape']: 
+                print(x.shape, self._pinfo['class_token'])
 
             if return_attention:
                 return self.attn(self.norm1(x), rel_pos_bias=rel_pos_bias, return_attention=True)
@@ -49,11 +52,11 @@ def create_block_class(klass):
 
             if self.gamma_1 is None:
                 x = x + self.drop_path(y)
-                x = apply_merge(self._pinfo, r, variant, x, q, k, v) # Modification
+                x = apply_merge(self._pinfo, x, q, k, v) # Modification
                 x = x + self.drop_path(self.mlp(self.norm2(x)))
             else:
                 x = x + self.drop_path(self.gamma_1 * y)
-                x = apply_merge(self._pinfo, r, variant, x, q, k, v) # Modification
+                x = apply_merge(self._pinfo, x, q, k, v) # Modification
                 x = x + self.drop_path(self.gamma_2 * self.mlp(self.norm2(x)))
             return x
     return PatchedBlock

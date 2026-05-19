@@ -15,25 +15,29 @@ from .utils import select_metric, handle_size, handle_source, clamp, do_nothing,
 # Spliter = Callable[[torch.Tensor], tuple[torch.Tensor, torch.Tensor]]
 
 
-def apply_merge(pinfo, r : int, variant : str, x, q, k, v): # we expect q, k, v are all (B, H, N, HD)
+def apply_merge(pinfo, cinfo, x, q, k, v): # we expect q, k, v are all (B, H, N, HD)
+
+    variant = cinfo['variant']
+    r = cinfo['r']
 
     # we use lower case for case-irrelevant
     variant = variant.lower().strip()
 
-    if len(variant) == 0:
+    if len(variant) == 0 or r <= 0:
+        # In this case, no reduction is applied.
         return x
     elif variant.startswith('kidd'):
         from .kidds import apply_kidd
-        return apply_kidd(pinfo, r, variant, x, q, k, v)
+        return apply_kidd(pinfo, cinfo, r, variant, x, q, k, v)
     elif variant.startswith('cls'):
         from .cls import apply_cls
-        return apply_cls(pinfo, r, variant, x, q, k, v)
+        return apply_cls(pinfo, cinfo, r, variant, x, q, k, v)
     elif variant.startswith('mean'):
         from .means import apply_means
-        return apply_means(pinfo, r, variant, x, q, k, v)
+        return apply_means(pinfo, cinfo, r, variant, x, q, k, v)
     elif variant.startswith('dart'):
         from .darts import apply_dart
-        return apply_dart(pinfo, r, variant, x, q, k, v)
+        return apply_dart(pinfo, cinfo, r, variant, x, q, k, v)
     elif variant.startswith('tome'):
         return tome_merge(pinfo, r, x, select_metric(variant, x, q.mean(1), k.mean(1), v.mean(1)))
     elif variant.startswith('tofu'):

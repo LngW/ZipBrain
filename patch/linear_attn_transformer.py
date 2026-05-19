@@ -1,11 +1,11 @@
 
-def apply_merge(pinfo, r : int, variant : str, x):
+def apply_merge(pinfo, cinfo, x):
 
     q, k, v = pinfo['qkv']
-    pinfo['qkv'] = None
+    del pinfo['qkv']
 
-    if r <= 0:
-        return x
+    # if r <= 0:
+    #     return x
 
     # fast_dict = {'q': q, 'k': k, 'v': v, 'x': x}
     # def _find_metric(variant):
@@ -20,16 +20,18 @@ def apply_merge(pinfo, r : int, variant : str, x):
     #     metric = _find_metric(variant)
 
     from merges import apply_merge_impl
-    return apply_merge_impl(pinfo, r, variant, x, q, k, v)
+    return apply_merge_impl(pinfo, cinfo, x, q, k, v)
 
 def make_sequential_class(klass):
+    from .utils import compute_cinfo
     class PatchedSequentialSequence(klass):
         def forward(self, x, **kwargs):
             from linear_attention_transformer.reversible import route_args, layer_drop
             args = route_args(self.args_route, kwargs, len(self.layers))
 
             # modification start
-            layers_and_args = list(zip(self.layers, args, self._pinfo['r'], self._pinfo['variant']))
+            cinfos = [compute_cinfo(self._pinfo) for _ in range(len(self.layers))]
+            layers_and_args = list(zip(self.layers, args, cinfos))
             # r = self._pinfo['r'].pop(0)
             # variant = self._pinfo['variant'].pop(0)
             # modification end
@@ -38,11 +40,11 @@ def make_sequential_class(klass):
                 layers_and_args = layer_drop(layers_and_args, self.layer_dropout)
 
             # modified this line: add r and variant
-            for (f, g), (f_args, g_args), r, variant in layers_and_args:
+            for (f, g), (f_args, g_args), cinfo in layers_and_args:
                 if self._pinfo['show_shape']: print(x.shape, self._pinfo['class_token'])
                 x = x + f(x, **f_args)
                 # insertation here
-                x = apply_merge(self._pinfo, r, variant, x)
+                x = apply_merge(self._pinfo, cinfo, x)
                 # insertation end
                 x = x + g(x, **g_args)
             return x

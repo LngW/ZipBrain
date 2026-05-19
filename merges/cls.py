@@ -24,7 +24,7 @@ def find_two_metric(variant : str, x, q, k, v):
 
     return metrics[0], metrics[1]
 
-def apply_cls(pinfo : dict, r : int, variant : str, x : torch.Tensor, q : torch.Tensor, k : torch.Tensor, v):
+def apply_cls(pinfo : dict, cinfo : dict, r : int, variant : str, x : torch.Tensor, q : torch.Tensor, k : torch.Tensor, v):
     prot = 0
     if pinfo.get('class_token', False):
         prot += 1

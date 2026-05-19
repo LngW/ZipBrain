@@ -1,3 +1,20 @@
+def compute_cinfo(pinfo):
+    cinfo = {
+        'variant': pinfo.get('variant', ['']).pop(0),
+        'r': pinfo.get('r', [0]).pop(0),
+    }
+
+    def optional_parse(key, dft):
+        if key in pinfo:
+            cinfo[key] = (pinfo[key] or [dft]).pop(0)
+
+    optional_parse('pivot_factor', 0.05)
+    optional_parse('imp_factor', None)
+    optional_parse('pivot_num', None)
+    optional_parse('imp_num', None)
+
+    return cinfo
+
 def reset_common_pinfo(model, pinfo : dict, depth):
     r = getattr(model, 'r', 0)
     variant = getattr(model, 'variant', '')
@@ -6,7 +23,8 @@ def reset_common_pinfo(model, pinfo : dict, depth):
     pinfo['variant'] = parse_variant(depth, variant)
 
     def optional_set(key):
-        pinfo.pop(key, None)
+        if key in pinfo:
+            del pinfo[key]
         if hasattr(model, key):
             pinfo[key] = repeat_or_pad(getattr(model, key), depth, None)
 

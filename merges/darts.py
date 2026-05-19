@@ -27,7 +27,7 @@ def find_two_metric(args : list[str], x, q, k, v):
 
     return metrics[0], metrics[1]
 
-def apply_dart(pinfo : dict, r : int, variant : str, x : torch.Tensor, q : torch.Tensor, k : torch.Tensor, v : torch.Tensor):
+def apply_dart(pinfo : dict, cinfo : dict, r : int, variant : str, x : torch.Tensor, q : torch.Tensor, k : torch.Tensor, v : torch.Tensor):
     prot = 0
     if pinfo.get('class_token', False):
         prot += 1
@@ -67,7 +67,7 @@ def apply_dart(pinfo : dict, r : int, variant : str, x : torch.Tensor, q : torch
             k.mean(1),  
             v.mean(1), 
         )
-        return dart_prune(pinfo, r_, x, m0.detach(), m1.detach(), split)
+        return dart_prune(pinfo, cinfo, r_, x, m0.detach(), m1.detach(), split)
     elif method == 'dartp_':
         m0, m1 = find_two_metric(
             args, 
@@ -76,18 +76,18 @@ def apply_dart(pinfo : dict, r : int, variant : str, x : torch.Tensor, q : torch
             rearrange(k, 'b h n d -> b n (h d)'), 
             rearrange(v, 'b h n d -> b n (h d)')
         )
-        return dart_prune(pinfo, r_, x, m0.detach(), m1.detach(), split)
+        return dart_prune(pinfo, cinfo, r_, x, m0.detach(), m1.detach(), split)
     else:
         raise NotImplementedError("Unknown dart method: {} {}".format(method, args))
 
-def dart_prune(pinfo, r, x : torch.Tensor, m0 : torch.Tensor, m1 : torch.Tensor, split : Spliter):
+def dart_prune(pinfo, cinfo, r, x : torch.Tensor, m0 : torch.Tensor, m1 : torch.Tensor, split : Spliter):
 
     m0_prot, m0_raw = split(m0)
     m1_prot, m1_raw = split(m1)
 
     bsz, seq, dim = m1_raw.shape
 
-    pivot_factor = pinfo.get('pivot_factor', [None]).pop(0)
+    pivot_factor = cinfo.get('pivot_factor', None)
     if pivot_factor is None:
         pivot_factor = 0.05
 

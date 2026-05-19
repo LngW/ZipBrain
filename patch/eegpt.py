@@ -1,15 +1,16 @@
-from .utils import parse_r, parse_variant
-import torch
+from .utils import reset_common_pinfo, compute_cinfo
 
 def apply_merge(pinfo, x):
     q, k, v = pinfo['qkv']
-    pinfo['qkv'] = None
+    del pinfo['qkv']
 
-    r = pinfo['r'].pop(0)
-    variant = pinfo['variant'].pop(0)
+    cinfo = compute_cinfo(pinfo)
 
-    if r <= 0:
-        return x
+    # r = pinfo['r'].pop(0)
+    # variant = pinfo['variant'].pop(0)
+
+    # if r <= 0:
+    #     return x
 
     # fast_dict = {'q': q, 'k': k, 'v': v, 'x': x}
     # def _find_metric(variant):
@@ -31,7 +32,7 @@ def apply_merge(pinfo, x):
     # metric_raw, metric_summary = metric[:, :-embed_num], metric[:, -embed_num:]
 
     from merges import apply_merge_impl
-    x_raw = apply_merge_impl(pinfo, r, variant, x_raw, q_raw, k_raw ,v_raw)
+    x_raw = apply_merge_impl(pinfo, cinfo, x_raw, q_raw, k_raw ,v_raw)
 
     import torch
     return torch.cat([x_raw, x_summary], dim=-2)
@@ -86,28 +87,6 @@ def make_block_class(klass):
 
     return PatchedBlock
 
-def make_classifier_class(klass):
-    from .utils import reset_common_pinfo
-    class PatchedClassifier(klass):
-        def forward(self, *args, **kwargs):
-            depth = len(self.target_encoder.blocks)
-
-            reset_common_pinfo(self, self._pinfo, depth)
-
-            self._pinfo["r"] = parse_r(depth, self.r)
-            self._pinfo["variant"] = parse_variant(depth, self.variant)
-            self._pinfo['shape'] = None
-            self._pinfo["size"] = None
-            self._pinfo["source"] = None
-            self._pinfo["qkv"] = None
-            # self._pinfo["pe_score"] = None
-            # self._pinfo["alibi"] = None
-            # self._pinfo["attn_score"] = None
-
-            return super().forward(*args, **kwargs)
-
-    return PatchedClassifier
-
 def make_eeg_transformer_class(klass):
     class PatchedEEGTransformer(klass):
         def forward(self, x, chan_ids=None, mask_x=None, mask_t=None):
@@ -125,16 +104,37 @@ def make_eeg_transformer_class(klass):
 
     return PatchedEEGTransformer
 
-def make_lit_class(klass):
+def make_classifier_class(klass):
     from .utils import reset_common_pinfo
+    class PatchedClassifier(klass):
+        def forward(self, *args, **kwargs):
+            depth = len(self.target_encoder.blocks)
+
+            reset_common_pinfo(self, self._pinfo, depth)
+
+            # self._pinfo["r"] = parse_r(depth, self.r)
+            # self._pinfo["variant"] = parse_variant(depth, self.variant)
+            self._pinfo['shape'] = None
+            self._pinfo["size"] = None
+            self._pinfo["source"] = None
+            self._pinfo["qkv"] = None
+            # self._pinfo["pe_score"] = None
+            # self._pinfo["alibi"] = None
+            # self._pinfo["attn_score"] = None
+
+            return super().forward(*args, **kwargs)
+
+    return PatchedClassifier
+
+def make_lit_class(klass):
     class PatchedLit(klass):
         def forward(self, *args, **kwargs):
             depth = len(self.target_encoder.blocks)
 
             reset_common_pinfo(self, self._pinfo, depth)
 
-            self._pinfo["r"] = parse_r(depth, self.r)
-            self._pinfo["variant"] = parse_variant(depth, self.variant)
+            # self._pinfo["r"] = parse_r(depth, self.r)
+            # self._pinfo["variant"] = parse_variant(depth, self.variant)
             self._pinfo['shape'] = None
             self._pinfo["size"] = None
             self._pinfo["source"] = None
@@ -188,6 +188,7 @@ def apply_patch(model, trace_source = False, show_shape = False, tome_scheme = F
     print('Patched EEGPT, Layers = {}'.format(len(model.target_encoder.blocks)))
 
 if __name__ == '__main__':
+    import torch
     from thirdparty.EEGPT.downstream_tueg.Modules.models.EEGPT_mcae_finetune_change import EEGPTClassifier
     use_channels_names = [      
              'FP1','FPZ', 'FP2',
