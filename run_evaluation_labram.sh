@@ -4,7 +4,7 @@ common_args=(
     run_inference.py
     --num_workers 8
     --test
-    --batch_size 512
+    --batch_size ${1:-'128'}
     --model LaBraM
     --workspace inference_labram
 )
@@ -17,7 +17,15 @@ common_args="${common_args[@]}"
 # meanp: EEG models may not use a [cls] token, so use mean of tokens as a replacement of [cls]. This approach depends on the cornve space
 # clstrpts (TR-PTS, a merging version of [cls] pruning): 
 # meantrpts (TR-PTS, a merging version of mean pruning): 
-methods=(tome tofu clsp meanp clstrpts meantrpts) 
+methods=(
+    tome 
+    tofu 
+    clsp 
+    meanp 
+    clsevit
+    meanevit
+    'dartp_[k,x]'
+) 
 
 ds=TUAB
 for m in "${methods[@]}"; do
