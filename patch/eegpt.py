@@ -88,6 +88,7 @@ def make_block_class(klass):
     return PatchedBlock
 
 def make_eeg_transformer_class(klass):
+    import torch
     class PatchedEEGTransformer(klass):
         def forward(self, x, chan_ids=None, mask_x=None, mask_t=None):
             b = x.shape[0]

@@ -73,7 +73,7 @@ def optuna_main(args):
         args.model,
         args.dataset,
         args.tome_variant[0],
-        args.tome_r[0],
+        args.tome_r[1] if args.model == 'EEGPT' else args.tome_r[0],
         'tome' if args.tome_scheme else 'full',
     )
 
@@ -93,7 +93,7 @@ def optuna_main(args):
         'pivot_factor': [it * 0.05 for it in range(21)],
         'imp_factor': [it * 0.2 for it in range(6)]
     })
-    study.optimize(objective_, 200)
+    study.optimize(objective_, getattr(args, 'n_trials_qmc', 32))
 
     # study.sampler = optuna.samplers.QMCSampler(scramble=True)
     # study.optimize(objective_, getattr(args, 'n_trials_qmc', 32))
