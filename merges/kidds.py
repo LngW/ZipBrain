@@ -1,8 +1,9 @@
 import os
 import math
 import torch
+from einops import rearrange
 
-from .utils import separate_method_args, Spliter, handle_source, handle_size, clamp, setdiff_indices
+from .utils import Spliter, handle_source, handle_size, clamp, setdiff_indices
 
 KIDD_RND_DUP=(os.getenv('KIDD_RND_DUP', '0') == '1')
 KIDD_RND_IMP=(os.getenv('KIDD_RND_IMP', '0') == '1')
@@ -13,6 +14,43 @@ KIDD_NORM_IMP=(os.getenv('KIDD_NORM_IMP', '1') == '1')
 KIDD_PIVOT_BOTTOM=(os.getenv('KIDD_PIVOT_BOTTOM', '0') == '1')
 
 KIDD_MERGE_SCHEME={'slerp': 'slerp', 'avglen': 'avglen', 'simple':'simple'}.get(os.getenv('KIDD_MERGE_SCHEME', 'mlerp'), 'mlerp')
+
+# basename[arg0,arg1,arg2...]{kwarg0=v0,kwarg1=v1,kwarg2=v2,...}
+def separate_method_args(variant : str):
+
+    left0 = variant.find('[')
+    right0 = variant.find(']', left0)
+    left1 = variant.find('{', right0)
+    right1 = variant.find('}', left1)
+
+    method = variant
+    args = []
+    kwargs = {}
+
+    if left0 > 0 and right0 >= left0:
+        method = variant[:left0]
+        args = variant[left0+1:right0].split(',')
+        args = [it.strip() for it in args]
+
+    if left1 > 0 and right1 >= left1:
+        kws = [it.strip() for it in variant[left1+1:right1].split(',')]
+
+        kwargs = {}
+        for kw in kws:
+            tmp = kw.split('=')
+            if len(tmp) == 1:
+                k = tmp[0].strip()
+                if k:
+                    kwargs[k] = True
+            elif len(tmp == 2):
+                k, v = tmp
+                k = k.strip()
+                v = v.strip()
+
+                if k:
+                    kwargs[k] = v
+    
+    return method, args, kwargs
 
 # In this method, we return three metric, and the three metrics are used for:
 # m0: select pivot tokens
@@ -35,29 +73,40 @@ def select_metric(args : list[str], x, q, k, v):
     # scheme = scheme.split(',')
     # scheme = [it.strip() for it in scheme]
     # args = args
-    mapping = {'x': x, 'q': q, 'k': k, 'v': v, 'r': torch.rand_like(k)}
+    mapping = {
+        'x': x.unsqueeze(1), 'q': q.mean(1, True), 'k': k.mean(1, True), 'v': v.mean(1, True),
+        'xh': x.unsqueeze(1), 'qh': q, 'kh': k, 'vh': v,
+
+        'xc': x.unsqueeze(1),
+        'qc': rearrange(q, 'b (t h) n d -> b t n (h d)', t=1), 
+        'kc': rearrange(k, 'b (t h) n d -> b t n (h d)', t=1), 
+        'vc': rearrange(v, 'b (t h) n d -> b t n (h d)', t=1),
+    }
+
+    dft = mapping.get('k')
+
     if len(args) <= 0:
-        return k, k, k, k, k
+        return [dft] * 5
     elif len(args) == 1:
-        m0 = mapping.get(args[0], k)
-        return m0, m0, m0, m0, m0
+        m0 = mapping.get(args[0], dft)
+        return [m0] * 5
     elif len(args) == 2:
-        m0_1_2 = mapping.get(args[0], k)
-        m3_4 = mapping.get(args[1], k)
-        return m0_1_2, m0_1_2, m3_4, m3_4
+        m0_1_2 = mapping.get(args[0], dft)
+        m3_4 = mapping.get(args[1], dft)
+        return m0_1_2, m0_1_2, m0_1_2, m3_4, m3_4
     elif len(args) == 3:
-        m0 = mapping.get(args[0], k)
-        m1_2 = mapping.get(args[1], k)
-        m3_4 = mapping.get(args[2], k)
+        m0 = mapping.get(args[0], dft)
+        m1_2 = mapping.get(args[1], dft)
+        m3_4 = mapping.get(args[2], dft)
         return m0, m1_2, m1_2, m3_4, m3_4
     elif len(args) == 4:
-        m0 = mapping.get(args[0], k)
-        m1 = mapping.get(args[1], k)
-        m2 = mapping.get(args[2], k)
-        m3_4 = mapping.get(args[2], k)
+        m0 = mapping.get(args[0], dft)
+        m1 = mapping.get(args[1], dft)
+        m2 = mapping.get(args[2], dft)
+        m3_4 = mapping.get(args[2], dft)
         return m0, m1, m2, m3_4, m3_4
     else:
-        return [mapping.get(it, k) for it in args[:5]]
+        return [mapping.get(it, dft) for it in args[:5]]
 
 
 def apply_kidd(pinfo : dict, cinfo : dict, r : int, variant : str, x : torch.Tensor, q : torch.Tensor, k : torch.Tensor, v : torch.Tensor):
@@ -80,11 +129,11 @@ def apply_kidd(pinfo : dict, cinfo : dict, r : int, variant : str, x : torch.Ten
     if r_ <= 0:
         return x
     
-    method, args = separate_method_args(variant)
+    method, args, kwargs = separate_method_args(variant)
 
     # print(args)
 
-    m0, m1, m2, m3, m4 = select_metric(args, x, q.mean(1), k.mean(1), v.mean(1)) # q, k, v are all (B, N, HD) now, and x is (B, N, D)
+    m0, m1, m2, m3, m4 = select_metric(args, x, q, k, v) # q, k, v are all (B, N, HD) now, and x is (B, N, D)
 
     # if method == 'kidd3mp':
     #     return kidd_pivot3m(pinfo, r_, x, m0, m1, m2, split)
@@ -95,15 +144,20 @@ def apply_kidd(pinfo : dict, cinfo : dict, r : int, variant : str, x : torch.Ten
     elif method == 'kiddl':
         return kidd_left(pinfo, cinfo, r_, x, m0, split)
     elif method == 'kiddl2':
-        return kidd_left2(pinfo, cinfo, r_, x, m0, m1, m2, m3, m4, split, False)
-    elif method == 'kiddl2pte':
-        return kidd_left2(pinfo, cinfo, r_, x, m0, m1, m2, m3, m4, split, True)
-    elif method == 'kiddl2mh':
-        m0, m1, m2, m3, m4 = select_metric(args, x.unsqueeze(1), q, k, v) # q, k, v are all (B, N, HD) now, and x is (B, N, D)
-        return kidd_left2_mh(pinfo, cinfo, r_, x, m0, m1, m2, m3, m4, split, False)
-    elif method == 'kiddl2mh_pte':
-        m0, m1, m2, m3, m4 = select_metric(args, x.unsqueeze(1), q, k, v) # q, k, v are all (B, H, N, HD) now, and x is (B, 1, N, D)
-        return kidd_left2_mh(pinfo, cinfo, r_, x, m0, m1, m2, m3, m4, split, True)
+        return kidd_left2(pinfo, cinfo, r_, x, m0.mean(1), m1.mean(1), m2.mean(1), m3.mean(1), m4.mean(1), split, False)
+    elif method == 'kiddl2f':
+        cinfo.update(kwargs)
+        return kidd_left2f(pinfo, cinfo, r_, x, m0, m1, m2, m3, m4, split)
+    # elif method == 'kiddl2pte':
+    #     return kidd_left2(pinfo, cinfo, r_, x, m0, m1, m2, m3, m4, split, True)
+    # elif method == 'kiddl2pte':
+    #     return kidd_left2(pinfo, cinfo, r_, x, m0, m1, m2, m3, m4, split, True)
+    # elif method == 'kiddl2mh':
+        # m0, m1, m2, m3, m4 = select_metric(args, x.unsqueeze(1), q, k, v) # q, k, v are all (B, N, HD) now, and x is (B, N, D)
+        # return kidd_left2_mh(pinfo, cinfo, r_, x, m0, m1, m2, m3, m4, split, False)
+    # elif method == 'kiddl2mh_pte':
+    #     # m0, m1, m2, m3, m4 = select_metric(args, x.unsqueeze(1), q, k, v) # q, k, v are all (B, H, N, HD) now, and x is (B, 1, N, D)
+    #     return kidd_left2_mh(pinfo, cinfo, r_, x, m0, m1, m2, m3, m4, split, True)
     # elif method == 'kiddl4':
     #     return kidd_left4(pinfo, r_, x, m0, split)
     # elif method == 'kiddl3':
@@ -534,6 +588,179 @@ def kidd_left2(pinfo, cinfo, r : int, x : torch.Tensor, m0 : torch.Tensor, m1 : 
 
             left = x_raw.take_along_dim(left_idx.unsqueeze(-2), -1)
             left = left.transpose(-2, -1)#.contiguous()
+
+        return torch.cat([x_prot, left], dim = -2)
+    
+    handle_source(pinfo, x, merge)
+
+    if pte:
+        pinfo['pte'] = merge(pinfo['pte'], do_split=False)
+
+    # slerp
+    if KIDD_MERGE_SCHEME == 'slerp':
+        size, size_ = handle_size(pinfo, x, merge)
+        return merge(x * size) / size_
+
+    # mlerp
+    elif KIDD_MERGE_SCHEME == 'mlerp':
+        length = x.norm(2, -1, True)
+        length_ = merge(length, 'amax')
+        x = merge(x)
+        x = x / x.norm(2, -1, True)
+        x = x * length_
+        return x
+
+    # avg
+    elif KIDD_MERGE_SCHEME == 'simple':
+        size = torch.ones_like(x[..., :1])
+        size_ = merge(size)
+        return merge(x) / merge(size)
+
+    # length_avg
+    elif KIDD_MERGE_SCHEME == 'avglen':
+        length = x.norm(2, -1, True)
+        size, size_ = handle_size(pinfo, x, merge)
+        length_ = merge(length * size) / size_
+        x = merge(x)
+        x = x / x.norm(2, -1, True) * length_
+        return x
+
+def kidd_left2f(pinfo, cinfo, r : int, x : torch.Tensor, m0 : torch.Tensor, m1 : torch.Tensor, m2 : torch.Tensor, m3 : torch.Tensor, m4 : torch.Tensor, spliter : Spliter, pte : bool = False, adjust : bool = False):
+
+    # note that x is of shape (B, N, D), but m0~m4 are of shape (B, H, N, HD), and H and HD may vary
+
+    m0_prot, m0_raw = spliter(m0) # for pivot selection
+    m1_prot, m1_raw = spliter(m1) # to form the duplication space
+    m2_prot, m2_raw = spliter(m2) # to calc pairs of merging.
+    m3_prot, m3_raw = spliter(m3) # to form the base token for importance. [CLS] or mean of tokens
+    m4_prot, m4_raw = spliter(m4) # the other part of importance calculation
+
+    use_cls = pinfo.get('use_cls', False)
+    # pivot_factor = pinfo.get('pivot_factor', [0.05]).pop(0)
+
+    # cal improtance by attention score with mean
+    bsz, _, seq, _ = m0_raw.shape
+
+    if pinfo['tome_scheme']:
+        r = min(r, seq // 2)
+
+        if r <= 0:
+            return x
+
+    num_imp = max(r, seq - r)
+    num_imp_dup = min(num_imp, r)
+    num_pivot = math.ceil((seq - r) * 0.05)
+
+    if 'imp_num' in cinfo:
+        imp_num = cinfo['imp_num']
+        if imp_num is not None:
+            num_imp = imp_num
+    elif 'imp_factor' in cinfo:
+        imp_factor = cinfo['imp_factor']
+        if imp_factor is not None:
+            num_imp = clamp(math.floor((seq + 1) * imp_factor), 0, seq)
+    if 'pivot_num' in cinfo:
+        pivot_num = cinfo['pivot_num']
+        if pivot_num is not None:
+            num_pivot = pivot_num
+    elif 'pivot_factor' in cinfo:
+        pivot_factor = cinfo['pivot_factor']
+        if pivot_factor is not None:
+            num_pivot = clamp(math.ceil(seq * pivot_factor), 1, seq)
+
+    with torch.no_grad():
+
+        # scale the metric matrix
+        metric_norm = m0_raw.norm(2, -1, True).mean(1) # (bsz, head, seq, 1) -> (bsz, seq, 1)
+        if cinfo.get('bottom_pivot', KIDD_PIVOT_BOTTOM):
+            idx_pivot = metric_norm[..., 0].topk(num_pivot, sorted=False, largest=False).indices
+        else:
+            idx_pivot = metric_norm[..., 0].topk(num_pivot, sorted=False, largest=True).indices
+
+        # idx_pivot is of shape (bsz, num_pivot)
+
+        # calculate redundancy
+        # select pivot tokens, there will be (bsz, num_pivot) indices
+        if KIDD_NORM_DUP:
+            dup_space = m1_raw / m1_raw.norm(2, -1, True) # (bsz, head, seq, dim)
+        else:
+            dup_space = m1_raw
+        # tokens_pivot = dup_space.gather(-2, idx_pivot.unsqueeze(-1).expand(-1, -1, dup_space.size(-1)))
+        tokens_pivot = dup_space.take_along_dim(idx_pivot.view(bsz, 1, num_pivot, 1), -2)
+        if KIDD_RND_DUP:
+            score_dup = torch.rand(bsz, seq, device=x.device)
+        else:
+            score_dup = matmul_sum(dup_space, tokens_pivot) # (b, h, n, d) @ (b h d num_pivot) -> (b h n num_pivot) -> (b h n)
+            score_dup = score_dup.mean(1) # (b, h, n) -> (b n)
+
+            # adjust:
+            if adjust:
+                mask_pivot = torch.zeros((bsz, seq), device=score_dup.device, dtype=torch.int).scatter(-1, idx_pivot, 1)
+                score_dup = score_dup - mask_pivot
+                score_dup = score_dup * (mask_pivot / seq + 1)
+            
+        # regard top r tokens as duplicate tokens
+        idx_tmp = score_dup.sort(descending=True).indices
+        src_idx = idx_tmp[:, :r]
+        # left_idx = idx_tmp[:, r:].sort().values
+        left_idx = idx_tmp[:, r:]
+
+        if KIDD_NORM_MRG:
+            # find merging target basing on similarity
+            merge_space = m2_raw / m2_raw.norm(2, -1, True)
+        else:
+            # Without normalization, we are calculating projections?
+            merge_space = m2_raw
+
+        tokens_src = merge_space.take_along_dim(src_idx.reshape(bsz, 1, r, 1), -2) # (bsz, head, r, dim)
+        tokens_left = merge_space.take_along_dim(left_idx.reshape(bsz, 1, seq - r, 1), dim=-2) # (bsz, head, left, dim)
+
+        score_tgt = (tokens_left @ tokens_src.transpose(-2, -1)).mean(1)
+
+        if pte:
+            pte_space = pinfo['pte']
+            # pte_space = pte_space / pte_space.norm(p=2, dim=-1, keepdim=True)
+            pte_src = pte_space.take_along_dim(src_idx.unsqueeze(-1), -2)
+            pte_left = pte_space.take_along_dim(left_idx.unsqueeze(-1), -2)
+
+            score_tgt = score_tgt + pte_left @ pte_src.transpose(-2, -1)
+
+        idx_sim = score_tgt.argmax(-2)
+        tar_idx = left_idx.gather(-1, idx_sim)
+
+        # calculate importance now
+        if use_cls and pinfo['class_token']:
+            tokens_base = m3_prot[:, 0:1]
+        else:
+            tokens_base = m3_raw.mean(-2, True) # (bsz, 1, dim)
+
+        # It is not necessary to normalize the tokens_base since they share the same ||tokens_base||        
+        if KIDD_NORM_IMP:
+            imp_space = m4_raw / m4_raw.norm(2, -1, True)
+        else:
+            imp_space = m4_raw
+
+        if KIDD_RND_IMP:
+            score_imp = torch.rand(bsz, seq, device=x.device)
+        else:
+            score_imp = (imp_space @ tokens_base.transpose(-2, -1)).squeeze(-1).mean(1) # (bsz, seq)
+        idx_imp = score_imp.topk(num_imp, -1, True, False).indices
+
+        # now only those important tokens have a target, others should be assigned to indices which are not in left_idx
+        mask_imp = (src_idx.unsqueeze(-1) == idx_imp.unsqueeze(-2)).any(-1)
+        tar_idx = tar_idx.where(mask_imp, src_idx)
+
+    def merge(x : torch.Tensor, reduce = 'sum', do_split = True):
+        if do_split:
+            x_prot, x_raw = spliter(x)
+        else:
+            x_prot, x_raw = x[..., 0:0, :], x
+
+        bsz, seq, dim = x_raw.shape
+        src = x_raw.take_along_dim(src_idx.unsqueeze(-1), -2)
+        tar_idx_ = tar_idx.unsqueeze(-1).expand(-1, -1, dim)
+        x_raw = x_raw.scatter_reduce(-2, tar_idx_, src, reduce)
+        left = x_raw.take_along_dim(left_idx.unsqueeze(-1), -2)
 
         return torch.cat([x_prot, left], dim = -2)
     
