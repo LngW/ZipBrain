@@ -2,7 +2,7 @@ import os
 import math
 import torch
 
-from .utils import separate_method_args, Spliter, handle_source, clamp, setdiff_indices
+from .utils import separate_method_args, Spliter, handle_source, handle_size, clamp, setdiff_indices
 
 KIDD_RND_DUP=(os.getenv('KIDD_RND_DUP', '0') == '1')
 KIDD_RND_IMP=(os.getenv('KIDD_RND_IMP', '0') == '1')
@@ -11,6 +11,8 @@ KIDD_NORM_MRG=(os.getenv('KIDD_NORM_MRG', '1') == '1')
 KIDD_NORM_IMP=(os.getenv('KIDD_NORM_IMP', '1') == '1')
 
 KIDD_PIVOT_BOTTOM=(os.getenv('KIDD_PIVOT_BOTTOM', '0') == '1')
+
+KIDD_MERGE_SCHEME={'slerp': 'slerp', 'avglen': 'avglen', 'simple':'simple'}.get(os.getenv('KIDD_MERGE_SCHEME', 'mlerp'), 'mlerp')
 
 # In this method, we return three metric, and the three metrics are used for:
 # m0: select pivot tokens
@@ -541,29 +543,33 @@ def kidd_left2(pinfo, cinfo, r : int, x : torch.Tensor, m0 : torch.Tensor, m1 : 
         pinfo['pte'] = merge(pinfo['pte'], do_split=False)
 
     # slerp
-    # size, size_ = handle_size(pinfo, x, merge)
-    # return merge(x * size) / size_
+    if KIDD_MERGE_SCHEME == 'slerp':
+        size, size_ = handle_size(pinfo, x, merge)
+        return merge(x * size) / size_
 
     # mlerp
-    length = x.norm(2, -1, True)
-    length_ = merge(length, 'amax')
-    x = merge(x)
-    x = x / x.norm(2, -1, True)
-    x = x * length_
-    return x
+    elif KIDD_MERGE_SCHEME == 'mlerp':
+        length = x.norm(2, -1, True)
+        length_ = merge(length, 'amax')
+        x = merge(x)
+        x = x / x.norm(2, -1, True)
+        x = x * length_
+        return x
 
     # avg
-    # size = torch.ones_like(x[..., :1])
-    # size_ = merge(size)
-    # return merge(x) / merge(size)
+    elif KIDD_MERGE_SCHEME == 'simple':
+        size = torch.ones_like(x[..., :1])
+        size_ = merge(size)
+        return merge(x) / merge(size)
 
     # length_avg
-    # length = x.norm(2, -1, True)
-    # size, size_ = handle_size(pinfo, x, merge)
-    # length_ = merge(length * size) / size_
-    # x = merge(x)
-    # x = x / x.norm(2, -1, True) * length_
-    # return x
+    elif KIDD_MERGE_SCHEME == 'avglen':
+        length = x.norm(2, -1, True)
+        size, size_ = handle_size(pinfo, x, merge)
+        length_ = merge(length * size) / size_
+        x = merge(x)
+        x = x / x.norm(2, -1, True) * length_
+        return x
 
 def kidd_left2_mh(pinfo, cinfo, r : int, x : torch.Tensor, m0 : torch.Tensor, m1 : torch.Tensor, m2 : torch.Tensor, m3 : torch.Tensor, m4 : torch.Tensor, spliter : Spliter, pte : bool):
 
