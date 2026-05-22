@@ -17,7 +17,7 @@ common_args=(
     --storage rqlite+pyrqlite://archfs00:14571
     # --n_trials_qmc 130
     --n_trials_tpe 0
-    --suffix bottom
+    # --suffix bottom
 )
 
 common_args="${common_args[@]}"
@@ -33,9 +33,11 @@ methods=(
     # 'kiddp[k]' 'kiddp[q]' 'kiddp[v]'
     # 'kiddl2[k]' 
     # 'kiddl2mh_pte' 
-    'kiddl2mh' 
-    'kiddl2pte' 
-    'kiddl2' 
+    'kiddl2f{adjust}' 
+    'kiddl2f{bottom_pivot}' 
+    'kiddl2f{adjust,bottom_pivot}' 
+    # 'kiddl2pte' 
+    # 'kiddl2' 
     # 'kiddl2mh_pte[q]'
     # 'kiddl2mh_pte[k]' 
     # 'kiddl2mh_pte[v]'
@@ -54,7 +56,7 @@ for ds in ${datasets}; do
             # done
             for r in 19; do
             # for r in 61 75; do
-                KIDD_PIVOT_BOTTOM=1 python $common_args --dataset $ds --tome_variant $m --tome_r $r --log_dir ${m}-${ds} --tome-scheme
+                python $common_args --dataset $ds --tome_variant $m --tome_r $r --log_dir ${m}-${ds} --tome-scheme
             done
         done
     elif [[ "$ds" == "TUEV" ]]; then

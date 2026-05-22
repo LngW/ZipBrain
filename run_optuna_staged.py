@@ -15,7 +15,7 @@ def objective(trial: optuna.Trial, args, model, dataloader, hooks):
     m_values = []
     m_names = ['m0', 'm1', 'm2', 'm3', 'm4']
     for m in m_names:
-        val = trial.suggest_categorical(m, ['x', 'q', 'k', 'v'])
+        val = trial.suggest_categorical(m, ['x', 'q', 'k', 'v'] + [i0 + i1 for i0 in 'qkv' for i1 in 'hc'])
         m_values.append(val)
 
     # 3. Format tome_variant as requested: append '[m0,m1,m2,m3,m4]'
@@ -115,7 +115,7 @@ def run_staged_optuna(args):
     # n_trials = args.n_trials_tpe
     obj = partial(objective, args=args, model=model, dataloader=dataloader, hooks=hooks)
 
-    if len(study.trials) <= 208:
+    if len(study.trials) <= 135:
         # Stage 1: pivot=0.1, imp=0, tune m0, m1
         print("\n>>> Stage 1: Tuning m0, m1 (imp_factor=0)")
         # stage1 = {'fixed': {'imp_factor': 0.0}, 'tuning': ['m0', 'm1'], 'default_m': 'x'}
@@ -147,16 +147,17 @@ def run_staged_optuna(args):
 
         # Stage 3: pivot=0.1, imp=0.5, m0-m2 fixed, tune m3, m4
         print(f"\n>>> Stage 3: Tuning m3, m4 (imp_factor=0.5, m0-m2 fixed)")
-        study.sampler = optuna.samplers.GridSampler({
-            'pivot_factor': [0.1],
-            'imp_factor': [0.5],
-            'm0': [best_m['m0']],
-            'm1': [best_m['m1']],
-            'm2': [best_m['m2']],
-            'm3': ['q', 'k', 'v'] + [i0 + i1 for i0 in 'qkv' for i1 in 'hc'],
-            'm4': ['q', 'k', 'v'] + [i0 + i1 for i0 in 'qkv' for i1 in 'hc'],
-        })
-        study.optimize(obj, n_trials=100)
+        for sf in ['', 'h', 'c']:
+            study.sampler = optuna.samplers.GridSampler({
+                'pivot_factor': [0.1],
+                'imp_factor': [0.5],
+                'm0': [best_m['m0']],
+                'm1': [best_m['m1']],
+                'm2': [best_m['m2']],
+                'm3': [it + sf for it in 'qkv'],
+                'm4': [it + sf for it in 'qkv'],
+            })
+            study.optimize(obj, n_trials=3)
         study.sampler = optuna.samplers.GridSampler({
             'pivot_factor': [0.1],
             'imp_factor': [0.5],
@@ -168,7 +169,7 @@ def run_staged_optuna(args):
         })
         study.optimize(obj, n_trials=1)
         
-        best_m.update(get_best_params_from_study(study, ['m3', 'm4'], 101))
+        best_m.update(get_best_params_from_study(study, ['m3', 'm4'], 28))
         study.enqueue_trial({'pivot_factor': 0.1, 'imp_factor': 1.0, **best_m})
         study.optimize(obj, n_trials=1)
     else:

@@ -20,15 +20,22 @@ def separate_method_args(variant : str):
 
     left0 = variant.find('[')
     right0 = variant.find(']', left0)
-    left1 = variant.find('{', right0)
+    left1 = variant.find('{')
     right1 = variant.find('}', left1)
 
     method = variant
     args = []
     kwargs = {}
 
-    if left0 > 0 and right0 >= left0:
+    if left0 > 0 and left1 > 0:
+        method = variant[:min(left0, left1)]
+    elif left0 > 0:
         method = variant[:left0]
+    elif left1 > 0:
+        method = method[:left1]
+
+    if left0 > 0 and right0 >= left0:
+        # method = variant[:left0]
         args = variant[left0+1:right0].split(',')
         args = [it.strip() for it in args]
 
@@ -625,7 +632,7 @@ def kidd_left2(pinfo, cinfo, r : int, x : torch.Tensor, m0 : torch.Tensor, m1 : 
         x = x / x.norm(2, -1, True) * length_
         return x
 
-def kidd_left2f(pinfo, cinfo, r : int, x : torch.Tensor, m0 : torch.Tensor, m1 : torch.Tensor, m2 : torch.Tensor, m3 : torch.Tensor, m4 : torch.Tensor, spliter : Spliter, pte : bool = False, adjust : bool = False):
+def kidd_left2f(pinfo, cinfo, r : int, x : torch.Tensor, m0 : torch.Tensor, m1 : torch.Tensor, m2 : torch.Tensor, m3 : torch.Tensor, m4 : torch.Tensor, spliter : Spliter):
 
     # note that x is of shape (B, N, D), but m0~m4 are of shape (B, H, N, HD), and H and HD may vary
 
@@ -668,6 +675,9 @@ def kidd_left2f(pinfo, cinfo, r : int, x : torch.Tensor, m0 : torch.Tensor, m1 :
         if pivot_factor is not None:
             num_pivot = clamp(math.ceil(seq * pivot_factor), 1, seq)
 
+    pte = cinfo.get('pte', False)
+    adjust = cinfo.get('adjust', False)
+
     with torch.no_grad():
 
         # scale the metric matrix
@@ -681,13 +691,13 @@ def kidd_left2f(pinfo, cinfo, r : int, x : torch.Tensor, m0 : torch.Tensor, m1 :
 
         # calculate redundancy
         # select pivot tokens, there will be (bsz, num_pivot) indices
-        if KIDD_NORM_DUP:
+        if cinfo.get('norm_dup', KIDD_NORM_DUP):
             dup_space = m1_raw / m1_raw.norm(2, -1, True) # (bsz, head, seq, dim)
         else:
             dup_space = m1_raw
         # tokens_pivot = dup_space.gather(-2, idx_pivot.unsqueeze(-1).expand(-1, -1, dup_space.size(-1)))
         tokens_pivot = dup_space.take_along_dim(idx_pivot.view(bsz, 1, num_pivot, 1), -2)
-        if KIDD_RND_DUP:
+        if cinfo.get('rnd_dup', KIDD_RND_DUP):
             score_dup = torch.rand(bsz, seq, device=x.device)
         else:
             score_dup = matmul_sum(dup_space, tokens_pivot) # (b, h, n, d) @ (b h d num_pivot) -> (b h n num_pivot) -> (b h n)
@@ -705,7 +715,7 @@ def kidd_left2f(pinfo, cinfo, r : int, x : torch.Tensor, m0 : torch.Tensor, m1 :
         # left_idx = idx_tmp[:, r:].sort().values
         left_idx = idx_tmp[:, r:]
 
-        if KIDD_NORM_MRG:
+        if cinfo.get('norm_merge', KIDD_NORM_MRG):
             # find merging target basing on similarity
             merge_space = m2_raw / m2_raw.norm(2, -1, True)
         else:
@@ -735,12 +745,12 @@ def kidd_left2f(pinfo, cinfo, r : int, x : torch.Tensor, m0 : torch.Tensor, m1 :
             tokens_base = m3_raw.mean(-2, True) # (bsz, 1, dim)
 
         # It is not necessary to normalize the tokens_base since they share the same ||tokens_base||        
-        if KIDD_NORM_IMP:
+        if cinfo.get('norm_imp', KIDD_NORM_IMP):
             imp_space = m4_raw / m4_raw.norm(2, -1, True)
         else:
             imp_space = m4_raw
 
-        if KIDD_RND_IMP:
+        if cinfo.get('rnd_imp', KIDD_RND_IMP):
             score_imp = torch.rand(bsz, seq, device=x.device)
         else:
             score_imp = (imp_space @ tokens_base.transpose(-2, -1)).squeeze(-1).mean(1) # (bsz, seq)
@@ -768,6 +778,9 @@ def kidd_left2f(pinfo, cinfo, r : int, x : torch.Tensor, m0 : torch.Tensor, m1 :
 
     if pte:
         pinfo['pte'] = merge(pinfo['pte'], do_split=False)
+
+    merge_scheme = cinfo.get('merge_scheme', KIDD_MERGE_SCHEME)
+    merge_scheme = {'slerp': 'slerp', 'avglen': 'avglen', 'simple':'simple'}.get(merge_scheme, 'mlerp')
 
     # slerp
     if KIDD_MERGE_SCHEME == 'slerp':
