@@ -94,9 +94,13 @@ def run_staged_optuna(args):
     if args.suffix:
         default_name += f"-{args.suffix}"
 
+    study_name = getattr(args, 'study_name', None) or default_name
+    if args.namespace:
+        study_name = '{}:{}'.format(args.namespace, study_name)
+
     study = optuna.create_study(
         storage=args.storage,
-        study_name=getattr(args, 'study_name', None) or default_name,
+        study_name=study_name,
         directions=['maximize'] * 3,
         load_if_exists=True
     )
@@ -105,7 +109,7 @@ def run_staged_optuna(args):
         # For multi-objective, we pick the best based on the first objective (balanced_accuracy)
         if past is not None:
             past = -past
-        trials = [t for t in study.trials[past:] if t.state == optuna.trial.TrialState.COMPLETE]
+        trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE][past:]
         if not trials:
             return {k: 'x' for k in keys}
         best_trial = max(trials, key=lambda t: t.values[-1])
@@ -115,7 +119,8 @@ def run_staged_optuna(args):
     # n_trials = args.n_trials_tpe
     obj = partial(objective, args=args, model=model, dataloader=dataloader, hooks=hooks)
 
-    if len(study.trials) <= 135:
+    num_trials = len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])
+    if num_trials <= 138:
         # Stage 1: pivot=0.1, imp=0, tune m0, m1
         print("\n>>> Stage 1: Tuning m0, m1 (imp_factor=0)")
         # stage1 = {'fixed': {'imp_factor': 0.0}, 'tuning': ['m0', 'm1'], 'default_m': 'x'}
@@ -138,12 +143,12 @@ def run_staged_optuna(args):
             'imp_factor': [1.],
             'm0': [best_m['m0']],
             'm1': [best_m['m1']],
-            'm2': ['x', 'q', 'k', 'v', 'qh', 'kh', 'vh'],
+            'm2': ['x', 'q', 'k', 'v', 'qh', 'kh', 'vh', 'qc', 'kc', 'vc'],
             'm3': ['x'],
             'm4': ['x'],
         })
-        study.optimize(obj, n_trials=7)
-        best_m.update(get_best_params_from_study(study, ['m2'], 7))
+        study.optimize(obj, n_trials=10)
+        best_m.update(get_best_params_from_study(study, ['m2'], 10))
 
         # Stage 3: pivot=0.1, imp=0.5, m0-m2 fixed, tune m3, m4
         print(f"\n>>> Stage 3: Tuning m3, m4 (imp_factor=0.5, m0-m2 fixed)")
@@ -214,6 +219,7 @@ def pre_main():
     parser.add_argument("--show-shape", action='store_true', default=False, dest='show_shape')
     parser.add_argument("--trace-source", action="store_true", default=False, dest='trace_source')
     parser.add_argument("--storage", default = 'sqlite:///db.sqlite3')
+    parser.add_argument("--namespace", default=None)
     parser.add_argument("--suffix", type=str, default=None)
     parser.add_argument("--study_name", type=str, default=None)
 

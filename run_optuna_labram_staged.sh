@@ -10,9 +10,10 @@ common_args=(
     run_optuna_staged.py
     --num_workers 8
     --test
-    --batch_size 128
+    --batch_size ${2:-128}
     --model LaBraM
     --workspace optuna_labram_xqkv
+    --namespace debug_impl
     # --storage sqlite:///workspace/optuna_biot/db_xqkv.${suffix}.sqlite3
     --storage rqlite+pyrqlite://archfs00:14571
     # --n_trials_qmc 130
@@ -33,6 +34,7 @@ methods=(
     # 'kiddp[k]' 'kiddp[q]' 'kiddp[v]'
     # 'kiddl2[k]' 
     # 'kiddl2mh_pte' 
+    'kiddl2f{}' 
     'kiddl2f{adjust}' 
     'kiddl2f{bottom_pivot}' 
     'kiddl2f{adjust,bottom_pivot}' 
@@ -43,6 +45,10 @@ methods=(
     # 'kiddl2mh_pte[v]'
     # 'kiddl2mh_pte[v,x,k,q]'
 )
+
+methods=${3:-''}
+methods=${methods//;/ }
+methods=($methods)
 
 datasets=${1//;/ }
 
@@ -103,6 +109,12 @@ for ds in ${datasets}; do
             done
             for r in 58; do
                 python $common_args --dataset $ds --tome_variant $m --tome_r $r --log_dir ${m}-${ds} --tome-scheme
+            done
+        done
+    elif [[ "$ds" == "ECHO" ]]; then
+        for m in "${methods[@]}"; do
+            for r in 1; do
+                echo $common_args --dataset $ds --tome_variant $m --tome_r $r --log_dir ${m}-${ds} --tome-scheme
             done
         done
     fi
