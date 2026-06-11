@@ -4,7 +4,7 @@ common_args=(
     run_inference.py
     --num_workers 8
     --test
-    --batch_size 128
+    --batch_size ${1:-'128'}
     --model EEGPT
     --workspace inference_eegpt
 )
@@ -17,7 +17,18 @@ common_args="${common_args[@]}"
 # meanp: EEG models may not use a [cls] token, so use mean of tokens as a replacement of [cls]. This approach depends on the cornve space
 # clstrpts (TR-PTS, a merging version of [cls] pruning): 
 # meantrpts (TR-PTS, a merging version of mean pruning): 
-methods=(tome tofu clsp meanp clstrpts meantrpts) 
+methods=(
+    # tome 
+    # tofu 
+    # clsp 
+    # meanp 
+    # clstrpts 
+    # meantrpts
+    # meantrpts2
+    # dartp[k,x]
+    meanevit2
+    'dartp_[k,x]'
+) 
 
 ds=TUAB
 for m in "${methods[@]}"; do
@@ -60,7 +71,7 @@ done
 
 ds=EEGMAT
 for m in "${methods[@]}"; do
-    for r in 1; do
+    for r in 1 2 3; do
         python $common_args --dataset $ds --tome_variant $m --tome_r 0 $r 0 $r 0 $r 0 $r --log_dir ${m}-${ds} --tome-scheme
     done
     # for r in 1 6 11 17 22 27; do
@@ -73,7 +84,7 @@ done
 
 ds=EarEEG
 for m in "${methods[@]}"; do
-    for r in 1 2 3; do
+    for r in 1; do
         python $common_args --dataset $ds --tome_variant $m --tome_r 0 $r 0 $r 0 $r 0 $r --log_dir ${m}-${ds} --tome-scheme
     done
 

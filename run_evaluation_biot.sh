@@ -21,7 +21,7 @@ methods=(
     tome
     tofu
     meanp
-    meanevit
+    meanevit2
     'dartp_[k,x]'
 )
 

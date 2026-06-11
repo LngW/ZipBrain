@@ -22,8 +22,8 @@ methods=(
     tofu 
     clsp 
     meanp 
-    clsevit
-    meanevit
+    clsevit2
+    meanevit2
     'dartp_[k,x]'
 ) 
 
