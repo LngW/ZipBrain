@@ -28,3 +28,6 @@ notebooks/
 
 *.server/
 deprecated/
+
+*optuna*.py
+*optuna*.sh
