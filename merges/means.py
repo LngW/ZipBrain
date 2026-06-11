@@ -1,3 +1,4 @@
+import math
 import torch
 from .utils import Spliter, handle_size, handle_source, clamp, setdiff_indices
 
@@ -58,6 +59,8 @@ def apply_means(pinfo : dict, cinfo : dict, r : int, variant : str, x : torch.Te
         return mean_trpts(pinfo, r_, x, attn_score, split)
     elif variant.startswith('meanevit'):
         return mean_evit(pinfo, r_, x, q, k, split)
+    elif variant.startswith('meanevit2'):
+        return mean_evit2(pinfo, r_, x, q, k, split)
     elif variant.startswith('meanm0'):
         return mean_merge0(pinfo, r_, x, attn_score, split)
     elif variant.startswith('meanm1'):
@@ -266,6 +269,48 @@ def mean_evit(pinfo, r, x, q, k, split : Spliter):
         left = torch.gather(it_raw, -2, left_idx.expand(-1, -1, it.size(-1)))
 
         return torch.cat([it_prot, left, score @ src], dim=-2)
+    
+    handle_source(pinfo, x, merge)
+    # size, size_ = handle_size(pinfo, x, merge)
+
+    # return merge(x * size) / size_
+    return merge(x)
+
+def mean_evit2(pinfo, r, x, q, k, split : Spliter):
+    x_prot, x_raw = split(x.detach())
+    q_mean = split(q)[1].mean(-2, True)
+    _, k_tokens = split(k)
+
+    _, h, seq, hd = k_tokens.shape
+
+    # (B, H, N, D) @ (B, H, D, 1) -> (B, H, N, 1)
+    attn = (k @ (q_mean.transpose(-2, -1) / math.sqrt(hd))) #.mean(1).transpose(-2, -1) 
+    # (B, H, N, 1) -> (B, N, 1) -> (B, N)
+    attn = torch.softmax(attn, -1).unsqueeze(-1).mean(1)
+    attn = split(attn)[1]
+
+    # seq = x_raw.size(1)
+    r = min(r + 1, seq) # since this method generate append one token to the remaining tokens, we remove one more token for consistant compression ratio as other methods
+    t = seq - r
+
+    # left_idx = torch.topk(attn, t, dim=-1, sorted=False).indices # (B, 1, T)
+    score_tmp, idx_tmp = torch.sort(attn, -1, True)
+
+    left_idx = idx_tmp[:t]
+    src_idx = idx_tmp[t:]
+    score = score_tmp[t:]
+    
+    left_idx, _ = left_idx.sort(-1, False) # (B, 1, T)
+    left_idx = left_idx[..., 0, :, None] # (B, T, 1)
+    src_idx = src_idx[..., 0, :, None]
+
+    def merge(it, mode = 'sum'):
+        it_prot, it_raw = split(it)
+        # dim = it.size(-1)
+        src = it_raw.gather(-2, src_idx.expand(-1, -1, it.size(-1))) # (B, T, D)
+        left = torch.gather(it_raw, -2, left_idx.expand(-1, -1, it.size(-1)))
+
+        return torch.cat([it_prot, left, (score @ src)], dim=-2)
     
     handle_source(pinfo, x, merge)
     # size, size_ = handle_size(pinfo, x, merge)
