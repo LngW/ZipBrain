@@ -1,4 +1,4 @@
-from typing import Callable, Tuple
+from typing import Callable
 import torch
 Spliter = Callable[[torch.Tensor], tuple[torch.Tensor, torch.Tensor]]
 
