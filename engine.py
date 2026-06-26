@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 import torch
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 from torch.profiler import record_function
 
 import numpy
@@ -32,7 +32,12 @@ class __GlobalContext:
         # self.__log_dir = log_dir
         self.__cp_dir = cp_dir
 
-        self.logger = SummaryWriter(log_dir)
+        if log_dir is None:
+            self.logger = None
+        else:
+            from torch.utils.tensorboard import SummaryWriter
+            self.logger = SummaryWriter(log_dir = log_dir)
+
         self.global_step = 0
 
     @property
@@ -64,23 +69,31 @@ class __GlobalContext:
         step = self.global_step
         self.global_step += 1
 
-        self.logger.add_scalar(key, value, step)
+        if self.logger is not None:
+            self.logger.add_scalar(key, value, step)
     
     def log_global_step_(self, key, value):
-        self.logger.add_scalar(key, value, self.global_step)
+        if self.logger is not None:
+            self.logger.add_scalar(key, value, self.global_step)
     
     def log_epoch(self, key, value, epoch):
-        self.logger.add_scalar(key, value, epoch)
+        if self.logger is not None:
+            self.logger.add_scalar(key, value, epoch)
 
     def __iter__(self):
         return iter((self.device, self.__slots, self.s_compute, self.s_mem_in, self.s_mem_out, self.__event_queue))
     
+    def flush(self):
+        if self.logger is not None:
+            self.logger.flush()
+
     def destory(self):
         self.__event_queue.put((None, None))
         self.__event_loop.join()
 
-        self.logger.flush()
-        self.logger.close()
+        if self.logger is not None:
+            self.logger.flush()
+            self.logger.close()
 
 @dataclass
 class Hooks:
@@ -520,7 +533,7 @@ def _train_loop(
     if state_dict is not None:
         __save_model(state_dict, ctx_global.save_path("last_epoch{}.pt".format(epoch)))
 
-    ctx_global.logger.flush()
+    ctx_global.flush()
 
 def _inference_loop(
         ctx_global : __GlobalContext,
@@ -561,7 +574,7 @@ def _inference_loop(
 
     pbar.write(prefix + ":\t\t" + (" " * 4).join(f"{k}={v:.6f}" for k,v in metrics2.items()))
     pbar.close()
-    ctx_global.logger.flush()
+    ctx_global.flush()
 
     return metrics2
 
@@ -606,7 +619,7 @@ def valid_loop(
     pbar.write("Test:\t\t" + (" " * 4).join(f"{k}={v:.6f}" for k,v in metrics2.items()))
     # pbar.set_postfix(metrics2)
     pbar.close()
-    ctx_global.logger.flush()
+    ctx_global.flush()
 
 def train(
         ctx_global : __GlobalContext,
