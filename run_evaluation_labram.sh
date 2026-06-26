@@ -24,7 +24,7 @@ methods=(
     meanp 
     clsevit2
     meanevit2
-    'dartp_[k,x]'
+    'dartpo[k,x]'
 ) 
 
 ds=TUAB

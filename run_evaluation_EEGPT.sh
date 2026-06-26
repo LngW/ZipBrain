@@ -18,16 +18,12 @@ common_args="${common_args[@]}"
 # clstrpts (TR-PTS, a merging version of [cls] pruning): 
 # meantrpts (TR-PTS, a merging version of mean pruning): 
 methods=(
-    # tome 
-    # tofu 
-    # clsp 
-    # meanp 
-    # clstrpts 
-    # meantrpts
-    # meantrpts2
-    # dartp[k,x]
+    tome 
+    tofu 
+    meanp 
     meanevit2
-    'dartp_[k,x]'
+    # dartp[k,x]
+    'dartpo[k,x]'
 ) 
 
 ds=TUAB
