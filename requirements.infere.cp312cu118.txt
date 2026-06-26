@@ -5,19 +5,27 @@ absl-py==2.4.0
 aiohappyeyeballs==2.6.1
     # via aiohttp
 aiohttp==3.13.5
-    # via fsspec
+    # via
+    #   fsspec
+    #   wfdb
 aiosignal==1.4.0
     # via aiohttp
 alembic==1.18.4
     # via optuna
+annotated-types==0.7.0
+    # via pydantic
 asttokens==3.0.1
     # via stack-data
 attrs==26.1.0
     # via aiohttp
 axial-positional-embedding==0.3.12
     # via linear-attention-transformer
+braindecode==1.5.2
+    # via -r requirements.infere.in
 certifi==2026.2.25
     # via requests
+cffi==2.0.0
+    # via soundfile
 charset-normalizer==3.4.7
     # via requests
 colorlog==6.10.1
@@ -40,6 +48,8 @@ decorator==5.2.1
     # via
     #   ipython
     #   mne
+docstring-inheritance==3.0.0
+    # via braindecode
 einops==0.8.2
     # via
     #   -r requirements.infere.in
@@ -49,6 +59,7 @@ einops==0.8.2
     #   linear-attention-transformer
     #   local-attention
     #   product-key-memory
+    #   rotary-embedding-torch
     #   torch-einops-utils
 executing==2.2.1
     # via stack-data
@@ -69,12 +80,15 @@ fsspec==2024.12.0
     #   lightning
     #   pytorch-lightning
     #   torch
+    #   wfdb
 greenlet==3.3.2
     # via sqlalchemy
 grpcio==1.80.0
     # via tensorboard
 h5py==3.16.0
-    # via -r requirements.infere.in
+    # via
+    #   -r requirements.infere.in
+    #   braindecode
 hyper-connections==0.4.9
     # via local-attention
 idna==3.11
@@ -98,7 +112,9 @@ jinja2==3.1.6
     #   mne
     #   torch
 joblib==1.5.3
-    # via scikit-learn
+    # via
+    #   braindecode
+    #   scikit-learn
 jupyter-client==8.8.0
     # via ipykernel
 jupyter-core==5.9.1
@@ -119,7 +135,9 @@ lightning-utilities==0.15.3
     #   pytorch-lightning
     #   torchmetrics
 linear-attention-transformer==0.19.1
-    # via -r requirements.infere.in
+    # via
+    #   -r requirements.infere.in
+    #   braindecode
 linformer==0.2.3
     # via linear-attention-transformer
 lmdb==2.2.0
@@ -140,7 +158,9 @@ markupsafe==3.0.3
     #   mako
     #   werkzeug
 matplotlib==3.10.8
-    # via mne
+    # via
+    #   mne
+    #   wfdb
 matplotlib-inline==0.2.1
     # via
     #   ipykernel
@@ -151,7 +171,12 @@ ml-dtypes==0.5.4
     #   onnx-ir
     #   onnxscript
 mne==1.11.0
-    # via -r requirements.infere.in
+    # via
+    #   -r requirements.infere.in
+    #   braindecode
+    #   mne-bids
+mne-bids==0.19.0
+    # via braindecode
 mpmath==1.3.0
     # via sympy
 multidict==6.7.1
@@ -173,6 +198,7 @@ numpy==2.4.4
     #   matplotlib
     #   ml-dtypes
     #   mne
+    #   mne-bids
     #   onnx
     #   onnx-ir
     #   onnxruntime
@@ -183,10 +209,13 @@ numpy==2.4.4
     #   rdkit
     #   scikit-learn
     #   scipy
+    #   skorch
+    #   soundfile
     #   tensorboard
     #   tensorboardx
     #   torchmetrics
     #   torchvision
+    #   wfdb
 nvidia-cublas-cu11==11.11.3.6
     # via
     #   nvidia-cudnn-cu11
@@ -247,7 +276,9 @@ packaging==24.2
 pandas==3.0.2
     # via
     #   -r requirements.infere.in
+    #   braindecode
     #   pyhealth
+    #   wfdb
 parso==0.8.6
     # via jedi
 pexpect==4.9.0
@@ -288,6 +319,12 @@ pure-eval==0.2.3
     # via stack-data
 pyarrow==23.0.1
     # via -r requirements.infere.in
+pycparser==3.0
+    # via cffi
+pydantic==2.13.4
+    # via braindecode
+pydantic-core==2.46.4
+    # via pydantic
 pygments==2.20.0
     # via
     #   ipython
@@ -316,16 +353,24 @@ pyzmq==27.1.0
 rdkit==2025.9.6
     # via pyhealth
 requests==2.33.1
-    # via pooch
+    # via
+    #   pooch
+    #   wfdb
+rotary-embedding-torch==0.9.1
+    # via braindecode
 scikit-learn==1.8.0
     # via
     #   -r requirements.infere.in
     #   pyhealth
+    #   skorch
 scipy==1.17.1
     # via
     #   -r requirements.infere.in
     #   mne
+    #   mne-bids
     #   scikit-learn
+    #   skorch
+    #   wfdb
 setuptools==80.10.2
     # via
     #   -r requirements.infere.in
@@ -334,6 +379,10 @@ setuptools==80.10.2
     #   triton
 six==1.17.0
     # via python-dateutil
+skorch==1.4.0
+    # via braindecode
+soundfile==0.14.0
+    # via wfdb
 sqlalchemy==2.0.49
     # via
     #   alembic
@@ -346,6 +395,8 @@ sympy==1.14.0
     #   onnxruntime
     #   onnxruntime-gpu
     #   torch
+tabulate==0.10.0
+    # via skorch
 tensorboard==2.20.0
     # via -r requirements.infere.in
 tensorboard-data-server==0.7.2
@@ -360,6 +411,7 @@ torch==2.7.1+cu118
     # via
     #   -r requirements.infere.in
     #   axial-positional-embedding
+    #   braindecode
     #   colt5-attention
     #   hyper-connections
     #   lightning
@@ -369,6 +421,7 @@ torch==2.7.1+cu118
     #   product-key-memory
     #   pyhealth
     #   pytorch-lightning
+    #   rotary-embedding-torch
     #   timm
     #   torch-einops-utils
     #   torchaudio
@@ -377,7 +430,11 @@ torch==2.7.1+cu118
 torch-einops-utils==0.0.30
     # via hyper-connections
 torchaudio==2.7.1+cu118
-    # via -r requirements.infere.in
+    # via
+    #   -r requirements.infere.in
+    #   braindecode
+torchinfo==1.8.0
+    # via braindecode
 torchmetrics==1.9.0
     # via
     #   lightning
@@ -398,6 +455,7 @@ tqdm==4.67.3
     #   optuna
     #   pyhealth
     #   pytorch-lightning
+    #   skorch
 traitlets==5.14.3
     # via
     #   ipykernel
@@ -412,21 +470,30 @@ typing-extensions==4.15.0
     # via
     #   aiosignal
     #   alembic
+    #   docstring-inheritance
     #   grpcio
     #   lightning
     #   lightning-utilities
     #   onnx
     #   onnx-ir
     #   onnxscript
+    #   pydantic
+    #   pydantic-core
     #   pytorch-lightning
+    #   soundfile
     #   sqlalchemy
     #   torch
+    #   typing-inspection
+typing-inspection==0.4.2
+    # via pydantic
 urllib3==2.6.3
     # via requests
 wcwidth==0.6.0
     # via prompt-toolkit
 werkzeug==3.1.8
     # via tensorboard
+wfdb==4.3.1
+    # via braindecode
 widgetsnbextension==4.0.15
     # via ipywidgets
 yarl==1.23.0

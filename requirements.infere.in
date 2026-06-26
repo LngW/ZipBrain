@@ -25,6 +25,7 @@ lmdb
 lz4
 pyarrow
 debugpy
+braindecode
 onnxscript
 onnxruntime
 onnxruntime-gpu
