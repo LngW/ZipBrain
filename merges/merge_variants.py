@@ -26,6 +26,9 @@ def apply_merge(pinfo, cinfo, x, q, k, v): # we expect q, k, v are all (B, H, N,
     if len(variant) == 0 or r <= 0:
         # In this case, no reduction is applied.
         return x
+    elif variant.startswith('collect'):
+        from .collect import apply_collect
+        return apply_collect(pinfo, cinfo, r, variant, x, q, k, v)
     elif variant.startswith('kidd'):
         from .kidds import apply_kidd
         return apply_kidd(pinfo, cinfo, r, variant, x, q, k, v)
@@ -148,9 +151,10 @@ def tome_merge(pinfo, r, x, metric):
     # from importlib import util
     import sys
     if 'tome' not in sys.modules:
-        import importlib
-        tome_spec = importlib.util.spec_from_file_location('thirdparty.ToMe.tome', 'thirdparty/ToMe/tome/__init__.py')
-        tome_spec = importlib.util.module_from_spec(tome_spec)
+        from importlib.util import spec_from_file_location, module_from_spec
+        tome_spec = spec_from_file_location('thirdparty.ToMe.tome', 'thirdparty/ToMe/tome/__init__.py')
+        assert tome_spec is not None
+        tome_spec = module_from_spec(tome_spec)
         sys.modules['tome'] = tome_spec
 
     from thirdparty.ToMe.tome.merge import bipartite_soft_matching, merge_wavg, merge_source
@@ -180,9 +184,10 @@ def tofu_merge(pinfo, r, x, metric):
     # from importlib import util
     import sys
     if 'tome' not in sys.modules:
-        import importlib
-        tome_spec = importlib.util.spec_from_file_location('thirdparty.ToMe.tome', 'thirdparty/ToMe/tome/__init__.py')
-        tome_spec = importlib.util.module_from_spec(tome_spec)
+        from importlib.util import spec_from_file_location, module_from_spec
+        tome_spec = spec_from_file_location('thirdparty.ToMe.tome', 'thirdparty/ToMe/tome/__init__.py')
+        assert tome_spec is not None
+        tome_spec = module_from_spec(tome_spec)
         sys.modules['tome'] = tome_spec
 
     from thirdparty.ToMe.tome.merge import bipartite_soft_matching, merge_wavg, merge_source
