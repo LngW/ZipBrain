@@ -34,6 +34,9 @@ def import_models(args):
         sys.modules['Modules'] = importlib.import_module('finetune.EEGPT.downstream.Modules')
 
 def prepare_dataloader(args, hooks):
+    """
+    -> train, test, val
+    """
     set_seeds(args)
 
     dataset = args.dataset
