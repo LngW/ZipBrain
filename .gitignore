@@ -31,3 +31,9 @@ deprecated/
 
 *optuna*.py
 *optuna*.sh
+
+jetson/
+onnxs/
+pts/
+*.onnx
+*.whl
