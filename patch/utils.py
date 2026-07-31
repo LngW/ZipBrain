@@ -16,6 +16,7 @@ def compute_cinfo(pinfo):
     return cinfo
 
 def reset_common_pinfo(model, pinfo : dict, depth):
+    # print("reset_common_pinfo")
     r = getattr(model, 'r', 0)
     variant = getattr(model, 'variant', '')
 

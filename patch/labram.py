@@ -70,24 +70,32 @@ def create_transformer_class(klass):
         def forward_features(self, x, input_chans=None, return_patch_tokens=False, return_all_tokens=False, **kwargs):
             batch_size, n, a, t = x.shape
             input_time_window = a if t == self.patch_size else t
-            x = self.patch_embed(x)
+            x : torch.Tensor = self.patch_embed(x)
 
-            cls_tokens = self.cls_token.expand(batch_size, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
+            cls_tokens = self.cls_token #.expand(batch_size, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
 
-            x = torch.cat((cls_tokens, x), dim=1)
-
-            pos_embed_used = self.pos_embed[:, input_chans] if input_chans is not None else self.pos_embed
+            # x = torch.cat((cls_tokens, x), dim=1)
+            # print(x.shape)
+            # print((batch_size, n, a, t))
+            x = x.reshape((batch_size, n, a, t))
             if self.pos_embed is not None:
-                pos_embed = pos_embed_used[:, 1:, :].unsqueeze(2).expand(batch_size, -1, input_time_window, -1).flatten(1, 2)
-                pos_embed = torch.cat((pos_embed_used[:,0:1,:].expand(batch_size, -1, -1), pos_embed), dim=1)
-                x = x + pos_embed
+                pos_embed_used = self.pos_embed[:, input_chans] if input_chans is not None else self.pos_embed
+                x = x + pos_embed_used[:, 1:, None, :]
+                cls_tokens = cls_tokens + pos_embed_used[:, :1, :]
+                # pos_embed = pos_embed_used[:, 1:, :].unsqueeze(2).expand(batch_size, -1, input_time_window, -1).flatten(1, 2)
+                # pos_embed = torch.cat((pos_embed_used[:,0:1,:].expand(batch_size, -1, -1), pos_embed), dim=1)
+                # x = x + pos_embed
             if self.time_embed is not None:
                 nc = n if t == self.patch_size else a
-                time_embed = self.time_embed[:, 0:input_time_window, :].unsqueeze(1).expand(batch_size, nc, -1, -1).flatten(1, 2)
-                x[:, 1:, :] += time_embed
+                time_embed = self.time_embed[:, 0:input_time_window, :].unsqueeze(1) #.expand(batch_size, nc, -1, -1).flatten(1, 2)
+                x = x + time_embed
+                # x[:, 1:, :] += time_embed
+                # x = torch.cat([x[:, :1, :], x[:, 1:, :] + time_embed], dim=1)
 
-            embed = pos_embed[:, 1:, :] + time_embed
-            self._pinfo['pte'] = embed
+            x = torch.cat([cls_tokens.expand(batch_size, -1, -1), x.flatten(1, 2)], dim=1)
+
+            # embed = pos_embed[:, 1:, :] + time_embed
+            # self._pinfo['pte'] = embed.detach()
 
             x = self.pos_drop(x)
             
@@ -126,7 +134,7 @@ def create_transformer_class(klass):
             pinfo["size"] = None
             pinfo["source"] = None
             pinfo["qkv"] = None
-            pinfo["pte"] = None
+            # pinfo["pte"] = None
 
             # self._pinfo['pivot_factor'] = self.pivot_factor
             self._pinfo["use_cls"] = self.use_cls
