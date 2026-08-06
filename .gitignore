@@ -1,13 +1,19 @@
 .vscode/
 
 .venv*/
-.venv.biot/
 **/__pycache__/
 
 /finetune/*/
 !/finetune/patches/
-/datasets/
-/models/
+
+# Include splits.json so that same splits can be reproduced.
+/datasets/*
+!datasets/tuab/
+datasets/tuab/*
+!datasets/tuev/
+datasets/tuev/*
+!datasets/*/splits.json
+
 /logs*/
 /workspace*/
 /checkpoints/*
