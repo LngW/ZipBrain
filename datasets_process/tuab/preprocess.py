@@ -2,7 +2,7 @@ import argparse
 from pathlib import Path
 from multiprocessing import Pool
 
-def preprocess(config, handle, outdir):
+def preprocess(root : Path, config, handle, outdir):
     train_files = config['train']
     val_files = config['val']
     test_files = config['test']
@@ -20,7 +20,7 @@ def preprocess(config, handle, outdir):
     parameters = []
     for files, outdir in zip([train_files, val_files, test_files], [train_outdir, val_outdir, test_outdir]):
         for cfg in files:
-            p = Path(cfg['file'])
+            p = root / cfg['file']
             folder = p.parent
             name = p.name
             label = cfg['label']
@@ -33,6 +33,7 @@ def preprocess(config, handle, outdir):
 def main():
     parser = argparse.ArgumentParser()
 
+    parser.add_argument('--root')
     parser.add_argument('--model')
     parser.add_argument('--config')
     parser.add_argument('--outdir')
@@ -62,7 +63,7 @@ def main():
         config['train'] = []
         config['val'] = []
 
-    preprocess(config, split_and_dump, args.outdir)
+    preprocess(Path(args.root), config, split_and_dump, args.outdir)
 
 if __name__ == '__main__':
     main()

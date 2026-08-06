@@ -4,10 +4,10 @@ import random
 from pathlib import Path
 
 def main(root : Path, seed, out):
-    root = root / 'edf'
+    # root = root / 'edf'
     ch = '01_tcp_ar'
-    train_root = root / 'train'
-    test_root = root / 'eval'
+    train_root = root / 'edf' / 'train'
+    test_root = root / 'edf' / 'eval'
 
     train_normal_root = train_root / 'normal' / ch
     train_abnormal_root = train_root / 'abnormal' / ch
@@ -46,7 +46,7 @@ def main(root : Path, seed, out):
         subset = ['train', 'val', 'test'][idxs // 2]
         label = idxs % 2
         for f in files:
-            f_name = str(f.absolute())
+            f_name = str(f.relative_to(root))
             records[subset].append({'file': f_name, 'label': label})
 
     with open(out, 'w') as handle:
