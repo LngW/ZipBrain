@@ -1,5 +1,5 @@
---- thirdparty/EEGPT/downstream/finetune_EEGPT_SleepEDF.py	2026-01-13 22:30:32.507362243 +0900
-+++ finetune/EEGPT/downstream/finetune_EEGPT_EEGMAT.py	2026-05-11 13:14:57.368087388 +0900
+--- thirdparty/EEGPT/downstream/finetune_EEGPT_SleepEDF.py
++++ finetune/EEGPT/downstream/finetune_EEGPT_EEGMAT.py
 @@ -32,3 +32,3 @@
  
 -use_channels_names = ['F3', 'F4', 'C3', 'C4', 'P3','P4', 'FPZ', 'FZ', 'CZ', 'CPZ', 'PZ', 'POZ', 'OZ' ]

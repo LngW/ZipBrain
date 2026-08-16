@@ -1,5 +1,5 @@
---- ./dataset_configs.yaml	2026-04-11 18:10:23.085415120 +0900
-+++ finetune/EEGPT/downstream/dataset_configs.yaml	2026-05-10 23:49:02.497913994 +0900
+--- ./dataset_configs.yaml
++++ finetune/EEGPT/downstream/dataset_configs.yaml
 @@ -3,3 +3,3 @@
  WORKLOAD:
 -    data_dir: 'datasets/workload/processed_data' 

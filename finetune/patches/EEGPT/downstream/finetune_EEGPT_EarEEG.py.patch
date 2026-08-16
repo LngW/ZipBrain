@@ -1,5 +1,5 @@
---- thirdparty/EEGPT/downstream/finetune_EEGPT_SleepEDF.py	2026-01-13 22:30:32.507362243 +0900
-+++ finetune/EEGPT/downstream/finetune_EEGPT_EarEEG.py	2026-05-11 13:14:33.696336958 +0900
+--- thirdparty/EEGPT/downstream/finetune_EEGPT_SleepEDF.py
++++ finetune/EEGPT/downstream/finetune_EEGPT_EarEEG.py
 @@ -38,4 +38,4 @@
          super().__init__()    
 -        self.chans_num = len(use_channels_names)

@@ -1,5 +1,5 @@
---- thirdparty/BIOT/run_binary_supervised.py	2026-01-08 15:46:45.832706321 +0900
-+++ finetune/BIOT/run_binary_supervised.py	2026-05-10 23:49:02.487113994 +0900
+--- thirdparty/BIOT/run_binary_supervised.py
++++ finetune/BIOT/run_binary_supervised.py
 @@ -26,3 +26,2 @@
  
 -

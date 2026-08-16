@@ -1,5 +1,5 @@
---- thirdparty/LaBraM/utils.py	2026-01-19 14:47:38.540255299 +0900
-+++ finetune/LaBraM/utils.py	2026-05-10 23:49:02.487113994 +0900
+--- thirdparty/LaBraM/utils.py
++++ finetune/LaBraM/utils.py
 @@ -501,3 +501,3 @@
      def __init__(self):
 -        self._scaler = torch.cuda.amp.GradScaler()

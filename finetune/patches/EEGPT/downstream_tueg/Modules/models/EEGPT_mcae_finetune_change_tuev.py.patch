@@ -1,5 +1,5 @@
---- thirdparty/EEGPT/downstream_tueg/Modules/models/EEGPT_mcae_finetune_change_tuev.py	2026-05-10 22:43:54.119493116 +0900
-+++ finetune/EEGPT/downstream_tueg/Modules/models/EEGPT_mcae_finetune_change_tuev.py	2026-05-10 23:49:02.494313995 +0900
+--- thirdparty/EEGPT/downstream_tueg/Modules/models/EEGPT_mcae_finetune_change_tuev.py
++++ finetune/EEGPT/downstream_tueg/Modules/models/EEGPT_mcae_finetune_change_tuev.py
 @@ -569,3 +569,3 @@
          super(Conv1dWithConstraint, self).__init__(*args, **kwargs)
 -    @autocast(True)
