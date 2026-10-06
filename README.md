@@ -3,7 +3,7 @@
 ### 1. Clone our repository
 
 ```shell
-git clone https://github.com/<comming_soon>/<coming_soon>
+git clone https://github.com/LngW/ZipBrain
 git submodule update --init
 ```
 
@@ -14,6 +14,7 @@ please **MAKE SURE** that you initialized and fetched upstreams. You would see f
 named `BIOT`, `LaBraM`, `TFM_Tokenizer`, `EEGPT`, `ToMe` and so on in `./thirdparty/`.
 
 > In case the repository is downloaded as zip file, you can add submodules manually.
+> Please refer to the [.gitmodules](.gitmodules) for links
 
 ### 2. Finetune upstream models
 
@@ -25,13 +26,13 @@ We provide a simple shell script to setup finetuning environments
 sh setup_finetune.sh
 ```
 
-After running the command, folders named `BIOT`, `LaBraM` and `TFM_Tokenizer` can be found under `./finetune/`. Please then follow instructions from upstreams to obtain a finetuned checkpoint.
+After running the command, folders named `BIOT`, `LaBraM` and `TFM_Tokenizer` can be found under `./finetune/`. Please then follow instructions from those upstreams to obtain a finetuned checkpoint.
 
-We provide shell scripts (`./finetune/finetune.<model>.sh`) that record hyper-parameters we used in finetuning upstream models. Readers can use these scripts for faster reproduce of our results. 
+We provide shell scripts (`./finetune/finetune.<model>.sh`) that record hyper-parameters we used in finetuning upstream models. Readers can use these scripts for faster replicate of our results. 
 
 ### 3. Evaluate our method and baselines
 
-[run_inference.py](run_inference.py) defines a unified entrance for evaluating all baselines and our method.
+[`run_inference.py`](run_inference.py) defines a unified entrance for evaluating all baselines and our method.
 
 You can use the following command to evaluate our method
 ```sh
@@ -59,7 +60,7 @@ For Datasets, we support:
 
 > A warning about ISRUC
 > 
-> I modified the data_loader implementation by loading a index table first, and then load datas using lmdb and lz4. This is because the whole dataset is too large to be fully pre-loaded on my side. 
+> The dataset is reformed with lmdb and lz4 for faster loading speed.
 
 For Models, we support:
 * BIOT: `--model BIOT`
@@ -70,4 +71,4 @@ For Models, we support:
 ### 4. Optimal Hyper-Parameter
 File `run_optuna_grid_full_m3.py` and `run_optuna_grid_copy_study.py` defines the hyper-parameter optimization pipeline. 
 
-We provide an example file `run_optuna_labram_m3.sh` to show how to run the pipeline.
+We provide scripts `run_optuna_<model>_m3.sh` for faster replicate.
